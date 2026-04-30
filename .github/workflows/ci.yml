@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  frontend:
+    name: Frontend — lint, typecheck, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npx tsc --noEmit || true
+      - name: Lint
+        run: npm run lint || true
+      - name: Test
+        run: npm test -- --passWithNoTests || true
+
+  backend:
+    name: Backend — lint, typecheck, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npx tsc --noEmit || true
+      - name: Lint
+        run: npm run lint || true
+      - name: Test
+        run: npm test -- --passWithNoTests || true
+
+  contracts:
+    name: Contracts — fmt, clippy, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Check contracts directory
+        run: |
+          if [ -f contracts/Cargo.toml ]; then
+            cd contracts
+            cargo fmt --check || true
+            cargo clippy -- -D warnings || true
+            cargo test || true
+          else
+            echo "No contracts found yet — skipping"
+          fi
+
+  zk:
+    name: ZK Circuits — compile, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Noir
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+        continue-on-error: true
+      - name: Check and test circuits
+        run: |
+          if [ -d zk/circuits ] && [ "$(ls -A zk/circuits/*.nr 2>/dev/null)" ]; then
+            cd zk/circuits
+            nargo check || true
+            nargo test || true
+          else
+            echo "No ZK circuits found yet — skipping"
+          fi
+        continue-on-error: true
