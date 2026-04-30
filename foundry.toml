@@ -1,0 +1,22 @@
+[profile.default]
+src       = "contracts/src"
+out       = "contracts/out"
+libs      = ["contracts/lib"]
+test      = "contracts/test"
+script    = "contracts/script"
+solc      = "0.8.24"
+
+# Run `forge install foundry-rs/forge-std` to populate contracts/lib/forge-std
+# before compiling tests or scripts.
+
+[profile.default.optimizer]
+enabled = true
+runs    = 200
+
+[rpc_endpoints]
+celo_testnet = "${CELO_TESTNET_RPC}"   # https://alfajores-forno.celo-testnet.org
+celo_mainnet = "${CELO_MAINNET_RPC}"   # https://forno.celo.org
+
+[etherscan]
+celo_testnet = { key = "${CELOSCAN_API_KEY}", url = "https://api-alfajores.celoscan.io/api" }
+celo_mainnet = { key = "${CELOSCAN_API_KEY}", url = "https://api.celoscan.io/api" }
