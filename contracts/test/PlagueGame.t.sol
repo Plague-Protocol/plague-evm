@@ -287,6 +287,100 @@ contract PlagueGameTest is Test {
         );
     }
 
+    function test_Tie_AllCleanWithProof_AreSaved() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // Infect players[0] so clean tied candidates can be players[1] and players[2]
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        // Both tied clean candidates submit innocence proofs
+        vm.prank(players[1]);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("nullifier-p1-r1"), "");
+        vm.prank(players[2]);
+        game.submitInnocenceProof(1, keccak256("comm-2"), keccak256("nullifier-p2-r1"), "");
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Force a 3-3 tie between players[1] and players[2]
+        vm.prank(host);
+        game.castVote(1, players[1]);
+        vm.prank(players[3]);
+        game.castVote(1, players[1]);
+        vm.prank(players[4]);
+        game.castVote(1, players[1]);
+
+        vm.prank(players[0]);
+        game.castVote(1, players[2]);
+        vm.prank(players[1]);
+        game.castVote(1, players[2]);
+        vm.prank(players[2]);
+        game.castVote(1, players[2]);
+
+        game.resolveRound(1);
+
+        assertNotEq(
+            uint(game.getPlayer(1, players[1]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+        assertNotEq(
+            uint(game.getPlayer(1, players[2]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+    }
+
+    function test_Tie_WithInfectedCandidate_EliminatesInfectedEvenWithProof() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // Infect players[0] so this candidate is vulnerable in tie resolution
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        // In bypass mode even infected can submit; resolution must still eliminate infected candidate
+        vm.prank(players[0]);
+        game.submitInnocenceProof(1, keccak256("comm-0"), keccak256("nullifier-p0-r1"), "");
+        vm.prank(players[1]);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("nullifier-p1-r1"), "");
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Force a 3-3 tie between infected players[0] and clean players[1]
+        vm.prank(host);
+        game.castVote(1, players[0]);
+        vm.prank(players[2]);
+        game.castVote(1, players[0]);
+        vm.prank(players[3]);
+        game.castVote(1, players[0]);
+
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[1]);
+        game.castVote(1, players[1]);
+        vm.prank(players[4]);
+        game.castVote(1, players[1]);
+
+        game.resolveRound(1);
+
+        assertEq(
+            uint(game.getPlayer(1, players[0]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+        assertNotEq(
+            uint(game.getPlayer(1, players[1]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+    }
+
     // ── Nullifier replay prevention ───────────────────────────────────────────────
 
     function test_NullifierReplay_Reverts() public {
@@ -351,6 +445,77 @@ contract PlagueGameTest is Test {
         vm.prank(players[0]);
         vm.expectRevert(PlagueGame.Unauthorized.selector);
         game.assignInfection(1, players[1]);
+    }
+
+    function test_AssignInfection_TargetMustBeClean_RevertsForAlreadyInfected() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // First infection establishes patient zero at players[0]
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // End round quickly via absent-vote rule path
+        game.resolveRound(1);
+
+        // Next infection phase: trying to re-infect already infected player must fail
+        vm.prank(backend);
+        vm.expectRevert(PlagueGame.InvalidInfectionTarget.selector);
+        game.assignInfection(1, players[0]);
+    }
+
+    function test_PatientZeroSuccession_WhenCurrentIsEliminated() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // Round 1: B = players[0] becomes initial patient zero
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+        assertEq(game.currentPatientZero(1), players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+        game.resolveRound(1);
+
+        // Round 2: B infects E = players[1]
+        vm.prank(backend);
+        game.assignInfection(1, players[1]);
+        assertEq(game.currentPatientZero(1), players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Eliminate current patient zero (players[0])
+        vm.prank(host);
+        game.castVote(1, players[0]);
+        vm.prank(players[1]);
+        game.castVote(1, players[0]);
+        vm.prank(players[2]);
+        game.castVote(1, players[0]);
+        vm.prank(players[3]);
+        game.castVote(1, players[0]);
+        vm.prank(players[4]);
+        game.castVote(1, players[0]);
+        vm.prank(players[0]);
+        game.castVote(1, players[0]);
+
+        game.resolveRound(1);
+
+        // B eliminated, first infected successor E must now be patient zero
+        assertEq(
+            uint(game.getPlayer(1, players[0]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+        assertEq(game.currentPatientZero(1), players[1]);
     }
 
     // ── ZKVerifier bypass toggle ──────────────────────────────────────────────────

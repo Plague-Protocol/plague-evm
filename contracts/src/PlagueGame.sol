@@ -17,7 +17,7 @@ import "./ZKVerifier.sol";
  *  Waiting → Starting → Active → Ended
  *
  *  createRoom    : host configures room; status = Waiting
- *  joinRoom      : players stake CELO; only while Waiting and before expiresAt
+ *  joinRoom      : players stake cUSD; only while Waiting and before expiresAt
  *  startGame     : host closes join window; status = Starting
  *  submitRole*   : players commit to their role via ZK proof
  *  beginActive   : backend starts round 1; status = Active
@@ -29,13 +29,17 @@ import "./ZKVerifier.sol";
  *  submitInnocence*   : clean players prove innocence during Discussion only
  *  openVoting         : backend closes Discussion, opens Voting
  *  castVote           : players vote to eliminate a suspect during Voting
- *  resolveRound       : tallies votes (Cases A/B/C/D), checks endgame, pays out
+ *  resolveRound       : tallies votes, resolves elimination/save rules, checks endgame, pays out
  *
- * ── Vote Resolution Cases ──────────────────────────────────────────────────────
- *  A  Single top candidate, no valid proof    → eliminated
- *  B  Single top candidate, has valid proof   → saved (no elimination)
- *  C  Tie, some candidates unprotected        → lowest keccak256(addr) unprotected eliminated
- *  D  Tie, ALL candidates have proofs         → no elimination; one marked for next infection
+ * ── Vote Resolution Rules ──────────────────────────────────────────────────────
+ *  1. A candidate is protected only if they are CLEAN and submitted an innocence proof.
+ *  2. Single top candidate:
+ *       - protected clean candidate → saved
+ *       - otherwise                 → eliminated
+ *  3. Tie:
+ *       - if ALL tied candidates are protected clean players → all saved (no elimination)
+ *       - otherwise eliminate lowest keccak256(addr) among vulnerable ties,
+ *         where vulnerable = infected OR no proof.
  *
  * ── Endgame (checked after every Reveal) ──────────────────────────────────────
  *  1. infected_alive == 0             → Clean wins
@@ -103,6 +107,12 @@ contract PlagueGame {
 
     mapping(uint256 => Room)                               public rooms;
     mapping(uint256 => mapping(address => PlayerState))    public players;
+    /// @dev Infection succession order for patient-zero promotion.
+    mapping(uint256 => address[])                          private infectionChain;
+    /// @dev Index pointer into infectionChain for current patient zero.
+    mapping(uint256 => uint256)                            private patientZeroIndex;
+    /// @dev Cached current patient zero address for quick reads.
+    mapping(uint256 => address)                            public currentPatientZero;
     /// @dev Nullifier registry — scoped per room so a nullifier used in room A
     ///      cannot be replayed in room B even with the same round number.
     mapping(uint256 => mapping(bytes32 => bool))           public usedNullifiers;
@@ -134,6 +144,7 @@ contract PlagueGame {
     /// @dev InfectionAssigned is emitted on-chain but the backend only forwards
     ///      this privately to the affected player via socket.
     event InfectionAssigned(uint256 indexed roomId, address player);
+    event PatientZeroUpdated(uint256 indexed roomId, address patientZero);
     event GameEnded(uint256 indexed roomId, GameOutcome outcome);
     event PotDrained(uint256 indexed roomId, address winner, uint256 amount);
     event RoomExpired(uint256 indexed roomId);
@@ -159,6 +170,7 @@ contract PlagueGame {
     error InvalidProof();
     error NotParticipant();
     error NotAlive();
+    error InvalidInfectionTarget();
 
     // ─── Modifiers ────────────────────────────────────────────────────────────────
 
@@ -244,7 +256,7 @@ contract PlagueGame {
     }
 
     /**
-     * @notice Join an open room by staking the required CELO amount.
+     * @notice Join an open room by staking the required cUSD amount.
      *         Only valid while the room is in Waiting status and before expiresAt.
      */
     function joinRoom(uint256 roomId) external payable roomExists(roomId) {
@@ -340,18 +352,17 @@ contract PlagueGame {
     }
 
     /**
-     * @notice Backend assigns the infection for this round.
+     * @notice Backend assigns this round's newly infected target.
      *
-     *         Normal selection:
-     *           target = eligible_clean_alive[ hash(roomId, round, prevTxHash) % count ]
+     *         Patient-zero succession model:
+     *           - First infection in a room establishes initial patient zero.
+     *           - Every newly infected player is appended to infectionChain.
+     *           - If current patient zero is eliminated, the next alive address in
+     *             infectionChain is promoted as patient zero (B -> E -> C -> G ...).
      *
-     *         All-proofs-tie case:
-     *           If a player has pendingInfectionNextRound set from the previous Case D,
-     *           that player is passed as target instead of a random pick.
-     *
-     *         Only the newly infected player receives a private notification via the
-     *         backend socket. The event is emitted on-chain but the backend is
-     *         responsible for restricting delivery.
+     *         Constraints:
+     *           - target must be alive and CLEAN.
+     *           - already infected players cannot be infected again.
      *
      *         After assignment, phase automatically advances to Discussion.
      */
@@ -363,9 +374,23 @@ contract PlagueGame {
         if (r.currentPhase != RoundPhase.Infection) revert WrongPhase();
         if (p.addr == address(0))                  revert NotParticipant();
         if (p.status == PlayerStatus.Eliminated)   revert NotAlive();
+        if (p.status != PlayerStatus.Clean)        revert InvalidInfectionTarget();
+
+        // If we already have a patient zero, keep it synced to the next alive
+        // candidate in infection order before recording this new infection.
+        _syncPatientZero(roomId);
 
         p.status                    = PlayerStatus.Infected;
         p.pendingInfectionNextRound = false;
+
+        infectionChain[roomId].push(target);
+
+        // First infection establishes patient zero.
+        if (currentPatientZero[roomId] == address(0)) {
+            currentPatientZero[roomId] = target;
+            patientZeroIndex[roomId] = 0;
+            emit PatientZeroUpdated(roomId, target);
+        }
 
         emit InfectionAssigned(roomId, target);
 
@@ -475,7 +500,7 @@ contract PlagueGame {
      *         Steps:
      *           1. Apply absent-vote rule to any player who didn't cast a vote.
      *           2. Tally votes; find top candidate(s).
-     *           3. Apply case A / B / C / D.
+    *           3. Apply elimination/protection rules.
      *           4. Check endgame conditions.
      *           5a. If game over: distribute pot.
      *           5b. Otherwise: reset per-round state, advance to next round.
@@ -493,39 +518,46 @@ contract PlagueGame {
         // 2. Tally
         (address[] memory topCandidates,) = _tallyVotes(roomId, alive);
 
-        // 3. Vote resolution cases
+        // 3. Vote resolution rules
         if (topCandidates.length == 1) {
             address top = topCandidates[0];
-            if (players[roomId][top].hasProofThisRound) {
-                // Case B — saved
+            if (_isProtectedCleanCandidate(roomId, top)) {
+                // Protected clean candidate — saved
                 emit PlayerSavedByProof(roomId, top);
-                emit VoteResolved(roomId, "Case B: top candidate saved by valid proof");
+                emit VoteResolved(roomId, "Top candidate saved (clean + valid innocence proof)");
             } else {
-                // Case A — eliminated
+                // Not protected — eliminated
                 players[roomId][top].status = PlayerStatus.Eliminated;
                 emit PlayerEliminated(roomId, top);
-                emit VoteResolved(roomId, "Case A: top candidate eliminated");
+                emit VoteResolved(roomId, "Top candidate eliminated (infected or no valid protection)");
             }
         } else {
-            bool allHaveProofs = true;
+            bool allProtectedClean = true;
+            bool anyInfected = false;
             for (uint256 i = 0; i < topCandidates.length; i++) {
-                if (!players[roomId][topCandidates[i]].hasProofThisRound) {
-                    allHaveProofs = false;
-                    break;
+                if (players[roomId][topCandidates[i]].status == PlayerStatus.Infected) {
+                    anyInfected = true;
+                }
+                if (!_isProtectedCleanCandidate(roomId, topCandidates[i])) {
+                    allProtectedClean = false;
                 }
             }
 
-            if (allHaveProofs) {
-                // Case D — no elimination; mark one for next-round infection
-                address pending = _selectPendingInfection(topCandidates);
-                players[roomId][pending].pendingInfectionNextRound = true;
-                emit VoteResolved(roomId, "Case D: all tied candidates proved; one flagged for next infection");
-            } else {
-                // Case C — eliminate lowest keccak256(addr) unprotected candidate
-                address victim = _selectLowestHashUnprotected(roomId, topCandidates);
+            if (allProtectedClean) {
+                // All tied candidates are clean and protected — no elimination
+                emit VoteResolved(roomId, "Tie: all tied clean candidates proved innocence; all saved");
+            } else if (anyInfected) {
+                // If any tied candidate is infected, eliminate infected candidate first.
+                address victim = _selectLowestHashInfected(roomId, topCandidates);
                 players[roomId][victim].status = PlayerStatus.Eliminated;
                 emit PlayerEliminated(roomId, victim);
-                emit VoteResolved(roomId, "Case C: lowest-hash unprotected tied candidate eliminated");
+                emit VoteResolved(roomId, "Tie: infected tied candidate eliminated");
+            } else {
+                // No infected in tie, eliminate unprotected clean candidate.
+                address victim = _selectLowestHashUnprotectedClean(roomId, topCandidates);
+                players[roomId][victim].status = PlayerStatus.Eliminated;
+                emit PlayerEliminated(roomId, victim);
+                emit VoteResolved(roomId, "Tie: unprotected clean candidate eliminated");
             }
         }
 
@@ -556,6 +588,9 @@ contract PlagueGame {
             emit GameEnded(roomId, outcome);
             _distributePot(roomId, outcome);
         } else {
+            // Keep patient-zero succession aligned after eliminations.
+            _syncPatientZero(roomId);
+
             // 5b. Reset and start next round
             _resetRoundState(roomId);
             r.currentRound++;
@@ -639,7 +674,44 @@ contract PlagueGame {
         zkVerifier = IZKVerifier(verifier);
     }
 
+    function getInfectionChain(uint256 roomId)
+        external
+        view
+        roomExists(roomId)
+        returns (address[] memory)
+    {
+        return infectionChain[roomId];
+    }
+
     // ─── Internal Helpers ─────────────────────────────────────────────────────────
+
+    function _syncPatientZero(uint256 roomId) internal {
+        address[] storage chain = infectionChain[roomId];
+        if (chain.length == 0) return;
+
+        uint256 idx = patientZeroIndex[roomId];
+        if (idx >= chain.length) idx = chain.length - 1;
+
+        while (idx < chain.length) {
+            address candidate = chain[idx];
+            PlayerState storage s = players[roomId][candidate];
+            if (s.addr != address(0) && s.status == PlayerStatus.Infected) {
+                if (currentPatientZero[roomId] != candidate) {
+                    currentPatientZero[roomId] = candidate;
+                    patientZeroIndex[roomId] = idx;
+                    emit PatientZeroUpdated(roomId, candidate);
+                } else {
+                    patientZeroIndex[roomId] = idx;
+                }
+                return;
+            }
+            unchecked { idx++; }
+        }
+
+        // No alive infected left; room endgame logic will resolve this to clean win.
+        currentPatientZero[roomId] = address(0);
+        patientZeroIndex[roomId] = chain.length;
+    }
 
     function _getAlivePlayers(uint256 roomId) internal view returns (address[] memory) {
         address[] memory all = rooms[roomId].players;
@@ -720,26 +792,48 @@ contract PlagueGame {
         }
     }
 
-    /**
-     * @dev Case D: deterministically pick one tied candidate for pending infection.
-     *      Uses the previous block hash as entropy (acceptable for this non-critical pick).
-     */
-    function _selectPendingInfection(address[] memory candidates) internal view returns (address) {
-        uint256 idx = uint256(blockhash(block.number - 1)) % candidates.length;
-        return candidates[idx];
+    function _isProtectedCleanCandidate(uint256 roomId, address candidate)
+        internal
+        view
+        returns (bool)
+    {
+        PlayerState storage p = players[roomId][candidate];
+        return p.status == PlayerStatus.Clean && p.hasProofThisRound;
     }
 
     /**
-     * @dev Case C: among unprotected tied candidates return the one with the
+     * @dev Among tied infected candidates return the one with the
      *      lexicographically lowest keccak256(address).
      */
-    function _selectLowestHashUnprotected(uint256 roomId, address[] memory candidates)
-        internal view
+    function _selectLowestHashInfected(uint256 roomId, address[] memory candidates)
+        internal
+        view
         returns (address victim)
     {
         bytes32 lowestHash = type(bytes32).max;
         for (uint256 i = 0; i < candidates.length; i++) {
-            if (players[roomId][candidates[i]].hasProofThisRound) continue;
+            if (players[roomId][candidates[i]].status != PlayerStatus.Infected) continue;
+            bytes32 h = keccak256(abi.encodePacked(candidates[i]));
+            if (h < lowestHash) {
+                lowestHash = h;
+                victim     = candidates[i];
+            }
+        }
+    }
+
+    /**
+     * @dev Among tied clean candidates without proof return the one with the
+     *      lexicographically lowest keccak256(address).
+     */
+    function _selectLowestHashUnprotectedClean(uint256 roomId, address[] memory candidates)
+        internal
+        view
+        returns (address victim)
+    {
+        bytes32 lowestHash = type(bytes32).max;
+        for (uint256 i = 0; i < candidates.length; i++) {
+            PlayerState storage p = players[roomId][candidates[i]];
+            if (p.status != PlayerStatus.Clean || p.hasProofThisRound) continue;
             bytes32 h = keccak256(abi.encodePacked(candidates[i]));
             if (h < lowestHash) {
                 lowestHash = h;
