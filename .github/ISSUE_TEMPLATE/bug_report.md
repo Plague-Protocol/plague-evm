@@ -20,7 +20,7 @@ assignees: ''
 ## Environment
 - OS:
 - Browser / Node version:
-- Stellar network: [ ] testnet [ ] mainnet
+- Celo network: [ ] Alfajores testnet [ ] mainnet
 
 ## Relevant files
 <!-- Which files are likely involved? -->

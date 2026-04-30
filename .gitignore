@@ -6,15 +6,6 @@ build/
 .env.local
 .env.production
 
-# Soroban/Rust (legacy — this repo is EVM only)
-target/
-*.wasm
-contracts/Cargo.toml
-contracts/src/game/
-contracts/src/token/
-contracts/src/zk/
-contracts/test/game_test.rs
-
 # Foundry build artefacts
 contracts/out/
 contracts/cache/

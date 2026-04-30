@@ -86,7 +86,7 @@ export function HeroScene() {
 
             <rect x="88" y="308" width="128" height="34" rx="10" fill="#f5c518" stroke="#0a0a0a" strokeWidth="4" />
             <text x="152" y="330" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="16" fontWeight="700" fill="#0a0a0a">
-              84 XLM POOL
+              84 CELO POOL
             </text>
 
             <rect x="436" y="78" width="126" height="34" rx="10" fill="#f5f0e8" stroke="#0a0a0a" strokeWidth="4" />

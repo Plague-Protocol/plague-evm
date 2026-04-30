@@ -48,7 +48,7 @@ If an issue is unclear, please **comment on it** rather than opening a new one. 
 | Your skill | Label to filter |
 |---|---|
 | React / Next.js / Tailwind | `frontend` |
-| Rust / Soroban | `contract` |
+| Solidity / Foundry | `contract` |
 | Node.js / Socket.io | `backend` |
 | Noir / ZK circuits | `zk` |
 | Tests / QA | `testing` |
@@ -79,9 +79,8 @@ npm run dev
 # Backend:  http://localhost:4000
 
 # 6. For contract work
-cd contracts
-cargo build --target wasm32-unknown-unknown --release
-cargo test
+forge build
+forge test -vvv
 
 # 7. For ZK circuit work
 cd zk/circuits
@@ -144,10 +143,10 @@ PRs that don't follow these guidelines will be asked to revise before review.
 - Hooks for all state logic — no Redux
 - File naming: `PascalCase` for components, `camelCase` for hooks/utils
 
-### Rust / Soroban
-- Run `cargo fmt` before committing
-- Run `cargo clippy` and address all warnings
-- Every public function needs a doc comment
+### Solidity / Foundry
+- Run `forge fmt` before committing
+- Run `forge build` with no warnings
+- Every public function needs a NatSpec doc comment
 
 ### Noir (ZK circuits)
 - Comment every constraint explaining *why* it's needed
@@ -166,7 +165,7 @@ PRs that don't follow these guidelines will be asked to revise before review.
 |---|---|
 | `frontend` | React/Next.js/Tailwind/UI work |
 | `backend` | Node.js/Express/Socket.io work |
-| `contract` | Soroban/Rust smart contract work |
+| `contract` | Solidity/Foundry smart contract work |
 | `zk` | Noir circuit / ZK proof work |
 | `testing` | Unit, integration, or e2e tests |
 | `documentation` | README, guides, inline docs |

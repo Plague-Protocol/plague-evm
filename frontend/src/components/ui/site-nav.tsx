@@ -28,7 +28,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
         <div className="hidden sm:block">
           <p className="font-display text-xl leading-none" style={{ color: '#f0f4f8' }}>PlagueProtocol</p>
           <p className="font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#7a8592' }}>
-            social deduction on stellar
+            social deduction on celo
           </p>
         </div>
       </Link>

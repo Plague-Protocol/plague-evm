@@ -17,7 +17,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
           <p className={`font-mono text-xs uppercase tracking-[0.2em] ${isDark ? 'text-plague-white/75' : 'text-plague-black/65'}`}>
             Wallet Status
           </p>
-          <h3 className="mt-2 font-display text-4xl leading-none">Freighter</h3>
+          <h3 className="mt-2 font-display text-4xl leading-none">MetaMask</h3>
         </div>
         <span className="status-dot online" />
       </div>
@@ -29,11 +29,11 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
         </div>
         <div className={`border-3 p-3 ${isDark ? 'border-plague-white bg-plague-white text-plague-black' : 'border-plague-black bg-plague-white'}`}>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Network</p>
-          <p className="mt-2 font-mono text-sm">Stellar Testnet</p>
+          <p className="mt-2 font-mono text-sm">Celo Alfajores</p>
         </div>
         <div className={`border-3 p-3 ${isDark ? 'border-plague-white bg-plague-red text-plague-white' : 'border-plague-black bg-plague-red text-plague-white'}`}>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Balance</p>
-          <p className="mt-2 font-display text-4xl leading-none">128 XLM</p>
+          <p className="mt-2 font-display text-4xl leading-none">128 CELO</p>
         </div>
       </div>
 

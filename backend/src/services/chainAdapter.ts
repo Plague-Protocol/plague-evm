@@ -2,7 +2,7 @@
  * chainAdapter.ts
  *
  * Celo EVM chain adapter for the Plague Protocol backend.
- * Replaces the former @stellar/stellar-sdk adapter.
+ * viem-based chain adapter for Celo EVM.
  *
  * Responsibilities:
  *  - Wraps viem public + wallet clients for the game contract

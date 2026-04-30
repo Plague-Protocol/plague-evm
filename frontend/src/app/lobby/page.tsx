@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 
 // ─── Mock room data ─────────────────────────────────────────────────────────
 // expiresInSecs: seconds from page-load until the room expires (waiting rooms only)
-// stake / proofFee: XLM amounts for display
+// stake / proofFee: CELO amounts for display
 const ROOM_TEMPLATES = [
   {
     name: 'Genesis Lobby',
@@ -115,7 +115,7 @@ export default function LobbyPage() {
             ACTIVE ROOMS
           </h1>
           <p className="max-w-xl font-body text-lg" style={{ color: '#b4c1d1' }}>
-            Join a waiting room, stake XLM, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
+            Join a waiting room, stake CELO, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
           </p>
         </div>
       </header>
@@ -152,7 +152,7 @@ export default function LobbyPage() {
                     <input
                       className="w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
                       style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
-                      defaultValue="10 XLM stake"
+                      defaultValue="10 CELO stake"
                       aria-label="Stake"
                       readOnly
                     />
@@ -167,7 +167,7 @@ export default function LobbyPage() {
                     className="w-full rounded-lg border py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
                     style={{ backgroundColor: 'transparent', borderColor: 'rgba(168,85,247,0.5)', color: '#a855f7' }}
                   >
-                    Connect Freighter (Next)
+                    Connect Wallet (MetaMask / Valora)
                   </button>
                 </div>
 
@@ -296,14 +296,14 @@ export default function LobbyPage() {
                           <div className="text-center">
                             <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Stake</p>
                             <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>
-                              {room.stake} XLM
+                              {room.stake} CELO
                             </p>
                           </div>
                           {/* Proof Fee */}
                           <div className="text-center">
                             <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Proof Fee</p>
                             <p className="font-display text-lg leading-none" style={{ color: '#06b6d4' }}>
-                              {room.proofFee} XLM
+                              {room.proofFee} CELO
                             </p>
                           </div>
                           {/* Expiry countdown — waiting rooms only */}
@@ -345,7 +345,7 @@ export default function LobbyPage() {
                   Integration Roadmap
                 </h3>
                 <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#b4c1d1' }}>
-                  Next milestone: wallet auth, room creation, and stake escrow wired to Soroban contracts
+                  Next milestone: wallet auth, room creation, and stake escrow wired to Celo contracts
                   and backend APIs.
                 </p>
               </div>

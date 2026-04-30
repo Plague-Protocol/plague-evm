@@ -20,7 +20,7 @@ const features = [
     phase: '02',
     title: 'Vote & Eliminate',
     description:
-      'The town votes to eliminate suspected carriers. Submit on-chain votes that are transparent, final, and secured by Soroban smart contracts.',
+      'The town votes to eliminate suspected carriers. Submit on-chain votes that are transparent, final, and secured by Celo smart contracts.',
   },
   {
     icon: '🔮',
@@ -35,11 +35,11 @@ const mechanics = [
   {
     icon: '⛓️',
     title: 'On-Chain Escrow',
-    desc: 'Stakes locked in Soroban contracts. Winners auto-claim, losers auto-drain. No trust required.',
+    desc: 'Stakes locked in Solidity contracts on Celo. Winners auto-claim, losers auto-drain. No trust required.',
   },
   {
     icon: '🌐',
-    title: 'Stellar Speed',
+    title: 'Celo Speed',
     desc: 'Transactions finalize in under 5 seconds. Real-time game state without gas anxiety.',
   },
   {
@@ -89,7 +89,7 @@ export default function HomePage() {
               className="rounded-full border px-4 py-1.5 font-mono text-xs uppercase tracking-[0.22em]"
               style={{ borderColor: 'rgba(230,51,41,0.4)', backgroundColor: 'rgba(230,51,41,0.08)', color: '#e63329' }}
             >
-              PlagueProtocol · Stellar × Soroban × Noir ZK
+              PlagueProtocol · Celo × EVM × Noir ZK
             </span>
 
             <h1 className="max-w-5xl font-display leading-[0.88]">
@@ -110,7 +110,7 @@ export default function HomePage() {
             </h1>
 
             <p className="max-w-2xl font-body text-lg leading-relaxed" style={{ color: '#b4c1d1' }}>
-              A zero-knowledge social deduction game on Stellar. Deceive, vote, prove — every action
+              A zero-knowledge social deduction game on Celo. Deceive, vote, prove — every action
               is on-chain and verifiable.
             </p>
 
@@ -161,8 +161,8 @@ export default function HomePage() {
         <div className="overflow-hidden">
           <div className="ticker" style={{ color: '#a855f7' }}>
             OPEN SOURCE MULTIPLAYER PROTOCOL&nbsp;&nbsp;|&nbsp;&nbsp;ROOM ESCROW&nbsp;&nbsp;|&nbsp;&nbsp;VOTE
-            RESOLUTION&nbsp;&nbsp;|&nbsp;&nbsp;ZK COMMITMENTS&nbsp;&nbsp;|&nbsp;&nbsp;STELLAR
-            NETWORK&nbsp;&nbsp;|&nbsp;&nbsp;SOROBAN CONTRACTS&nbsp;&nbsp;|&nbsp;&nbsp;NOIR
+            RESOLUTION&nbsp;&nbsp;|&nbsp;&nbsp;ZK COMMITMENTS&nbsp;&nbsp;|&nbsp;&nbsp;CELO
+            NETWORK&nbsp;&nbsp;|&nbsp;&nbsp;SOLIDITY CONTRACTS&nbsp;&nbsp;|&nbsp;&nbsp;NOIR
             CIRCUITS&nbsp;&nbsp;|&nbsp;&nbsp;OPEN SOURCE MULTIPLAYER PROTOCOL&nbsp;&nbsp;|&nbsp;&nbsp;ROOM
             ESCROW&nbsp;&nbsp;|&nbsp;&nbsp;VOTE RESOLUTION&nbsp;&nbsp;|&nbsp;&nbsp;ZK COMMITMENTS&nbsp;&nbsp;|
           </div>
@@ -291,7 +291,7 @@ export default function HomePage() {
               FIND PATIENT ZERO.
             </h2>
             <p className="max-w-xl font-body text-xl" style={{ color: '#b4c1d1' }}>
-              Or become them. Every session is a new social experiment on Stellar.
+              Or become them. Every session is a new social experiment on Celo.
             </p>
           </div>
 

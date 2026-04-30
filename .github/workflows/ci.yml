@@ -52,28 +52,18 @@ jobs:
         run: npm test -- --passWithNoTests || true
 
   contracts:
-    name: Contracts — fmt, clippy, test
+    name: Contracts — build, test (Foundry)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Check contracts directory
-        run: |
-          if [ -f contracts/Cargo.toml ]; then
-            cd contracts
-            cargo fmt --check || true
-            cargo clippy -- -D warnings || true
-            cargo test || true
-          else
-            echo "No contracts found yet — skipping"
-          fi
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Build contracts
+        run: forge build
+      - name: Run tests
+        run: forge test -vvv
 
   zk:
     name: ZK Circuits — compile, test

@@ -38,7 +38,7 @@ export default function LeaderboardPage() {
             LEADERBOARD
           </h1>
           <p className="max-w-xl font-body text-lg" style={{ color: '#b4c1d1' }}>
-            Global rankings of the deadliest operatives on Stellar.
+            Global rankings of the deadliest operatives on Celo.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {tabs.map((tab, i) => (
