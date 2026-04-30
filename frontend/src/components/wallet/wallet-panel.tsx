@@ -1,9 +1,53 @@
-type WalletPanelProps = {
-  variant?: 'dark' | 'light'
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useWallet } from '@/hooks/useWallet'
+import { createPublicClient, http, parseAbi } from 'viem'
+import { celoAlfajores, celo } from 'viem/chains'
+
+const CUSD_ABI = parseAbi([
+  'function balanceOf(address account) external view returns (uint256)',
+])
+
+const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
+  44787: '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1', // Alfajores
+  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca', // Mainnet
 }
+
+const CHAIN_NAMES: Record<number, string> = {
+  44787: 'Celo Alfajores',
+  42220: 'Celo Mainnet',
+}
+
+function useBalance(address: `0x${string}` | null, chainId: number | null) {
+  const [balance, setBalance] = useState<string | null>(null)
+  useEffect(() => {
+    if (!address || !chainId) { setBalance(null); return }
+    const cUSDAddress = CUSD_ADDRESSES[chainId]
+    if (!cUSDAddress) { setBalance(null); return }
+    const client = createPublicClient({
+      chain:     chainId === 42220 ? celo : celoAlfajores,
+      transport: http(),
+    })
+    client.readContract({ address: cUSDAddress, abi: CUSD_ABI, functionName: 'balanceOf', args: [address] })
+      .then(raw => setBalance((Number(raw) / 1e18).toFixed(2)))
+      .catch(() => setBalance(null))
+  }, [address, chainId])
+  return balance
+}
+
+type WalletPanelProps = Readonly<{
+  variant?: 'dark' | 'light'
+}>
 
 export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
   const isDark = variant === 'dark'
+  const { isConnected, address, chainId, isLoading, error, connect, disconnect, switchToCelo } = useWallet()
+  const balance = useBalance(address, chainId)
+
+  const networkName = chainId ? (CHAIN_NAMES[chainId] ?? `Chain ${chainId}`) : '—'
+  const shortAddress = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'
+  const isWrongNetwork = isConnected && chainId !== null && !CUSD_ADDRESSES[chainId]
 
   return (
     <section
@@ -17,33 +61,70 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
           <p className={`font-mono text-xs uppercase tracking-[0.2em] ${isDark ? 'text-plague-white/75' : 'text-plague-black/65'}`}>
             Wallet Status
           </p>
-          <h3 className="mt-2 font-display text-4xl leading-none">MetaMask</h3>
+          <h3 className="mt-2 font-display text-4xl leading-none">
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </h3>
         </div>
-        <span className="status-dot online" />
+        <span className={`inline-block h-3 w-3 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`} />
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className={`border-3 p-3 ${isDark ? 'border-plague-white bg-plague-white text-plague-black' : 'border-plague-black bg-plague-yellow'}`}>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Address</p>
-          <p className="mt-2 font-mono text-sm">GB3A...QJ7N</p>
+      {isConnected && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className={`border p-3 rounded ${isDark ? 'border-white/20 bg-white/5' : 'border-black/20 bg-black/5'}`}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400">Address</p>
+            <p className="mt-2 font-mono text-sm" title={address ?? ''}>{shortAddress}</p>
+          </div>
+          <div className={`border p-3 rounded ${isDark ? 'border-white/20 bg-white/5' : 'border-black/20 bg-black/5'}`}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400">Network</p>
+            <p className={`mt-2 font-mono text-sm ${isWrongNetwork ? 'text-red-400' : ''}`}>{networkName}</p>
+          </div>
+          <div className={`border p-3 rounded ${isDark ? 'border-white/20 bg-white/5' : 'border-black/20 bg-black/5'}`}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400">cUSD Balance</p>
+            <p className="mt-2 font-display text-2xl leading-none">{balance === null ? '…' : `${balance} cUSD`}</p>
+          </div>
         </div>
-        <div className={`border-3 p-3 ${isDark ? 'border-plague-white bg-plague-white text-plague-black' : 'border-plague-black bg-plague-white'}`}>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Network</p>
-          <p className="mt-2 font-mono text-sm">Celo Alfajores</p>
-        </div>
-        <div className={`border-3 p-3 ${isDark ? 'border-plague-white bg-plague-red text-plague-white' : 'border-plague-black bg-plague-red text-plague-white'}`}>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Balance</p>
-          <p className="mt-2 font-display text-4xl leading-none">128 cUSD</p>
-        </div>
-      </div>
+      )}
+
+      {isWrongNetwork && (
+        <p className="mt-3 font-mono text-xs text-red-400">
+          Switch to Celo to use Plague Protocol.
+        </p>
+      )}
+
+      {error && (
+        <p className="mt-3 font-mono text-xs text-red-400">{error}</p>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-3">
-        <button className={`btn-brutal px-4 py-3 text-xs ${isDark ? 'bg-plague-yellow text-plague-black' : 'bg-plague-black text-plague-white'}`}>
-          Connect Wallet Mock
-        </button>
-        <button className={`btn-brutal px-4 py-3 text-xs ${isDark ? 'bg-plague-white text-plague-black' : 'bg-plague-white text-plague-black'}`}>
-          View Session
-        </button>
+        {isConnected ? (
+          <>
+            {isWrongNetwork && (
+              <button
+                onClick={() => switchToCelo('testnet')}
+                className="rounded border px-4 py-3 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#0a0e27' }}
+              >
+                Switch to Celo
+              </button>
+            )}
+            <button
+              onClick={disconnect}
+              className="rounded border px-4 py-3 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90"
+              style={{ borderColor: 'rgba(230,51,41,0.5)', color: '#e63329' }}
+            >
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={connect}
+            disabled={isLoading}
+            className="rounded border px-4 py-3 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: '#a855f7', borderColor: '#a855f7', color: '#f0f4f8' }}
+          >
+            {isLoading ? 'Connecting…' : 'Connect Wallet'}
+          </button>
+        )}
       </div>
     </section>
   )
