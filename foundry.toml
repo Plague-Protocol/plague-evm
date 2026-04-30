@@ -5,13 +5,11 @@ libs      = ["contracts/lib"]
 test      = "contracts/test"
 script    = "contracts/script"
 solc      = "0.8.24"
+optimizer         = true
+optimizer_runs    = 200
 
 # Run `forge install foundry-rs/forge-std` to populate contracts/lib/forge-std
 # before compiling tests or scripts.
-
-[profile.default.optimizer]
-enabled = true
-runs    = 200
 
 [rpc_endpoints]
 celo_testnet = "${CELO_TESTNET_RPC}"   # https://alfajores-forno.celo-testnet.org

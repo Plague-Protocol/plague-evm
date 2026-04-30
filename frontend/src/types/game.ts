@@ -156,18 +156,25 @@ export interface Vote {
 
 // ─── ZK Proof ──────────────────────────────────────────────────────────────
 
+/**
+ * Honk proof from @noir-lang/backend_barretenberg.
+ * `proof` is the raw proof bytes as a number array (serialised Uint8Array).
+ * `publicInputs` are the circuit's public input field elements as hex strings.
+ */
 export interface ZKProof {
-  proof: {
-    pi_a: string[]
-    pi_b: string[][]
-    pi_c: string[]
-  }
-  publicSignals: string[]
+  proof: number[]
+  publicInputs: string[]
+  circuitType: 'role' | 'infection' | 'innocence'
+  /** Only present on innocence/infection proofs */
+  nullifier?: string
 }
 
 export interface RoleCommitment {
+  /** Poseidon(role, secret) as 0x-prefixed hex field element */
   commitment: string
-  nullifier: string
+  role: 'patient_zero' | 'clean'
+  /** Player's private secret as 0x-prefixed hex — NEVER sent to server */
+  secret: string
 }
 
 /**

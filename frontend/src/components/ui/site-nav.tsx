@@ -4,6 +4,7 @@ const navItems = [
   { href: '/', label: 'Home' },
   { href: '/lobby', label: 'Lobby' },
   { href: '/game', label: 'Match' },
+  { href: '/how-to-play', label: 'Rules' },
   { href: '/leaderboard', label: 'Leaderboard' },
 ] as const
 

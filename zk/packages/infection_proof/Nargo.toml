@@ -1,0 +1,6 @@
+[package]
+name = "infection_proof"
+type = "bin"
+authors = ["Plague Protocol"]
+
+[dependencies]

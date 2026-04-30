@@ -13,6 +13,9 @@ import "../src/ZKVerifier.sol";
  *   PRIVATE_KEY        Deployer private key (hex, no 0x prefix)
  *   BACKEND_SIGNER     Address of the off-chain game server wallet
  *   PLATFORM_RECEIVER  Address to receive proof fees + 0.3% pot fees
+ *   CUSD_TOKEN         cUSD ERC-20 address for the target network
+ *                       Alfajores: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
+ *                       Mainnet  : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
  *   ZK_VERIFIER_ADDR   If set, uses an existing verifier instead of deploying stub
@@ -32,15 +35,17 @@ import "../src/ZKVerifier.sol";
  */
 contract DeployScript is Script {
     function run() external {
-        uint256 deployerKey   = vm.envUint("PRIVATE_KEY");
-        address backendSigner = vm.envAddress("BACKEND_SIGNER");
+        uint256 deployerKey      = vm.envUint("PRIVATE_KEY");
+        address backendSigner    = vm.envAddress("BACKEND_SIGNER");
         address platformReceiver = vm.envAddress("PLATFORM_RECEIVER");
+        address cUSDToken        = vm.envAddress("CUSD_TOKEN");
 
         // Deployer address derived from the key
         address deployer = vm.addr(deployerKey);
         console.log("Deployer           :", deployer);
         console.log("Backend signer     :", backendSigner);
         console.log("Platform receiver  :", platformReceiver);
+        console.log("cUSD token         :", cUSDToken);
 
         vm.startBroadcast(deployerKey);
 
@@ -59,7 +64,7 @@ contract DeployScript is Script {
 
         // ── PlagueGame ───────────────────────────────────────────────────────────
         PlagueGame game = new PlagueGame();
-        game.initialize(deployer, backendSigner, zkVerifierAddr, platformReceiver);
+        game.initialize(deployer, backendSigner, zkVerifierAddr, platformReceiver, cUSDToken);
         console.log("PlagueGame deployed       :", address(game));
 
         vm.stopBroadcast();

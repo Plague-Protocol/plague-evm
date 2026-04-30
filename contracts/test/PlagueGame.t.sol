@@ -5,35 +5,75 @@ import "forge-std/Test.sol";
 import "../src/PlagueGame.sol";
 import "../src/ZKVerifier.sol";
 
+/// @dev Minimal ERC-20 mock used by tests in place of real cUSD.
+contract MockERC20 {
+    mapping(address => uint256)                     public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    string  public name     = "Mock cUSD";
+    string  public symbol   = "mcUSD";
+    uint8   public decimals = 18;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "ERC20: insufficient balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to]         += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(balanceOf[from] >= amount,              "ERC20: insufficient balance");
+        require(allowance[from][msg.sender] >= amount,  "ERC20: insufficient allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from]             -= amount;
+        balanceOf[to]               += amount;
+        return true;
+    }
+}
+
 contract PlagueGameTest is Test {
     PlagueGame  game;
     ZKVerifier  zkVerifier;
+    MockERC20   token;
 
-    address admin   = makeAddr("admin");
-    address backend = makeAddr("backend");
+    address admin    = makeAddr("admin");
+    address backend  = makeAddr("backend");
     address platform = makeAddr("platform");
-    address host    = makeAddr("host");
+    address host     = makeAddr("host");
 
     // Six players — enough for minPlayers (4) and a meaningful game
     address[] players;
 
-    uint256 constant STAKE = 1 ether;
-    uint256 constant FEE   = 0.1 ether;
+    uint256 constant STAKE   = 10e18;   // 10 cUSD
+    uint256 constant FEE     = 1e18;    // 1  cUSD (proof fee)
+    uint256 constant MINT    = 1000e18; // token balance per participant
 
     function setUp() public {
-        // Fund all participants
-        vm.deal(host, 100 ether);
+        // Deploy mock cUSD token
+        token = new MockERC20();
+
+        // Fund all participants with mock cUSD
+        token.mint(host, MINT);
         for (uint8 i = 0; i < 6; i++) {
             address p = makeAddr(string(abi.encodePacked("player", i)));
             players.push(p);
-            vm.deal(p, 100 ether);
+            token.mint(p, MINT);
         }
 
         // Deploy with bypass ZK verifier so tests don't need real Noir proofs
         vm.startPrank(admin);
         zkVerifier = new ZKVerifier(true);
         game       = new PlagueGame();
-        game.initialize(admin, backend, address(zkVerifier), platform);
+        game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
     }
 
@@ -42,7 +82,7 @@ contract PlagueGameTest is Test {
     function test_InitializeOnce() public {
         vm.prank(admin);
         vm.expectRevert(PlagueGame.AlreadyInitialized.selector);
-        game.initialize(admin, backend, address(zkVerifier), platform);
+        game.initialize(admin, backend, address(zkVerifier), platform, address(token));
     }
 
     // ── createRoom ───────────────────────────────────────────────────────────────
@@ -75,8 +115,10 @@ contract PlagueGameTest is Test {
     function test_JoinRoom() public {
         _createRoom();
 
-        vm.prank(players[0]);
-        game.joinRoom{value: STAKE}(1);
+        vm.startPrank(players[0]);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
 
         PlagueGame.PlayerState memory p = game.getPlayer(1, players[0]);
         assertEq(p.staked, STAKE);
@@ -84,30 +126,32 @@ contract PlagueGameTest is Test {
         assertEq(p.addr, players[0]);
     }
 
-    function test_JoinRoom_WrongStake_Reverts() public {
+    function test_JoinRoom_NoApproval_Reverts() public {
         _createRoom();
         vm.prank(players[0]);
-        vm.expectRevert(PlagueGame.WrongStakeAmount.selector);
-        game.joinRoom{value: 0.5 ether}(1);
+        vm.expectRevert(); // ERC-20 insufficient allowance
+        game.joinRoom(1);
     }
 
     function test_JoinRoom_Duplicate_Reverts() public {
         _createRoom();
-        vm.prank(players[0]);
-        game.joinRoom{value: STAKE}(1);
-
-        vm.prank(players[0]);
+        vm.startPrank(players[0]);
+        token.approve(address(game), STAKE * 2);
+        game.joinRoom(1);
         vm.expectRevert(PlagueGame.AlreadyJoined.selector);
-        game.joinRoom{value: STAKE}(1);
+        game.joinRoom(1);
+        vm.stopPrank();
     }
 
     function test_JoinRoom_AfterExpiry_Reverts() public {
         _createRoom();
         vm.warp(block.timestamp + 601);
 
-        vm.prank(players[0]);
+        vm.startPrank(players[0]);
+        token.approve(address(game), STAKE);
         vm.expectRevert(PlagueGame.RoomExpiredError.selector);
-        game.joinRoom{value: STAKE}(1);
+        game.joinRoom(1);
+        vm.stopPrank();
     }
 
     function test_JoinRoom_Full_Reverts() public {
@@ -115,10 +159,12 @@ contract PlagueGameTest is Test {
         _fillRoom(); // fills up to maxPlayers (6)
 
         address extra = makeAddr("extra");
-        vm.deal(extra, 10 ether);
-        vm.prank(extra);
+        token.mint(extra, MINT);
+        vm.startPrank(extra);
+        token.approve(address(game), STAKE);
         vm.expectRevert(PlagueGame.RoomFull.selector);
-        game.joinRoom{value: STAKE}(1);
+        game.joinRoom(1);
+        vm.stopPrank();
     }
 
     // ── startGame ────────────────────────────────────────────────────────────────
@@ -145,31 +191,35 @@ contract PlagueGameTest is Test {
     function test_StartGame_TooFewPlayers_Reverts() public {
         _createRoom();
         // Only host joins (1 player, need 4)
-        vm.prank(host);
-        game.joinRoom{value: STAKE}(1);
-
-        vm.prank(host);
+        vm.startPrank(host);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
         vm.expectRevert(PlagueGame.NotEnoughPlayers.selector);
         game.startGame(1);
+        vm.stopPrank();
     }
 
     // ── expireRoom ───────────────────────────────────────────────────────────────
 
     function test_ExpireRoom_Refunds() public {
         _createRoom();
-        vm.prank(players[0]);
-        game.joinRoom{value: STAKE}(1);
-        vm.prank(players[1]);
-        game.joinRoom{value: STAKE}(1);
+        vm.startPrank(players[0]);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
+        vm.startPrank(players[1]);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
 
-        uint256 balBefore0 = players[0].balance;
-        uint256 balBefore1 = players[1].balance;
+        uint256 balBefore0 = token.balanceOf(players[0]);
+        uint256 balBefore1 = token.balanceOf(players[1]);
 
         vm.warp(block.timestamp + 601);
         game.expireRoom(1);
 
-        assertEq(players[0].balance, balBefore0 + STAKE);
-        assertEq(players[1].balance, balBefore1 + STAKE);
+        assertEq(token.balanceOf(players[0]), balBefore0 + STAKE);
+        assertEq(token.balanceOf(players[1]), balBefore1 + STAKE);
         assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
     }
 
@@ -230,8 +280,8 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.openVoting(1);
 
-        // 5 players all vote for players[0]
-        for (uint256 i = 1; i < 6; i++) {
+        // 5 players (players[1..4] + host) vote for players[0] — players[5] is not in the room
+        for (uint256 i = 1; i < 5; i++) {
             vm.prank(players[i]);
             game.castVote(1, players[0]);
         }
@@ -269,8 +319,8 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.openVoting(1);
 
-        // All others vote for players[1]
-        for (uint256 i = 0; i < 6; i++) {
+        // players[0,2,3,4] and host vote for players[1] — players[5] is not in the room
+        for (uint256 i = 0; i < 5; i++) {
             if (players[i] == players[1]) continue;
             vm.prank(players[i]);
             game.castVote(1, players[1]);
@@ -404,6 +454,43 @@ contract PlagueGameTest is Test {
         game.submitInnocenceProof(1, keccak256("comm-2"), nullifier, "");
     }
 
+    // ── Proof fee charged after free slot ────────────────────────────────────────
+
+    function test_ProofFee_ChargedAfterFreeSlotUsed() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        // Round 1 — free proof (no token approval needed)
+        vm.prank(players[1]);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("null-r1"), "");
+
+        // End round 1 — vote to eliminate a clean player so the infected player survives.
+        // players[0] (infected) votes for players[4] → players[4] gets 2 votes, others 1 self-vote.
+        vm.prank(backend);
+        game.openVoting(1);
+        vm.prank(players[0]);
+        game.castVote(1, players[4]);
+        game.resolveRound(1); // players[4] eliminated; game continues
+
+        // Round 2 — paid proof; approve FEE before submitting
+        vm.prank(backend);
+        game.assignInfection(1, players[2]);
+
+        uint256 balBefore = token.balanceOf(players[1]);
+        vm.startPrank(players[1]);
+        token.approve(address(game), FEE);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("null-r2"), "");
+        vm.stopPrank();
+
+        // Fee should have been deducted
+        assertEq(token.balanceOf(players[1]), balBefore - FEE);
+    }
+
     // ── Absent-vote rule ─────────────────────────────────────────────────────────
 
     function test_AbsentVoteRule_SelfVote_WhenNoLeader() public {
@@ -461,10 +548,13 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.openVoting(1);
 
-        // End round quickly via absent-vote rule path
-        game.resolveRound(1);
+        // Vote to eliminate a clean player (host) so the infected player survives into round 2.
+        // players[0] (infected) votes for host → host gets 2 votes (explicit + self), all others 1 self-vote.
+        vm.prank(players[0]);
+        game.castVote(1, host);
+        game.resolveRound(1); // host eliminated; game continues (infected still alive)
 
-        // Next infection phase: trying to re-infect already infected player must fail
+        // Next infection phase: trying to re-infect already-infected player must fail
         vm.prank(backend);
         vm.expectRevert(PlagueGame.InvalidInfectionTarget.selector);
         game.assignInfection(1, players[0]);
@@ -484,7 +574,11 @@ contract PlagueGameTest is Test {
 
         vm.prank(backend);
         game.openVoting(1);
-        game.resolveRound(1);
+        // Vote to eliminate players[4] (clean) so infected players[0] survives into round 2.
+        // players[0] votes for players[4] → players[4] gets 2 votes, all others get 1 self-vote.
+        vm.prank(players[0]);
+        game.castVote(1, players[4]);
+        game.resolveRound(1); // players[4] eliminated; game continues
 
         // Round 2: B infects E = players[1]
         vm.prank(backend);
@@ -495,6 +589,7 @@ contract PlagueGameTest is Test {
         game.openVoting(1);
 
         // Eliminate current patient zero (players[0])
+        // players[4] was eliminated in round 1; remaining voters: host + players[0..3]
         vm.prank(host);
         game.castVote(1, players[0]);
         vm.prank(players[1]);
@@ -502,8 +597,6 @@ contract PlagueGameTest is Test {
         vm.prank(players[2]);
         game.castVote(1, players[0]);
         vm.prank(players[3]);
-        game.castVote(1, players[0]);
-        vm.prank(players[4]);
         game.castVote(1, players[0]);
         vm.prank(players[0]);
         game.castVote(1, players[0]);
@@ -521,10 +614,7 @@ contract PlagueGameTest is Test {
     // ── ZKVerifier bypass toggle ──────────────────────────────────────────────────
 
     function test_ZKVerifier_BypassOff_InvalidProof_Reverts() public {
-        // Disable bypass — proofs must be real (empty bytes will fail)
-        vm.prank(admin);
-        zkVerifier.setBypass(false);
-
+        // Set up the game with bypass ON so commitments and infection assignment succeed.
         _createAndStart();
         _submitAllCommitments();
 
@@ -534,7 +624,11 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.assignInfection(1, players[0]);
 
-        // Empty proof should be rejected when bypass is off
+        // NOW disable bypass — subsequent proof submissions must be real.
+        vm.prank(admin);
+        zkVerifier.setBypass(false);
+
+        // Empty innocence proof should be rejected when bypass is off.
         vm.prank(players[1]);
         vm.expectRevert(PlagueGame.InvalidProof.selector);
         game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("nullifier"), "");
@@ -547,13 +641,18 @@ contract PlagueGameTest is Test {
         game.createRoom(6, STAKE, FEE, 600);
     }
 
-    /// @dev Host + 5 players join (6 total = maxPlayers)
+    /// @dev Host + 5 players approve and join (6 total = maxPlayers)
     function _fillRoom() internal {
-        vm.prank(host);
-        game.joinRoom{value: STAKE}(1);
+        vm.startPrank(host);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
+
         for (uint256 i = 0; i < 5; i++) {
-            vm.prank(players[i]);
-            game.joinRoom{value: STAKE}(1);
+            vm.startPrank(players[i]);
+            token.approve(address(game), STAKE);
+            game.joinRoom(1);
+            vm.stopPrank();
         }
     }
 

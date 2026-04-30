@@ -303,7 +303,7 @@ export default function LobbyPage() {
                           <div className="text-center">
                             <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Proof Fee</p>
                             <p className="font-display text-lg leading-none" style={{ color: '#06b6d4' }}>
-                              {room.proofFee} cUSD (to platform)
+                              {room.proofFee} cUSD
                             </p>
                           </div>
                           {/* Expiry countdown — waiting rooms only */}

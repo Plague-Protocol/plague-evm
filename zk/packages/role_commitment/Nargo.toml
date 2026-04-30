@@ -1,0 +1,6 @@
+[package]
+name = "role_commitment"
+type = "bin"
+authors = ["Plague Protocol"]
+
+[dependencies]

@@ -14,11 +14,11 @@ import { celoAlfajores, celo } from 'viem/chains'
 const PLAGUE_GAME_ABI = parseAbi([
   // Write functions
   'function createRoom(uint32 maxPlayers, uint256 stakeAmount, uint256 proofFee, uint64 expirySecs) external returns (uint256 roomId)',
-  'function joinRoom(uint256 roomId) external payable',
+  'function joinRoom(uint256 roomId) external',
   'function startGame(uint256 roomId) external',
   'function submitRoleCommitment(uint256 roomId, bytes32 commitment, bytes calldata zkProof) external',
   'function castVote(uint256 roomId, address target) external',
-  'function submitInnocenceProof(uint256 roomId, bytes32 commitment, bytes32 nullifier, bytes calldata zkProof) external payable',
+  'function submitInnocenceProof(uint256 roomId, bytes32 commitment, bytes32 nullifier, bytes calldata zkProof) external',
   'function resolveRound(uint256 roomId) external',
   'function expireRoom(uint256 roomId) external',
   // View functions
@@ -125,17 +125,43 @@ export class PlagueContractClient {
     })
   }
 
-  /** Join a room and stake the required cUSD amount. */
-  async joinRoom(account: `0x${string}`, roomId: bigint, stakeAmount: bigint): Promise<void> {
+  /**
+   * Join a room and stake the required cUSD amount.
+   * Caller must have approved the game contract for at least stakeAmount cUSD beforehand.
+   * Use `approveStake` to send the ERC-20 approval transaction first.
+   */
+  async joinRoom(account: `0x${string}`, roomId: bigint): Promise<void> {
     const { request } = await this.publicClient.simulateContract({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'joinRoom',
       args:         [roomId],
-      value:        stakeAmount,
       account,
     })
     await this.sendTx(account, request)
+  }
+
+  /**
+   * Approve the game contract to spend `amount` cUSD on behalf of the caller.
+   * Must be called before `joinRoom` and before each paid `submitInnocenceProof`.
+   */
+  async approveCUSD(
+    account: `0x${string}`,
+    cUSDAddress: `0x${string}`,
+    amount: bigint,
+  ): Promise<void> {
+    const erc20Abi = parseAbi([
+      'function approve(address spender, uint256 amount) external returns (bool)',
+    ])
+    const wc = this.walletClient(account)
+    const hash = await wc.writeContract({
+      address:      cUSDAddress,
+      abi:          erc20Abi,
+      functionName: 'approve',
+      args:         [this.address, amount],
+      account,
+    })
+    await this.publicClient.waitForTransactionReceipt({ hash })
   }
 
   /** Host closes the join window and starts the game. */
@@ -185,8 +211,8 @@ export class PlagueContractClient {
 
   /**
    * Submit a ZK innocence proof during the Discussion phase.
-   * First proof per game is free (msg.value = 0). Subsequent proofs
-   * require msg.value = proofFee (goes to platform).
+   * First proof per game is free. Subsequent proofs require a prior ERC-20
+   * approval for the proof fee amount via `approveCUSD`.
    */
   async submitInnocenceProof(
     account: `0x${string}`,
@@ -194,14 +220,12 @@ export class PlagueContractClient {
     commitment: `0x${string}`,
     nullifier: `0x${string}`,
     zkProof: `0x${string}` = '0x',
-    proofFee: bigint = BigInt(0),
   ): Promise<void> {
     const { request } = await this.publicClient.simulateContract({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'submitInnocenceProof',
       args:         [roomId, commitment, nullifier, zkProof],
-      value:        proofFee,
       account,
     })
     await this.sendTx(account, request)

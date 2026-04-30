@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "packages/innocence_proof",
+  "packages/infection_proof",
+  "packages/role_commitment",
+]

@@ -1,0 +1,6 @@
+[package]
+name = "innocence_proof"
+type = "bin"
+authors = ["Plague Protocol"]
+
+[dependencies]

@@ -3,6 +3,13 @@ pragma solidity ^0.8.24;
 
 import "./ZKVerifier.sol";
 
+/// @dev Minimal ERC-20 interface used by the game contract.
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+}
+
 /**
  * @title PlagueGame
  * @notice On-chain game room, escrow, voting, ZK proof verification, and payout
@@ -126,6 +133,9 @@ contract PlagueGame {
 
     uint256 public platformFees;
     address public platformReceiver;
+    /// @dev cUSD token contract. Alfajores: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
+    ///      Mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
+    IERC20  public cUSDToken;
     bool private _initialized;
 
     // ─── Events ───────────────────────────────────────────────────────────────────
@@ -196,19 +206,23 @@ contract PlagueGame {
      * @param _backendSigner  Address authorised to drive phase transitions server-side.
      * @param _zkVerifier     Address of the IZKVerifier implementation (stub or Noir-generated).
      * @param _platformReceiver Address to receive platform fees (proof fees + 0.3% of pot).
+     * @param _cUSDToken      cUSD ERC-20 token address for the target network.
      */
     function initialize(
         address _admin,
         address _backendSigner,
         address _zkVerifier,
-        address _platformReceiver
+        address _platformReceiver,
+        address _cUSDToken
     ) external {
         if (_initialized) revert AlreadyInitialized();
-        _initialized    = true;
-        admin           = _admin;
-        backendSigner   = _backendSigner;
-        zkVerifier      = IZKVerifier(_zkVerifier);
-        platformReceiver = _platformReceiver;
+        require(_cUSDToken != address(0), "cUSD token address required");
+        _initialized      = true;
+        admin             = _admin;
+        backendSigner     = _backendSigner;
+        zkVerifier        = IZKVerifier(_zkVerifier);
+        platformReceiver  = _platformReceiver;
+        cUSDToken         = IERC20(_cUSDToken);
     }
 
     // ─── Room Management ──────────────────────────────────────────────────────────
@@ -227,7 +241,7 @@ contract PlagueGame {
         uint256 proofFee,
         uint64  expirySecs
     ) external returns (uint256 roomId) {
-        require(maxPlayers >= 4 && maxPlayers <= 20, "maxPlayers must be 4–20");
+        require(maxPlayers >= 4 && maxPlayers <= 20, "maxPlayers must be 4-20");
         require(stakeAmount > 0, "stakeAmount must be > 0");
         require(expirySecs >= 60, "expirySecs must be >= 60");
 
@@ -256,26 +270,30 @@ contract PlagueGame {
     }
 
     /**
-     * @notice Join an open room by staking the required cUSD amount.
+     * @notice Join an open room by transferring the required cUSD stake.
+     *         Caller must have approved this contract for at least stakeAmount cUSD.
      *         Only valid while the room is in Waiting status and before expiresAt.
      */
-    function joinRoom(uint256 roomId) external payable roomExists(roomId) {
+    function joinRoom(uint256 roomId) external roomExists(roomId) {
         Room storage r = rooms[roomId];
 
         if (r.status != RoomStatus.Waiting)                        revert RoomNotWaiting();
         if (block.timestamp >= r.expiresAt)                        revert RoomExpiredError();
         if (r.players.length >= r.config.maxPlayers)               revert RoomFull();
         if (players[roomId][msg.sender].addr != address(0))        revert AlreadyJoined();
-        if (msg.value != r.config.stakeAmount)                     revert WrongStakeAmount();
+
+        uint256 stake = r.config.stakeAmount;
+        bool ok = cUSDToken.transferFrom(msg.sender, address(this), stake);
+        require(ok, "cUSD transfer failed");
 
         r.players.push(msg.sender);
-        r.pot += msg.value;
+        r.pot += stake;
 
         players[roomId][msg.sender] = PlayerState({
             addr:                    msg.sender,
             status:                  PlayerStatus.Clean,
             roleCommitment:          bytes32(0),
-            staked:                  msg.value,
+            staked:                  stake,
             voteTarget:              address(0),
             joinedAt:                uint64(block.timestamp),
             freeProofUsed:           false,
@@ -420,7 +438,8 @@ contract PlagueGame {
      *
      *         Proof economy:
      *           - First proof per player per GAME is free (freeProofUsed flag).
-     *           - Subsequent proofs require msg.value == proofFee (added to pot).
+     *           - Subsequent proofs require the caller to have approved this contract
+     *             for at least proofFee cUSD (sent to platform, not added to pot).
      *           - Maximum 1 proof per player per ROUND (hasProofThisRound flag).
      *           - Nullifier = Poseidon(secret, roomId, round) prevents cross-round replay.
      *           - Only CLEAN players can produce a proof that satisfies the circuit.
@@ -434,7 +453,7 @@ contract PlagueGame {
         bytes32  commitment,
         bytes32  nullifier,
         bytes calldata zkProof
-    ) external payable roomExists(roomId) {
+    ) external roomExists(roomId) {
         Room storage r        = rooms[roomId];
         PlayerState storage p = players[roomId][msg.sender];
 
@@ -445,12 +464,15 @@ contract PlagueGame {
         if (p.hasProofThisRound)                     revert AlreadyProvedThisRound();
         if (usedNullifiers[roomId][nullifier])        revert NullifierUsed();
 
-        // Charge proof fee once the free proof has been used — send to platform, not pot
+        // Charge proof fee once the free proof has been used — sent to platform, not pot
         if (p.freeProofUsed) {
-            if (msg.value != r.config.proofFee) revert WrongStakeAmount();
-            platformFees += msg.value;
+            uint256 fee = r.config.proofFee;
+            if (fee > 0) {
+                bool ok = cUSDToken.transferFrom(msg.sender, address(this), fee);
+                require(ok, "Proof fee transfer failed");
+                platformFees += fee;
+            }
         } else {
-            if (msg.value != 0) revert WrongStakeAmount();
             p.freeProofUsed = true;
         }
 
@@ -623,7 +645,7 @@ contract PlagueGame {
             if (refund == 0) continue;
             p.staked = 0;
             r.pot   -= refund;
-            (bool ok,) = payable(playerList[i]).call{value: refund}("");
+            bool ok = cUSDToken.transfer(playerList[i], refund);
             require(ok, "Refund transfer failed");
         }
 
@@ -662,7 +684,7 @@ contract PlagueGame {
         require(platformReceiver != address(0), "platformReceiver not set");
         uint256 amount = platformFees;
         platformFees = 0;
-        (bool ok,) = payable(platformReceiver).call{value: amount}("");
+        bool ok = cUSDToken.transfer(platformReceiver, amount);
         require(ok, "Platform fee withdrawal failed");
     }
 
@@ -810,7 +832,7 @@ contract PlagueGame {
         view
         returns (address victim)
     {
-        bytes32 lowestHash = type(bytes32).max;
+        bytes32 lowestHash = bytes32(type(uint256).max);
         for (uint256 i = 0; i < candidates.length; i++) {
             if (players[roomId][candidates[i]].status != PlayerStatus.Infected) continue;
             bytes32 h = keccak256(abi.encodePacked(candidates[i]));
@@ -830,7 +852,7 @@ contract PlagueGame {
         view
         returns (address victim)
     {
-        bytes32 lowestHash = type(bytes32).max;
+        bytes32 lowestHash = bytes32(type(uint256).max);
         for (uint256 i = 0; i < candidates.length; i++) {
             PlayerState storage p = players[roomId][candidates[i]];
             if (p.status != PlayerStatus.Clean || p.hasProofThisRound) continue;
@@ -889,7 +911,7 @@ contract PlagueGame {
         r.pot = 0;
 
         for (uint256 i = 0; i < winnerCount; i++) {
-            (bool ok,) = payable(winners[i]).call{value: share}("");
+            bool ok = cUSDToken.transfer(winners[i], share);
             require(ok, "Payout transfer failed");
             emit PotDrained(roomId, winners[i], share);
         }
@@ -907,6 +929,4 @@ contract PlagueGame {
             p.hasProofThisRound = false;
         }
     }
-
-    receive() external payable {}
 }
