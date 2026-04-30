@@ -1,0 +1,45 @@
+node_modules/
+.next/
+dist/
+build/
+.env
+.env.local
+.env.production
+
+# Soroban/Rust (legacy — this repo is EVM only)
+target/
+*.wasm
+contracts/Cargo.toml
+contracts/src/game/
+contracts/src/token/
+contracts/src/zk/
+contracts/test/game_test.rs
+
+# Foundry build artefacts
+contracts/out/
+contracts/cache/
+contracts/lib/
+
+# ZK keys (never commit trusted setup keys)
+zk/keys/*.zkey
+zk/keys/*.ptau
+zk/proofs/*.json
+
+# TypeScript incremental build info
+**/*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+docs/ISSUES.md
+docs/GAME_FLOW.md
+docs/GAME_PLAYTHROUGH.md
+docs/CELO_PORT_HANDOFF.md
+.github/ISSUE_TEMPLATE/strict-ci.yml
+
