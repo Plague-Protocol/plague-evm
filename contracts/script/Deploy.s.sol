@@ -10,11 +10,12 @@ import "../src/ZKVerifier.sol";
  * @notice Foundry deployment script for the Plague Protocol on Celo.
  *
  * ── Required env vars ─────────────────────────────────────────────────────────
- *   PRIVATE_KEY       Deployer private key (hex, no 0x prefix)
- *   BACKEND_SIGNER    Address of the off-chain game server wallet
+ *   PRIVATE_KEY        Deployer private key (hex, no 0x prefix)
+ *   BACKEND_SIGNER     Address of the off-chain game server wallet
+ *   PLATFORM_RECEIVER  Address to receive proof fees + 0.3% pot fees
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
- *   ZK_VERIFIER_ADDR  If set, uses an existing verifier instead of deploying stub
+ *   ZK_VERIFIER_ADDR   If set, uses an existing verifier instead of deploying stub
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
  *   # Alfajores testnet (bypass ZK for dev)
@@ -33,11 +34,13 @@ contract DeployScript is Script {
     function run() external {
         uint256 deployerKey   = vm.envUint("PRIVATE_KEY");
         address backendSigner = vm.envAddress("BACKEND_SIGNER");
+        address platformReceiver = vm.envAddress("PLATFORM_RECEIVER");
 
         // Deployer address derived from the key
         address deployer = vm.addr(deployerKey);
-        console.log("Deployer       :", deployer);
-        console.log("Backend signer :", backendSigner);
+        console.log("Deployer           :", deployer);
+        console.log("Backend signer     :", backendSigner);
+        console.log("Platform receiver  :", platformReceiver);
 
         vm.startBroadcast(deployerKey);
 
@@ -56,7 +59,7 @@ contract DeployScript is Script {
 
         // ── PlagueGame ───────────────────────────────────────────────────────────
         PlagueGame game = new PlagueGame();
-        game.initialize(deployer, backendSigner, zkVerifierAddr);
+        game.initialize(deployer, backendSigner, zkVerifierAddr, platformReceiver);
         console.log("PlagueGame deployed       :", address(game));
 
         vm.stopBroadcast();

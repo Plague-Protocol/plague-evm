@@ -35,7 +35,7 @@ const mechanics = [
   {
     icon: '⛓️',
     title: 'On-Chain Escrow',
-    desc: 'Stakes locked in Solidity contracts on Celo. Winners auto-claim, losers auto-drain. No trust required.',
+    desc: 'Stakes locked in Solidity contracts on Celo. Players stake in cUSD. Winners auto-claim, losers auto-drain. Platform takes 0.3% fee.',
   },
   {
     icon: '🌐',

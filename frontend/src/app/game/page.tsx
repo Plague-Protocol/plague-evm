@@ -81,7 +81,7 @@ export default function GamePage() {
         <div className="mx-auto w-full max-w-6xl">
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: 'POT', value: '84 CELO', accent: '#f5c518' },
+              { label: 'POT', value: '84 cUSD', accent: '#f5c518' },
               { label: 'INFECTED', value: '2 / 8', accent: '#e63329' },
               { label: 'PROOF WINDOW', value: '18s', accent: '#a855f7' },
             ].map((stat) => (

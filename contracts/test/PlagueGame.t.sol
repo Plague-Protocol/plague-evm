@@ -11,6 +11,7 @@ contract PlagueGameTest is Test {
 
     address admin   = makeAddr("admin");
     address backend = makeAddr("backend");
+    address platform = makeAddr("platform");
     address host    = makeAddr("host");
 
     // Six players — enough for minPlayers (4) and a meaningful game
@@ -32,7 +33,7 @@ contract PlagueGameTest is Test {
         vm.startPrank(admin);
         zkVerifier = new ZKVerifier(true);
         game       = new PlagueGame();
-        game.initialize(admin, backend, address(zkVerifier));
+        game.initialize(admin, backend, address(zkVerifier), platform);
         vm.stopPrank();
     }
 
@@ -41,7 +42,7 @@ contract PlagueGameTest is Test {
     function test_InitializeOnce() public {
         vm.prank(admin);
         vm.expectRevert(PlagueGame.AlreadyInitialized.selector);
-        game.initialize(admin, backend, address(zkVerifier));
+        game.initialize(admin, backend, address(zkVerifier), platform);
     }
 
     // ── createRoom ───────────────────────────────────────────────────────────────

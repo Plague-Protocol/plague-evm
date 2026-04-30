@@ -7,6 +7,11 @@ import "./ZKVerifier.sol";
  * @title PlagueGame
  * @notice On-chain game room, escrow, voting, ZK proof verification, and payout
  *         for the Plague Protocol social deduction game on Celo.
+ *         Accepts cUSD (0x765DE816845861e75A25fCA122bb6022DB77Eaca) as payment.
+ *
+ *         Platform fees:
+ *           - Proof fees (first free, then charged per-proof) → platform wallet
+ *           - 0.3% of pot at end of game → platform wallet
  *
  * ── Room Lifecycle ─────────────────────────────────────────────────────────────
  *  Waiting → Starting → Active → Ended
@@ -38,8 +43,9 @@ import "./ZKVerifier.sol";
  *  3. currentRound >= maxRounds       → Infected wins (max rounds draw counts as infected win)
  *
  * ── Payout ─────────────────────────────────────────────────────────────────────
- *  pot = sum(stakes) + sum(paid proof fees)
- *  Alive players from the winning faction split equally; auto-paid by resolveRound.
+ *  pot = sum(stakes)
+ *  Proof fees are collected separately and sent to platform (not included in pot).
+ *  At game end: platform takes 0.3% of pot, remainder split among winners.
  */
 contract PlagueGame {
     // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -108,6 +114,8 @@ contract PlagueGame {
     address public backendSigner;
     IZKVerifier public zkVerifier;
 
+    uint256 public platformFees;
+    address public platformReceiver;
     bool private _initialized;
 
     // ─── Events ───────────────────────────────────────────────────────────────────
@@ -172,20 +180,23 @@ contract PlagueGame {
     // ─── Initialisation ───────────────────────────────────────────────────────────
 
     /**
-     * @param _admin          Address that owns admin functions (setBackendSigner, setZKVerifier).
+     * @param _admin          Address that owns admin functions (setBackendSigner, setZKVerifier, setPlatformReceiver).
      * @param _backendSigner  Address authorised to drive phase transitions server-side.
      * @param _zkVerifier     Address of the IZKVerifier implementation (stub or Noir-generated).
+     * @param _platformReceiver Address to receive platform fees (proof fees + 0.3% of pot).
      */
     function initialize(
         address _admin,
         address _backendSigner,
-        address _zkVerifier
+        address _zkVerifier,
+        address _platformReceiver
     ) external {
         if (_initialized) revert AlreadyInitialized();
         _initialized    = true;
         admin           = _admin;
         backendSigner   = _backendSigner;
         zkVerifier      = IZKVerifier(_zkVerifier);
+        platformReceiver = _platformReceiver;
     }
 
     // ─── Room Management ──────────────────────────────────────────────────────────
@@ -193,8 +204,8 @@ contract PlagueGame {
     /**
      * @notice Create a new waiting room. The caller becomes the host.
      * @param maxPlayers  Maximum number of participants (4–20).
-     * @param stakeAmount Amount of CELO (wei) each player must stake to join.
-     * @param proofFee    Fee per additional innocence proof after the free one.
+     * @param stakeAmount Amount of cUSD (wei) each player must stake to join.
+     * @param proofFee    Fee per additional innocence proof (goes to platform, not pot).
      * @param expirySecs  Seconds before an unfilled room auto-expires (min 60).
      * @return roomId     Incremented room counter — use as the room ID everywhere.
      */
@@ -409,10 +420,10 @@ contract PlagueGame {
         if (p.hasProofThisRound)                     revert AlreadyProvedThisRound();
         if (usedNullifiers[roomId][nullifier])        revert NullifierUsed();
 
-        // Charge proof fee once the free proof has been used
+        // Charge proof fee once the free proof has been used — send to platform, not pot
         if (p.freeProofUsed) {
             if (msg.value != r.config.proofFee) revert WrongStakeAmount();
-            r.pot += msg.value;
+            platformFees += msg.value;
         } else {
             if (msg.value != 0) revert WrongStakeAmount();
             p.freeProofUsed = true;
@@ -604,6 +615,22 @@ contract PlagueGame {
 
     // ─── Admin ────────────────────────────────────────────────────────────────────
 
+    function setPlatformReceiver(address newReceiver) external onlyAdmin {
+        platformReceiver = newReceiver;
+    }
+
+    /**
+     * @notice Withdraw accumulated platform fees (proof fees + 0.3% of pots).
+     *         Only callable by admin. Sent to platformReceiver.
+     */
+    function withdrawPlatformFees() external onlyAdmin {
+        require(platformReceiver != address(0), "platformReceiver not set");
+        uint256 amount = platformFees;
+        platformFees = 0;
+        (bool ok,) = payable(platformReceiver).call{value: amount}("");
+        require(ok, "Platform fee withdrawal failed");
+    }
+
     function setBackendSigner(address signer) external onlyAdmin {
         backendSigner = signer;
     }
@@ -741,8 +768,13 @@ contract PlagueGame {
     function _distributePot(uint256 roomId, GameOutcome outcome) internal {
         Room storage r          = rooms[roomId];
         address[] memory all    = r.players;
-        uint256 total           = r.pot;
-        if (total == 0) return;
+        uint256 potBeforeFee    = r.pot;
+        if (potBeforeFee == 0) return;
+
+        // Deduct 0.3% platform fee
+        uint256 platformFee = (potBeforeFee * 3) / 1000;  // 0.3%
+        uint256 potAfterFee = potBeforeFee - platformFee;
+        platformFees += platformFee;
 
         address[] memory winners = new address[](all.length);
         uint256 winnerCount = 0;
@@ -759,7 +791,7 @@ contract PlagueGame {
 
         if (winnerCount == 0) return;
 
-        uint256 share = total / winnerCount;
+        uint256 share = potAfterFee / winnerCount;
         r.pot = 0;
 
         for (uint256 i = 0; i < winnerCount; i++) {

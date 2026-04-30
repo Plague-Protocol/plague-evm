@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 
 // ─── Mock room data ─────────────────────────────────────────────────────────
 // expiresInSecs: seconds from page-load until the room expires (waiting rooms only)
-// stake / proofFee: CELO amounts for display
+// stake / proofFee: cUSD amounts for display
 const ROOM_TEMPLATES = [
   {
     name: 'Genesis Lobby',
@@ -115,7 +115,7 @@ export default function LobbyPage() {
             ACTIVE ROOMS
           </h1>
           <p className="max-w-xl font-body text-lg" style={{ color: '#b4c1d1' }}>
-            Join a waiting room, stake CELO, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
+            Join a waiting room, stake cUSD, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
           </p>
         </div>
       </header>
@@ -152,7 +152,7 @@ export default function LobbyPage() {
                     <input
                       className="w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
                       style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
-                      defaultValue="10 CELO stake"
+                      defaultValue="10 cUSD stake"
                       aria-label="Stake"
                       readOnly
                     />
@@ -296,14 +296,14 @@ export default function LobbyPage() {
                           <div className="text-center">
                             <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Stake</p>
                             <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>
-                              {room.stake} CELO
+                              {room.stake} cUSD
                             </p>
                           </div>
                           {/* Proof Fee */}
                           <div className="text-center">
                             <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Proof Fee</p>
                             <p className="font-display text-lg leading-none" style={{ color: '#06b6d4' }}>
-                              {room.proofFee} CELO
+                              {room.proofFee} cUSD (to platform)
                             </p>
                           </div>
                           {/* Expiry countdown — waiting rooms only */}

@@ -33,7 +33,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
         </div>
         <div className={`border-3 p-3 ${isDark ? 'border-plague-white bg-plague-red text-plague-white' : 'border-plague-black bg-plague-red text-plague-white'}`}>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Balance</p>
-          <p className="mt-2 font-display text-4xl leading-none">128 CELO</p>
+          <p className="mt-2 font-display text-4xl leading-none">128 cUSD</p>
         </div>
       </div>
 

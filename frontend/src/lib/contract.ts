@@ -125,7 +125,7 @@ export class PlagueContractClient {
     })
   }
 
-  /** Join a room and stake the required CELO amount. */
+  /** Join a room and stake the required cUSD amount. */
   async joinRoom(account: `0x${string}`, roomId: bigint, stakeAmount: bigint): Promise<void> {
     const { request } = await this.publicClient.simulateContract({
       address:      this.address,
@@ -186,7 +186,7 @@ export class PlagueContractClient {
   /**
    * Submit a ZK innocence proof during the Discussion phase.
    * First proof per game is free (msg.value = 0). Subsequent proofs
-   * require msg.value = proofFee.
+   * require msg.value = proofFee (goes to platform).
    */
   async submitInnocenceProof(
     account: `0x${string}`,
