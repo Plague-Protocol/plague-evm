@@ -35,7 +35,7 @@ interface WalletState {
 
 interface WalletContextValue extends WalletState {
   connect: () => Promise<void>
-  disconnect: () => void
+  disconnect: () => Promise<void>
   switchToCelo: (network?: 'mainnet' | 'testnet') => Promise<void>
   signMessage: (message: string) => Promise<`0x${string}`>
 }
@@ -141,7 +141,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   // ── Disconnect ────────────────────────────────────────────────────────────────
 
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
+    // Revoke dapp permissions so eth_accounts returns [] on next mount
+    try {
+      if (window.ethereum) {
+        await window.ethereum.request({
+          method: 'wallet_revokePermissions',
+          params: [{ eth_accounts: {} }],
+        })
+      }
+    } catch {
+      // wallet_revokePermissions may not be supported (e.g. Valora) — continue anyway
+    }
     setState({ isConnected: false, address: null, chainId: null, isLoading: false, error: null })
   }, [])
 
