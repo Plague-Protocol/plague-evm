@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ConnectButton } from './connect-button'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -56,16 +57,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
       </nav>
 
       {/* Wallet button */}
-      <button
-        className="flex-shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150 hover:opacity-90"
-        style={{
-          background: 'linear-gradient(135deg, #a855f7, #06b6d4)',
-          color: '#f0f4f8',
-          boxShadow: '0 0 12px rgba(168,85,247,0.4)',
-        }}
-      >
-        Connect Wallet
-      </button>
+      <ConnectButton />
     </header>
   )
 }
