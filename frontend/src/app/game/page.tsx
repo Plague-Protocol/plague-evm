@@ -136,12 +136,11 @@ function GamePageInner() {
         BigInt(round),
       )
       const proof = await proveInnocence({
-        role:       0,
-        secret:     BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64)),
-        roomId:     BigInt(roomId),
+        role:        'clean',
+        secret:      BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64)),
+        roomId:      BigInt(roomId),
         roundNumber: BigInt(round),
-        commitment: BigInt(commitment),
-        nullifier,
+        commitment,
       })
 
       const nullifierHex = `0x${nullifier.toString(16).padStart(64, '0')}` as `0x${string}`
