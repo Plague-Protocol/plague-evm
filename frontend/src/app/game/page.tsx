@@ -24,16 +24,16 @@ const PHASE_LABEL: Record<RoundPhase, string> = {
 
 const PHASE_COLOR: Record<RoundPhase, string> = {
   infection:  '#e63329',
-  discussion: '#a855f7',
+  discussion: '#39ff14',
   voting:     '#f5c518',
-  reveal:     '#06b6d4',
-  ended:      '#4a5568',
+  reveal:     '#d4c9b2',
+  ended:      '#4a5e44',
 }
 
 function playerStyle(status: string): { border: string; backgroundColor: string; color: string } {
   if (status === 'infected')   return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.15)', color: '#ff6b6b' }
-  if (status === 'eliminated') return { border: '2px solid #7a8592', backgroundColor: 'rgba(122,133,146,0.12)', color: '#7a8592' }
-  return { border: '2px solid #06b6d4', backgroundColor: 'rgba(6,182,212,0.1)', color: '#06b6d4' }
+  if (status === 'eliminated') return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
+  return { border: '2px solid #39ff14', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14' }
 }
 
 function formatCountdown(ms: number): string {
@@ -207,9 +207,9 @@ function GamePageInner() {
   // ── No roomId guard ───────────────────────────────────────────────────────
   if (!roomId) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#0a0e27', color: '#f0f4f8' }}>
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
         <p className="font-mono text-lg" style={{ color: '#e63329' }}>No room specified.</p>
-        <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#a855f7', color: '#a855f7' }}>
+        <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#39ff14', color: '#39ff14' }}>
           ← Back to Lobby
         </button>
       </main>
@@ -217,7 +217,9 @@ function GamePageInner() {
   }
 
   return (
-    <main className="min-h-screen" style={{ backgroundColor: '#0a0e27', color: '#f0f4f8' }}>
+    <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
+      <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
+      <div className="relative" style={{ zIndex: 1 }}>
       {/* Nav */}
       <div className="px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
@@ -228,11 +230,11 @@ function GamePageInner() {
       {/* Game Header */}
       <header
         className="relative overflow-hidden px-6 py-12"
-        style={{ borderBottom: '1px solid rgba(168,85,247,0.2)' }}
+        style={{ borderBottom: '1px solid rgba(57,255,20,0.2)' }}
       >
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <div className="absolute left-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-20 blur-3xl" style={{ backgroundColor: '#a855f7' }} />
-          <div className="absolute right-1/3 top-1/2 h-48 w-48 -translate-y-1/2 rounded-full opacity-15 blur-3xl" style={{ backgroundColor: '#06b6d4' }} />
+          <div className="absolute left-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-10 blur-3xl" style={{ backgroundColor: '#39ff14' }} />
+          <div className="absolute right-1/3 top-1/2 h-48 w-48 -translate-y-1/2 rounded-full opacity-10 blur-3xl" style={{ backgroundColor: '#cc1414' }} />
         </div>
 
         <div className="relative mx-auto w-full max-w-6xl">
@@ -252,16 +254,16 @@ function GamePageInner() {
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-6">
-            <h1 className="font-display text-7xl font-bold leading-none sm:text-8xl" style={{ color: '#f0f4f8' }}>
+            <h1 className="font-display text-7xl font-bold leading-none sm:text-8xl" style={{ color: '#d4c9b2' }}>
               {isLoading ? 'LOADING…' : round > 0 ? `ROUND ${round}` : room?.status === 'waiting' ? 'WAITING' : 'STARTING'}
             </h1>
             {phaseEndsAt > 0 && (
               <div
                 className="flex flex-col items-center rounded-xl border px-10 py-4"
-                style={{ borderColor: 'rgba(6,182,212,0.45)', backgroundColor: 'rgba(6,182,212,0.08)' }}
+                style={{ borderColor: 'rgba(57,255,20,0.45)', backgroundColor: 'rgba(57,255,20,0.06)' }}
               >
-                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#7a8592' }}>Time Left</p>
-                <p className="mt-1 font-display text-6xl font-bold leading-none tabular-nums" style={{ color: '#06b6d4', textShadow: '0 0 20px rgba(6,182,212,0.5)' }}>
+                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Time Left</p>
+                <p className="mt-1 font-display text-6xl font-bold leading-none tabular-nums" style={{ color: '#39ff14', textShadow: '0 0 20px rgba(57,255,20,0.5)' }}>
                   {formatCountdown(msLeft)}
                 </p>
               </div>
@@ -271,7 +273,7 @@ function GamePageInner() {
           {/* Connection status */}
           <div className="mt-3 flex items-center gap-2">
             <span className={`inline-block h-2 w-2 rounded-full ${socketOn ? 'bg-green-400' : 'bg-yellow-400'}`} />
-            <span className="font-mono text-xs" style={{ color: '#7a8592' }}>
+            <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
               {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
             </span>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
@@ -286,14 +288,14 @@ function GamePageInner() {
             {[
               { label: 'POT',          value: `${potCUSD} cUSD`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
-              { label: 'PROOF WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#a855f7' },
+              { label: 'PROOF WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#39ff14' },
             ].map((stat) => (
               <div
                 key={stat.label}
                 className="rise-in rounded-lg border p-4 text-center"
-                style={{ backgroundColor: '#161b35', borderColor: `${stat.accent}33` }}
+                style={{ backgroundColor: '#0a100a', borderColor: `${stat.accent}33` }}
               >
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>{stat.label}</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>{stat.label}</p>
                 <p className="mt-2 font-display text-3xl leading-none" style={{ color: stat.accent }}>{stat.value}</p>
               </div>
             ))}
@@ -310,13 +312,13 @@ function GamePageInner() {
             <div className="flex flex-col gap-6">
               <article
                 className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(168,85,247,0.2)' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)' }}
               >
                 <div className="flex items-center justify-between gap-4">
-                  <h2 className="font-display text-2xl leading-none" style={{ color: '#f0f4f8' }}>Containment Board</h2>
+                  <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Containment Board</h2>
                   <span
                     className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]"
-                    style={{ borderColor: 'rgba(168,85,247,0.35)', color: '#a855f7', backgroundColor: 'rgba(168,85,247,0.1)' }}
+                    style={{ borderColor: 'rgba(57,255,20,0.35)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}
                   >
                     {activePlayers.length} alive
                   </span>
@@ -325,10 +327,10 @@ function GamePageInner() {
                 {/* Player Grid */}
                 <div
                   className="mt-6 rounded-lg border p-5"
-                  style={{ backgroundColor: '#12172c', borderColor: 'rgba(168,85,247,0.15)' }}
+                  style={{ backgroundColor: '#0c1309', borderColor: 'rgba(57,255,20,0.15)' }}
                 >
                   {isLoading ? (
-                    <p className="text-center font-mono text-xs" style={{ color: '#7a8592' }}>Loading players…</p>
+                    <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Loading players…</p>
                   ) : room?.players?.length ? (
                     <div className="grid grid-cols-4 gap-3">
                       {room.players.map((p) => (
@@ -348,7 +350,7 @@ function GamePageInner() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-center font-mono text-xs" style={{ color: '#7a8592' }}>Waiting for players…</p>
+                    <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Waiting for players…</p>
                   )}
                 </div>
 
@@ -356,13 +358,13 @@ function GamePageInner() {
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div
                     className="rounded-lg border p-5"
-                    style={{ backgroundColor: '#1a1f3a', borderColor: 'rgba(168,85,247,0.18)' }}
+                    style={{ backgroundColor: '#0e180d', borderColor: 'rgba(57,255,20,0.18)' }}
                   >
-                    <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>Live Feed</p>
-                    <ul className="mt-3 space-y-2 font-mono text-xs max-h-32 overflow-y-auto" style={{ color: '#b4c1d1' }}>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Live Feed</p>
+                    <ul className="mt-3 space-y-2 font-mono text-xs max-h-32 overflow-y-auto" style={{ color: '#8fa882' }}>
                       {feed.length > 0 ? feed.map((msg, i) => (
                         <li key={i} className="flex gap-2">
-                          <span style={{ color: '#7a8592' }}>→</span> {msg}
+                          <span style={{ color: '#4a5e44' }}>→</span> {msg}
                         </li>
                       )) : (
                         <li className="text-gray-500">Waiting for game events…</li>
@@ -371,13 +373,13 @@ function GamePageInner() {
                   </div>
                   <div
                     className="rounded-lg border p-5"
-                    style={{ backgroundColor: `rgba(${PHASE_COLOR[phase] === '#e63329' ? '230,51,41' : phase === 'discussion' ? '168,85,247' : phase === 'voting' ? '245,197,24' : '6,182,212'},0.1)`, borderColor: `${PHASE_COLOR[phase]}4d` }}
+                    style={{ backgroundColor: `rgba(${PHASE_COLOR[phase] === '#e63329' ? '230,51,41' : phase === 'discussion' ? '57,255,20' : phase === 'voting' ? '245,197,24' : '143,168,130'},0.1)`, borderColor: `${PHASE_COLOR[phase]}4d` }}
                   >
-                    <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>Phase</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Phase</p>
                     <p className="mt-2 font-display text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>
                       {PHASE_LABEL[phase]}
                     </p>
-                    <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#b4c1d1' }}>
+                    <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                       {phase === 'infection'  && 'Infection spreading — new carrier assigned.'}
                       {phase === 'discussion' && 'Submit innocence proofs now before voting opens.'}
                       {phase === 'voting'     && 'Cast your vote to eliminate the suspected carrier.'}
@@ -391,12 +393,12 @@ function GamePageInner() {
                 {room?.status === 'starting' && (
                   <div
                     className="mt-5 rounded-lg border p-5"
-                    style={{ borderColor: 'rgba(168,85,247,0.35)', backgroundColor: 'rgba(168,85,247,0.08)' }}
+                    style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}
                   >
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#a855f7' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>
                       Submit Role Commitment
                     </p>
-                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#b4c1d1' }}>
+                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                       Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
                     </p>
                     <input
@@ -405,14 +407,14 @@ function GamePageInner() {
                       value={secretPhrase}
                       onChange={e => setSecretPhrase(e.target.value)}
                       className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                      style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
+                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
                     />
                     {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
                     <button
                       onClick={handleCommitRole}
                       disabled={!canCommit || !secretPhrase}
                       className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#a855f7', borderColor: '#a855f7', color: '#f0f4f8' }}
+                      style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#d4c9b2' }}
                     >
                       {committing ? 'Generating ZK Proof…' : 'Commit Role'}
                     </button>
@@ -423,12 +425,12 @@ function GamePageInner() {
                 {phase === 'discussion' && !proofDone && (
                   <div
                     className="mt-5 rounded-lg border p-5"
-                    style={{ borderColor: 'rgba(168,85,247,0.35)', backgroundColor: 'rgba(168,85,247,0.08)' }}
+                    style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}
                   >
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#a855f7' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>
                       Submit Innocence Proof
                     </p>
-                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#b4c1d1' }}>
+                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                       Prove you are clean before voting opens. Your first proof is free.
                       {localPlayer?.freeProofUsed && ' (Free proof used — fee will be charged.)'}
                     </p>
@@ -438,14 +440,14 @@ function GamePageInner() {
                       value={secretPhrase}
                       onChange={e => setSecretPhrase(e.target.value)}
                       className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                      style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
+                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
                     />
                     {proofError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{proofError}</p>}
                     <button
                       onClick={handleSubmitProof}
                       disabled={!canProve || !secretPhrase}
                       className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#a855f7', borderColor: '#a855f7', color: '#f0f4f8' }}
+                      style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#d4c9b2' }}
                     >
                       {proving ? 'Generating ZK Proof…' : 'Submit Innocence Proof'}
                     </button>
@@ -463,16 +465,16 @@ function GamePageInner() {
               {result && (
                 <article
                   className="rise-in rounded-lg border p-6"
-                  style={{ backgroundColor: '#161b35', borderColor: 'rgba(132,204,22,0.3)' }}
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.3)' }}
                 >
                   <h3 className="font-display text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
                   <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>
                     {result.outcome === 'clean_win' ? 'Clean Win' : result.outcome === 'infected_win' ? 'Infected Win' : 'Draw'}
                   </p>
-                  <p className="mt-3 font-mono text-sm" style={{ color: '#b4c1d1' }}>
+                  <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>
                     Pot per winner: {(Number(result.potPerWinner) / 1e18).toFixed(4)} cUSD
                   </p>
-                  <p className="mt-1 font-mono text-xs" style={{ color: '#7a8592' }}>
+                  <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
                     Winners: {result.winners.map(w => `${w.slice(0, 6)}…`).join(', ') || '—'}
                   </p>
                 </article>
@@ -485,10 +487,10 @@ function GamePageInner() {
               {/* Vote Panel */}
               <div
                 className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}
               >
-                <h3 className="font-display text-xl leading-none" style={{ color: '#f0f4f8' }}>Vote Panel</h3>
-                <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7a8592' }}>
+                <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
+                <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>
                   {phase === 'voting' ? 'Select suspected carrier' : 'Voting not open'}
                 </p>
 
@@ -504,7 +506,7 @@ function GamePageInner() {
                           style={{
                             borderColor: selectedVote === p.walletAddress ? '#f5c518' : 'rgba(230,51,41,0.35)',
                             backgroundColor: selectedVote === p.walletAddress ? 'rgba(245,197,24,0.1)' : 'rgba(230,51,41,0.1)',
-                            color: '#f0f4f8',
+                            color: '#d4c9b2',
                           }}
                         >
                           <span>{p.displayName}</span>
@@ -522,7 +524,7 @@ function GamePageInner() {
                       onClick={handleCastVote}
                       disabled={!selectedVote || voting}
                       className="mt-2 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#f0f4f8' }}
+                      style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#d4c9b2' }}
                     >
                       {voting ? 'Submitting…' : 'Cast Vote'}
                     </button>
@@ -534,7 +536,7 @@ function GamePageInner() {
                     {Object.entries(voteTally)
                       .sort(([, a], [, b]) => b - a)
                       .map(([addr, cnt]) => (
-                        <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#b4c1d1' }}>
+                        <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
                           <span>{addr.slice(0, 8)}…</span>
                           <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt !== 1 ? 's' : ''}</span>
                         </div>
@@ -546,7 +548,7 @@ function GamePageInner() {
               {/* Player Roster */}
               <div
                 className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '160ms' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '160ms' }}
               >
                 <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>Roster</p>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -562,7 +564,7 @@ function GamePageInner() {
                   )) ?? null}
                 </div>
                 {localPlayer && (
-                  <p className="mt-3 font-mono text-xs" style={{ color: '#7a8592' }}>
+                  <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
                     You: {localPlayer.displayName}
                     {localPlayer.role !== 'unknown' && ` · ${localPlayer.role}`}
                   </p>
@@ -573,13 +575,14 @@ function GamePageInner() {
               <a
                 href="/lobby"
                 className="rise-in rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
-                style={{ borderColor: 'rgba(168,85,247,0.35)', backgroundColor: 'rgba(168,85,247,0.08)', color: '#a855f7', display: 'block', animationDelay: '300ms' }}
+                style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14', display: 'block', animationDelay: '300ms' }}
               >
                 ← Back to Lobby
               </a>
             </aside>
           </div>
         </div>
+      </div>
       </div>
     </main>
   )
@@ -595,8 +598,8 @@ function getContractClient() {
 export default function GamePage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0a0e27' }}>
-        <p className="font-mono text-sm" style={{ color: '#7a8592' }}>Loading game…</p>
+      <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#060b06' }}>
+        <p className="font-mono text-sm" style={{ color: '#4a5e44' }}>Loading game…</p>
       </main>
     }>
       <GamePageInner />

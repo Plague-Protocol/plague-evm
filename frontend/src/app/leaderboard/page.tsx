@@ -7,12 +7,12 @@ const topPlayers = [
   { name: 'QuietOrbit', wins: 18, proofs: 83, reputation: 'Consensus builder', delta: '+2', badge: 'Town Anchor' },
 ]
 
-const rankColors = ['#f5c518', '#b4c1d1', '#cd7f32', '#7a8592']
+const rankColors = ['#f5c518', '#8fa882', '#cd7f32', '#4a5e44']
 const tabs = ['Global', 'Season 0', 'Proof Leaders', 'This Week']
 
 export default function LeaderboardPage() {
   return (
-    <main className="min-h-screen" style={{ backgroundColor: '#0a0e27', color: '#f0f4f8' }}>
+    <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-zombie-portrait.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       {/* Nav */}
       <div className="px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
@@ -20,16 +20,20 @@ export default function LeaderboardPage() {
         </div>
       </div>
 
+      {/* Dark overlay for readability */}
+      <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.82)', zIndex: 0 }} />
+      <div className="relative" style={{ zIndex: 1 }}>
+
       {/* Header */}
       <header className="px-6 py-16">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-6 text-center">
-          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#a855f7' }}>
+          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
             Season Zero
           </span>
           <h1
             className="font-display text-6xl font-black leading-none sm:text-7xl lg:text-8xl"
             style={{
-              background: 'linear-gradient(135deg, #f0f4f8, #a855f7)',
+              background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -37,7 +41,7 @@ export default function LeaderboardPage() {
           >
             LEADERBOARD
           </h1>
-          <p className="max-w-xl font-body text-lg" style={{ color: '#b4c1d1' }}>
+          <p className="max-w-xl font-body text-lg" style={{ color: '#8fa882' }}>
             Global rankings of the deadliest operatives on Celo.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
@@ -46,9 +50,9 @@ export default function LeaderboardPage() {
                 key={tab}
                 className="rounded-full border-2 px-8 py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
                 style={{
-                  borderColor: i === 0 ? '#a855f7' : 'rgba(168,85,247,0.3)',
-                  backgroundColor: i === 0 ? 'rgba(168,85,247,0.15)' : 'transparent',
-                  color: i === 0 ? '#a855f7' : '#7a8592',
+                  borderColor: i === 0 ? '#39ff14' : 'rgba(57,255,20,0.3)',
+                  backgroundColor: i === 0 ? 'rgba(57,255,20,0.15)' : 'transparent',
+                  color: i === 0 ? '#39ff14' : '#4a5e44',
                 }}
               >
                 {tab}
@@ -65,17 +69,17 @@ export default function LeaderboardPage() {
             {/* Table */}
             <article
               className="rise-in rounded-lg border p-6"
-              style={{ backgroundColor: '#161b35', borderColor: 'rgba(168,85,247,0.2)' }}
+              style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)' }}
             >
               {/* Table header */}
               <div
                 className="mb-4 grid gap-6 rounded-xl border-2 p-6"
-                style={{ gridTemplateColumns: 'auto 1fr auto auto', borderColor: 'rgba(168,85,247,0.35)', backgroundColor: '#1a1f3a' }}
+                style={{ gridTemplateColumns: 'auto 1fr auto auto', borderColor: 'rgba(57,255,20,0.35)', backgroundColor: '#0e180d' }}
               >
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>#</span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>Operative</span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>Wins</span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>Proofs</span>
+                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>#</span>
+                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Operative</span>
+                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Wins</span>
+                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Proofs</span>
               </div>
 
               <div className="space-y-3">
@@ -85,8 +89,8 @@ export default function LeaderboardPage() {
                     className="rise-in grid gap-6 rounded-xl border p-6 transition-all duration-200 hover:scale-[1.01]"
                     style={{
                       gridTemplateColumns: 'auto 1fr auto auto',
-                      borderColor: 'rgba(168,85,247,0.18)',
-                      backgroundColor: '#1a1f3a',
+                      borderColor: 'rgba(57,255,20,0.18)',
+                      backgroundColor: '#0e180d',
                       animationDelay: `${index * 80}ms`,
                     }}
                   >
@@ -97,10 +101,10 @@ export default function LeaderboardPage() {
                       {index + 1}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-display text-xl leading-none" style={{ color: '#f0f4f8' }}>
+                      <p className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
                         {player.name}
                       </p>
-                      <p className="mt-1 font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#7a8592' }}>
+                      <p className="mt-1 font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>
                         {player.reputation}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -125,16 +129,16 @@ export default function LeaderboardPage() {
                     </div>
                     <div
                       className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
-                      style={{ backgroundColor: 'rgba(168,85,247,0.1)' }}
+                      style={{ backgroundColor: 'rgba(57,255,20,0.1)' }}
                     >
-                      <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Wins</p>
-                      <p className="font-display text-2xl leading-none" style={{ color: '#f0f4f8' }}>{player.wins}</p>
+                      <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Wins</p>
+                      <p className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>{player.wins}</p>
                     </div>
                     <div
                       className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
                       style={{ backgroundColor: 'rgba(230,51,41,0.1)' }}
                     >
-                      <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Proofs</p>
+                      <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proofs</p>
                       <p className="font-display text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
                     </div>
                   </div>
@@ -147,10 +151,10 @@ export default function LeaderboardPage() {
               {/* Your Stats */}
               <div
                 className="rise-in rounded-lg border p-10"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(168,85,247,0.2)', animationDelay: '100ms' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', animationDelay: '100ms' }}
               >
-                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7a8592' }}>Your Stats</p>
-                <p className="mt-3 font-display text-3xl leading-none" style={{ color: '#f0f4f8' }}>Season 0</p>
+                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Your Stats</p>
+                <p className="mt-3 font-display text-3xl leading-none" style={{ color: '#d4c9b2' }}>Season 0</p>
                 <div className="mt-6 space-y-4">
                   {[
                     { label: 'Your Rank', value: '#47' },
@@ -160,12 +164,12 @@ export default function LeaderboardPage() {
                     <div
                       key={s.label}
                       className="flex items-center justify-between rounded-lg border px-4 py-3"
-                      style={{ borderColor: 'rgba(168,85,247,0.2)', backgroundColor: '#1a1f3a' }}
+                      style={{ borderColor: 'rgba(57,255,20,0.2)', backgroundColor: '#0e180d' }}
                     >
-                      <span className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7a8592' }}>
+                      <span className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>
                         {s.label}
                       </span>
-                      <span className="font-display text-2xl leading-none" style={{ color: '#f0f4f8' }}>
+                      <span className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                         {s.value}
                       </span>
                     </div>
@@ -176,23 +180,23 @@ export default function LeaderboardPage() {
               {/* Season Metrics */}
               <div
                 className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(6,182,212,0.2)', animationDelay: '180ms' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(143,168,130,0.2)', animationDelay: '180ms' }}
               >
-                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#06b6d4' }}>
+                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#8fa882' }}>
                   Season Metrics
                 </p>
                 <div className="mt-4 space-y-3">
                   {[
-                    { label: 'Recorded matches', value: '146', color: '#a855f7' },
-                    { label: 'Proof submissions', value: '824', color: '#06b6d4' },
+                    { label: 'Recorded matches', value: '146', color: '#39ff14' },
+                    { label: 'Proof submissions', value: '824', color: '#8fa882' },
                     { label: 'Wallets onboarded', value: '311', color: '#84cc16' },
                   ].map((m) => (
                     <div
                       key={m.label}
                       className="flex items-center justify-between rounded-lg border px-4 py-3"
-                      style={{ borderColor: 'rgba(6,182,212,0.18)', backgroundColor: '#1a1f3a' }}
+                      style={{ borderColor: 'rgba(143,168,130,0.18)', backgroundColor: '#0e180d' }}
                     >
-                      <span className="font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#7a8592' }}>
+                      <span className="font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>
                         {m.label}
                       </span>
                       <span className="font-display text-2xl leading-none" style={{ color: m.color }}>
@@ -205,18 +209,18 @@ export default function LeaderboardPage() {
                 {/* Season Progress */}
                 <div
                   className="mt-5 rounded-lg border p-5"
-                  style={{ borderColor: 'rgba(168,85,247,0.2)', backgroundColor: '#1a1f3a' }}
+                  style={{ borderColor: 'rgba(57,255,20,0.2)', backgroundColor: '#0e180d' }}
                 >
                   <div className="flex justify-between">
-                    <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7a8592' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>
                       Season progress
                     </p>
-                    <p className="font-mono text-xs" style={{ color: '#a855f7' }}>68%</p>
+                    <p className="font-mono text-xs" style={{ color: '#39ff14' }}>68%</p>
                   </div>
-                  <div className="mt-3 h-3 rounded-full" style={{ backgroundColor: 'rgba(168,85,247,0.12)' }}>
+                  <div className="mt-3 h-3 rounded-full" style={{ backgroundColor: 'rgba(57,255,20,0.12)' }}>
                     <div
                       className="h-3 w-[68%] rounded-full"
-                      style={{ background: 'linear-gradient(90deg, #a855f7, #06b6d4)' }}
+                      style={{ background: 'linear-gradient(90deg, #39ff14, #8fa882)' }}
                     />
                   </div>
                 </div>
@@ -225,13 +229,13 @@ export default function LeaderboardPage() {
               {/* Weekly Highlight */}
               <div
                 className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '260ms' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '260ms' }}
               >
                 <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>
                   Weekly Highlight
                 </p>
-                <p className="mt-3 font-display text-2xl leading-none" style={{ color: '#f0f4f8' }}>NovaLatch</p>
-                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#b4c1d1' }}>
+                <p className="mt-3 font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>NovaLatch</p>
+                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                   Best proof conversion rate this week with 14 validated innocence submissions.
                 </p>
               </div>
@@ -241,12 +245,12 @@ export default function LeaderboardPage() {
       </div>
 
       {/* Footer CTA */}
-      <section className="px-6 py-24 text-center" style={{ backgroundColor: '#12172c' }}>
+      <section className="px-6 py-24 text-center" style={{ backgroundColor: 'rgba(6,11,6,0.9)' }}>
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-8">
           <h2
             className="font-display text-6xl font-black leading-none sm:text-7xl lg:text-8xl"
             style={{
-              background: 'linear-gradient(135deg, #a855f7, #06b6d4)',
+              background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -254,23 +258,24 @@ export default function LeaderboardPage() {
           >
             CLAIM YOUR RANK.
           </h2>
-          <p className="font-body text-2xl" style={{ color: '#b4c1d1' }}>
+          <p className="font-body text-2xl" style={{ color: '#8fa882' }}>
             Join a match and prove your innocence — or conceal your guilt.
           </p>
           <a
             href="/lobby"
             className="rounded-lg border px-12 py-6 font-mono text-lg font-bold uppercase tracking-wider transition-all hover:opacity-90"
             style={{
-              background: 'linear-gradient(135deg, #a855f7, #06b6d4)',
+              background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               borderColor: 'transparent',
-              color: '#f0f4f8',
-              boxShadow: '0 0 24px rgba(168,85,247,0.4)',
+              color: '#060b06',
+              boxShadow: '0 0 24px rgba(57,255,20,0.4)',
             }}
           >
             Enter the Lobby
           </a>
         </div>
       </section>
+    </div>
     </main>
   )
 }

@@ -16,9 +16,9 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 
 const statusColor: Record<string, string> = {
   waiting:  '#1a7a4a',
-  starting: '#a855f7',
+  starting: '#39ff14',
   active:   '#f5c518',
-  ended:    '#4a5568',
+  ended:    '#4a5e44',
 }
 
 const statusLabel: Record<string, string> = {
@@ -198,7 +198,9 @@ export default function LobbyPage() {
   if (creating) createBtnLabel = 'Creating\u2026'
 
   return (
-    <main className="min-h-screen" style={{ backgroundColor: '#0a0e27', color: '#f0f4f8' }}>
+    <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-lobby.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
+      <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.85)', zIndex: 0 }} />
+      <div className="relative" style={{ zIndex: 1 }}>
       {/* Nav */}
       <div className="px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
@@ -209,13 +211,13 @@ export default function LobbyPage() {
       {/* Header */}
       <header className="px-6 py-16">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-6 text-center">
-          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#a855f7' }}>
+          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
             Game Lobby
           </span>
           <h1
             className="font-display text-6xl font-bold leading-none sm:text-7xl lg:text-8xl"
             style={{
-              background: 'linear-gradient(135deg, #f0f4f8, #a855f7)',
+              background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -223,7 +225,7 @@ export default function LobbyPage() {
           >
             ACTIVE ROOMS
           </h1>
-          <p className="max-w-xl font-body text-lg" style={{ color: '#b4c1d1' }}>
+          <p className="max-w-xl font-body text-lg" style={{ color: '#8fa882' }}>
             Join a waiting room, stake cUSD, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
           </p>
         </div>
@@ -237,15 +239,15 @@ export default function LobbyPage() {
             <div className="flex flex-col gap-6">
               <article
                 className="rise-in rounded-lg border p-8"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(168,85,247,0.3)' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.3)' }}
               >
-                <h2 className="font-display text-2xl leading-none" style={{ color: '#f0f4f8' }}>
+                <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                   Create Room
                 </h2>
                 <div className="mt-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="maxPlayers" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7a8592' }}>
+                      <label htmlFor="maxPlayers" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
                         Max Players
                       </label>
                       <input
@@ -256,11 +258,11 @@ export default function LobbyPage() {
                         value={maxPlayers}
                         onChange={e => setMaxPlayers(Number(e.target.value))}
                         className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
-                        style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
+                        style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
                       />
                     </div>
                     <div>
-                      <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7a8592' }}>
+                      <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
                         Stake (cUSD)
                       </label>
                       <input
@@ -271,12 +273,12 @@ export default function LobbyPage() {
                         value={stakeInput}
                         onChange={e => setStakeInput(e.target.value)}
                         className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
-                        style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
+                        style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
                       />
                     </div>
                   </div>
                   <div>
-                    <label htmlFor="proofFeeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7a8592' }}>
+                    <label htmlFor="proofFeeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
                       Proof Fee (cUSD per extra proof)
                     </label>
                     <input
@@ -287,7 +289,7 @@ export default function LobbyPage() {
                       value={proofFeeInput}
                       onChange={e => setProofFeeInput(e.target.value)}
                       className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
-                      style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#f0f4f8' }}
+                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
                     />
                   </div>
 
@@ -299,7 +301,7 @@ export default function LobbyPage() {
                     onClick={handleCreateRoom}
                     disabled={creating}
                     className="w-full rounded-lg border py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
-                    style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#f0f4f8', boxShadow: '4px 4px 0px #a855f7' }}
+                    style={{ backgroundColor: '#cc1414', borderColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px #39ff14' }}
                   >
                     {createBtnLabel}
                   </button>
@@ -314,12 +316,12 @@ export default function LobbyPage() {
                     <div
                       key={s.label}
                       className="rounded-lg border p-3 text-center"
-                      style={{ borderColor: 'rgba(168,85,247,0.2)', backgroundColor: '#1a1f3a' }}
+                      style={{ borderColor: 'rgba(57,255,20,0.2)', backgroundColor: '#0e180d' }}
                     >
-                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7a8592' }}>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
                         {s.label}
                       </p>
-                      <p className="mt-2 font-display text-xl leading-none" style={{ color: '#f0f4f8' }}>
+                      <p className="mt-2 font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
                         {s.value}
                       </p>
                     </div>
@@ -330,14 +332,14 @@ export default function LobbyPage() {
               {/* Wallet status */}
               <article
                 className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#161b35', borderColor: 'rgba(6,182,212,0.2)', animationDelay: '100ms' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(143,168,130,0.2)', animationDelay: '100ms' }}
               >
-                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#06b6d4' }}>
+                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#8fa882' }}>
                   Wallet
                 </p>
                 {isConnected && address ? (
                   <div className="mt-3 space-y-1">
-                    <p className="font-mono text-sm" style={{ color: '#f0f4f8' }}>
+                    <p className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
                       {address.slice(0, 10)}…{address.slice(-6)}
                     </p>
                     <p className="font-mono text-xs" style={{ color: '#84cc16' }}>
@@ -348,7 +350,7 @@ export default function LobbyPage() {
                   <button
                     onClick={connect}
                     className="mt-3 w-full rounded-lg border py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
-                    style={{ borderColor: 'rgba(168,85,247,0.5)', color: '#a855f7' }}
+                    style={{ borderColor: 'rgba(57,255,20,0.5)', color: '#39ff14' }}
                   >
                     Connect Wallet
                   </button>
@@ -359,16 +361,16 @@ export default function LobbyPage() {
             {/* Right column: Room List */}
             <article
               className="rise-in rounded-lg border p-6"
-              style={{ backgroundColor: '#161b35', borderColor: 'rgba(168,85,247,0.2)', animationDelay: '80ms' }}
+              style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', animationDelay: '80ms' }}
             >
               <div className="flex items-end justify-between gap-4">
-                <h2 className="font-display text-2xl leading-none" style={{ color: '#f0f4f8' }}>
+                <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                   Join Existing
                 </h2>
                 <div className="flex items-center gap-3">
                   <span
                     className="rounded-full border px-3 py-1 font-mono text-xs"
-                    style={{ borderColor: 'rgba(168,85,247,0.3)', color: '#a855f7' }}
+                    style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14' }}
                   >
                     {loadingRooms ? '…' : `${rooms.filter(r => r.status !== 'ended').length} rooms`}
                   </span>
@@ -376,7 +378,7 @@ export default function LobbyPage() {
                     onClick={loadRooms}
                     disabled={loadingRooms}
                     className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80 disabled:opacity-40"
-                    style={{ borderColor: 'rgba(168,85,247,0.3)', color: '#a855f7' }}
+                    style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14' }}
                   >
                     ↺
                   </button>
@@ -392,13 +394,13 @@ export default function LobbyPage() {
               )}
 
               {loadingRooms && (
-                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#7a8592' }}>
+                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
                   Loading rooms from chain…
                 </p>
               )}
 
               {!loadingRooms && rooms.length === 0 && !roomsError && (
-                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#7a8592' }}>
+                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
                   No rooms found. Create the first one.
                 </p>
               )}
@@ -420,8 +422,8 @@ export default function LobbyPage() {
                       key={room.id.toString()}
                       className="rise-in rounded-lg border p-5 transition-all duration-200 hover:scale-[1.01]"
                       style={{
-                        backgroundColor:  '#1a1f3a',
-                        borderColor: isExpiring ? 'rgba(245,197,24,0.35)' : 'rgba(168,85,247,0.2)',
+                        backgroundColor:  '#0e180d',
+                        borderColor: isExpiring ? 'rgba(245,197,24,0.35)' : 'rgba(57,255,20,0.2)',
                         animationDelay:   `${160 + i * 80}ms`,
                       }}
                     >
@@ -431,7 +433,7 @@ export default function LobbyPage() {
                           className="h-2 w-2 flex-shrink-0 rounded-full"
                           style={{ backgroundColor: statusColor[room.status], boxShadow: `0 0 6px ${statusColor[room.status]}` }}
                         />
-                        <span className="font-display text-lg leading-none" style={{ color: '#f0f4f8' }}>
+                        <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
                           Room #{room.id.toString()}
                         </span>
                         {room.status === 'active' && (
@@ -452,7 +454,7 @@ export default function LobbyPage() {
                         )}
                       </div>
 
-                      <p className="mt-1 font-mono text-xs" style={{ color: '#7a8592' }}>
+                      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
                         Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}
                       </p>
 
@@ -460,26 +462,26 @@ export default function LobbyPage() {
                       <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
                         <div className="flex flex-wrap gap-4">
                           <div className="text-center">
-                            <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Players</p>
-                            <p className="font-display text-lg leading-none" style={{ color: '#f0f4f8' }}>
+                            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
+                            <p className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
                               {room.players}/{room.maxPlayers}
                             </p>
                           </div>
                           <div className="text-center">
-                            <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Stake</p>
+                            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
                             <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>
                               {stakeCUSD} cUSD
                             </p>
                           </div>
                           <div className="text-center">
-                            <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Proof Fee</p>
-                            <p className="font-display text-lg leading-none" style={{ color: '#06b6d4' }}>
+                            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
+                            <p className="font-display text-lg leading-none" style={{ color: '#8fa882' }}>
                               {feeCUSD} cUSD
                             </p>
                           </div>
                           {room.status === 'active' && (
                             <div className="text-center">
-                              <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Pot</p>
+                              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
                               <p className="font-display text-lg leading-none" style={{ color: '#f5c518' }}>
                                 {potCUSD} cUSD
                               </p>
@@ -487,7 +489,7 @@ export default function LobbyPage() {
                           )}
                           {room.status === 'waiting' && room.expiresAt > 0 && (
                             <div className="text-center">
-                              <p className="font-mono text-[10px] uppercase" style={{ color: '#7a8592' }}>Expires</p>
+                              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Expires</p>
                               <p
                                 className="font-mono text-lg leading-none tabular-nums"
                                 style={{ color: countdownColor(secsLeft) }}
@@ -504,8 +506,8 @@ export default function LobbyPage() {
                           className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                           style={{
                             backgroundColor: room.status === 'waiting' ? '#e63329' : 'transparent',
-                            borderColor:     room.status === 'waiting' ? '#e63329' : 'rgba(168,85,247,0.5)',
-                            color:           room.status === 'waiting' ? '#f0f4f8' : '#a855f7',
+                            borderColor:     room.status === 'waiting' ? '#e63329' : 'rgba(57,255,20,0.5)',
+                            color:           room.status === 'waiting' ? '#d4c9b2' : '#39ff14',
                           }}
                         >
                           {isJoining ? 'Joining…' : statusLabel[room.status]}
@@ -518,6 +520,7 @@ export default function LobbyPage() {
             </article>
           </div>
         </div>
+      </div>
       </div>
     </main>
   )
