@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { isAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
+import { createRoomRecord, listWaitingRooms } from '../repositories/rooms'
 
 // TODO: Issue #19 - Implement full rooms API (wire up DB/Redis persistence)
 
@@ -24,7 +25,13 @@ const CreateRoomSchema = z.object({
  * TODO: Issue #19 — fetch from Redis/DB cache, fallback to on-chain events
  */
 roomRouter.get('/', async (_req, res) => {
-  res.json({ rooms: [], message: 'TODO: fetch from Redis/DB — see issue #19' })
+  try {
+    const rooms = await listWaitingRooms()
+    res.json({ rooms })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
 })
 
 /**
@@ -57,7 +64,7 @@ roomRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() })
   }
 
-  const { maxPlayers, stakeAmount, proofFee, expirySecs } = parsed.data
+  const { hostAddress, maxPlayers, stakeAmount, proofFee, expirySecs } = parsed.data
   try {
     const roomId = await chainAdapter.createRoom(
       maxPlayers,
@@ -65,6 +72,23 @@ roomRouter.post('/', async (req, res) => {
       BigInt(proofFee),
       expirySecs,
     )
+
+    const expiresAt = new Date(Date.now() + expirySecs * 1000)
+    const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 44787
+    const contractAddress = process.env.CONTRACT_ADDRESS ?? ''
+    if (!contractAddress) throw new Error('CONTRACT_ADDRESS env var is not set')
+
+    await createRoomRecord({
+      roomId: roomId.toString(),
+      hostAddress,
+      maxPlayers,
+      stakeAmount,
+      proofFee,
+      expiresAt,
+      chainId,
+      contractAddress,
+    })
+
     res.status(201).json({ roomId: roomId.toString() })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

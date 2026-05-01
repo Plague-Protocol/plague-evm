@@ -1,0 +1,54 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomStatus {
+  waiting
+  starting
+  active
+  ended
+}
+
+model Room {
+  id          String     @id @default(cuid())
+  roomId      String     @unique
+  hostAddress String
+  status      RoomStatus @default(waiting)
+
+  maxPlayers  Int
+  stakeAmount String
+  proofFee    String
+
+  createdAt   DateTime   @default(now())
+  expiresAt   DateTime
+
+  chainId         Int
+  contractAddress String
+
+  players     RoomPlayer[]
+
+  @@index([status, expiresAt])
+}
+
+model RoomPlayer {
+  id        String   @id @default(cuid())
+  room      Room     @relation(fields: [roomDbId], references: [id], onDelete: Cascade)
+  roomDbId  String
+  address   String
+  joinedAt  DateTime @default(now())
+
+  @@unique([roomDbId, address])
+  @@index([address])
+}

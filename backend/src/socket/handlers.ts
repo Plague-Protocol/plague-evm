@@ -1,6 +1,9 @@
 import { Server, Socket } from 'socket.io'
 import { logger } from '../lib/logger'
 import type { GameEvent } from '../types/game'
+import { chainAdapter } from '../services/chainAdapter'
+import { listExpiredWaitingRooms, setRoomStatus } from '../repositories/rooms'
+import { keccak256, toBytes } from 'viem'
 
 // TODO: Issue #20 - Implement full socket event handlers
 // TODO: Issue #21 - Implement room state sync via Redis
@@ -22,19 +25,71 @@ import type { GameEvent } from '../types/game'
  */
 export function startRoomExpiryMonitor(io: Server, intervalMs = 15_000): NodeJS.Timeout {
   return setInterval(async () => {
-    // TODO: Issue #47
-    // 1. Load all rooms with status === 'waiting' from DB/Redis
-    // 2. Filter: room.expires_at <= Date.now()
-    // 3. For each expired room:
-    //    a. Call contract.expire_room(room_id) — this refunds stakes on-chain
-    //    b. Broadcast room_expired to all subscribers: io.to(roomId).emit('game_event', {...})
-    //    c. Remove room from DB/Redis registry
-    //    d. Log expiry
-    logger.info('[expiry-monitor] tick — TODO: check expired waiting rooms')
+    try {
+      const expired = await listExpiredWaitingRooms(new Date())
+      if (expired.length === 0) return
+
+      for (const room of expired) {
+        const roomId = room.roomId
+        try {
+          await chainAdapter.expireRoom(BigInt(roomId))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          logger.warn(`[expiry-monitor] failed to expire room ${roomId} on-chain: ${message}`)
+          continue
+        }
+
+        await setRoomStatus(roomId, 'ended')
+
+        const event: GameEvent = {
+          type: 'room_expired',
+          roomId,
+          payload: {},
+          timestamp: Date.now(),
+        }
+        io.to(roomId).emit('game_event', event)
+        logger.info(`[expiry-monitor] expired waiting room ${roomId}`)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.error(`[expiry-monitor] tick error: ${message}`)
+    }
   }, intervalMs)
 }
 
 export function setupSocketHandlers(io: Server) {
+  // Map (roomId -> playerAddressLower -> socketId) for private events.
+  const playerSockets = new Map<string, Map<string, string>>()
+
+  // Start a single chain watcher for the whole server process.
+  // It will broadcast public events to the room, and route private events using playerSockets.
+  const unwatch = chainAdapter.watchAll(({ eventName, args }) => {
+    const roomId = (args.roomId as bigint | undefined)?.toString()
+    if (!roomId) return
+
+    const timestamp = Date.now()
+
+    if (eventName === 'InfectionAssigned') {
+      const player = String(args.player ?? '')
+      const roomMap = playerSockets.get(roomId)
+      const socketId = roomMap?.get(player.toLowerCase())
+      if (!socketId) return
+
+      const event: GameEvent = {
+        type: 'infection_assigned',
+        roomId,
+        payload: { player },
+        timestamp,
+      }
+      io.to(socketId).emit('game_event', event)
+      return
+    }
+
+    const mapped = mapChainEventToGameEvent(eventName, args, roomId, timestamp)
+    if (!mapped) return
+    io.to(roomId).emit('game_event', mapped)
+  })
+
   io.on('connection', (socket: Socket) => {
     logger.info(`Client connected: ${socket.id}`)
 
@@ -54,15 +109,27 @@ export function setupSocketHandlers(io: Server) {
      * TODO: Issue #20
      */
     socket.on('join_room', async ({ roomId, playerAddress }: { roomId: string; playerAddress: string }) => {
-      // TODO: Issue #20
-      // 1. Validate roomId exists in DB/Redis
-      // 2. socket.join(roomId) — unconditional (spectating is always allowed)
-      // 3. If playerAddress is in the room's player list:
-      //      send current full room state (role, status, round, etc.)
-      // 4. Else (spectator):
-      //      send public room state only (no private role/infection data)
-      // 5. Broadcast player_joined only if playerAddress is a registered participant
       socket.join(roomId)
+      if (playerAddress) {
+        const lower = playerAddress.toLowerCase()
+        const roomMap = playerSockets.get(roomId) ?? new Map<string, string>()
+        roomMap.set(lower, socket.id)
+        playerSockets.set(roomId, roomMap)
+      }
+
+      try {
+        const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
+        const rawPlayers = await Promise.all(
+          (rawRoom as any).players.map((addr: string) =>
+            chainAdapter.getPlayer(BigInt(roomId), addr as `0x${string}`)
+          )
+        )
+        socket.emit('room_state', { room: rawRoom, players: rawPlayers })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] failed to load room_state for ${roomId}: ${message}`)
+        socket.emit('room_state', { room: null, players: [] })
+      }
       logger.info(`${socket.id} subscribed to room ${roomId}`)
     })
 
@@ -79,10 +146,36 @@ export function setupSocketHandlers(io: Server) {
      * TODO: Issue #23
      */
     socket.on('request_phase_advance', async ({ roomId }: { roomId: string }) => {
-      // TODO: Issue #23
-      // 1. Check if phase timer has expired
-      // 2. Advance to next phase
-      // 3. Broadcast phase_changed event
+      try {
+        const rawRoom: any = await chainAdapter.getRoom(BigInt(roomId))
+        const status = Number(rawRoom.status)
+        const phase = Number(rawRoom.currentPhase)
+        const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
+
+        // RoomStatus.Active = 2
+        if (status !== 2) return
+
+        const now = Date.now()
+
+        // RoundPhase.Discussion = 1
+        if (phase === 1) {
+          const durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
+          if (now < phaseStartedAt + durationMs) return
+          await chainAdapter.openVoting(BigInt(roomId))
+          return
+        }
+
+        // RoundPhase.Voting = 2
+        if (phase === 2) {
+          const durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
+          if (now < phaseStartedAt + durationMs) return
+          await chainAdapter.resolveRound(BigInt(roomId))
+          return
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] request_phase_advance failed for ${roomId}: ${message}`)
+      }
     })
 
     /**
@@ -99,13 +192,38 @@ export function setupSocketHandlers(io: Server) {
      * TODO: Issue #22
      */
     socket.on('assign_infection', async ({ roomId, round }: { roomId: string; round: number }) => {
-      // TODO: Issue #22
-      // 1. Load alive clean players for this room
-      // 2. Deterministic pick: hash(roomId, round, prevTxHash) % count
-      // 3. Update player status to Infected in DB
-      // 4. Emit private 'infection_assigned' only to that player's socket:
-      //      socket.to(playerSocketId).emit('game_event', { type: 'infection_assigned', ... })
-      // 5. Do NOT broadcast who was infected to the room
+      try {
+        const rawRoom: any = await chainAdapter.getRoom(BigInt(roomId))
+        const status = Number(rawRoom.status)
+        const phase = Number(rawRoom.currentPhase)
+
+        // Active + Infection only
+        if (status !== 2 || phase !== 0) return
+
+        const playerAddrs: string[] = (rawRoom.players ?? []) as string[]
+        const playerStates = await Promise.all(
+          playerAddrs.map(addr => chainAdapter.getPlayer(BigInt(roomId), addr as `0x${string}`))
+        )
+
+        const cleanAlive: string[] = []
+        for (let i = 0; i < playerAddrs.length; i++) {
+          const st: any = playerStates[i]
+          const pStatus = Number(st.status)
+          if (pStatus === 0) cleanAlive.push(playerAddrs[i])
+        }
+        if (cleanAlive.length === 0) return
+
+        const blockHash = await chainAdapter.getLatestBlockHash()
+        const seed = `${roomId}:${round}:${blockHash}`
+        const h = BigInt(keccak256(toBytes(seed)))
+        const idx = Number(h % BigInt(cleanAlive.length))
+        const target = cleanAlive[idx] as `0x${string}`
+
+        await chainAdapter.assignInfection(BigInt(roomId), target)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] assign_infection failed for ${roomId}: ${message}`)
+      }
     })
 
     /**
@@ -169,22 +287,73 @@ export function setupSocketHandlers(io: Server) {
      * TODO: Issue #46
      */
     socket.on('resolve_round', async ({ roomId }: { roomId: string }) => {
-      // TODO: Issue #46
-      // 1. Apply absent-vote rule before tallying
-      // 2. Call contract resolveRound(roomId)
-      // 3. Broadcast appropriate event:
-      //    - Case A: player_eliminated
-      //    - Case B: player_saved_by_proof (address known, no outcome reason)
-      //    - Case C: player_eliminated + vote_resolved (generic)
-      //    - Case D: infection_assigned (private to target) + vote_resolved (generic)
-      // 4. If game over → broadcast game_ended with outcome + payout breakdown
-      // 5. If continuing → start next round, assign_infection
+      try {
+        await chainAdapter.resolveRound(BigInt(roomId))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] resolve_round failed for ${roomId}: ${message}`)
+      }
     })
 
     socket.on('disconnect', () => {
+      for (const [, roomMap] of playerSockets) {
+        for (const [addr, sid] of roomMap) {
+          if (sid === socket.id) roomMap.delete(addr)
+        }
+      }
       logger.info(`Client disconnected: ${socket.id}`)
     })
   })
+
+  io.engine.on('close', () => {
+    unwatch()
+  })
+}
+
+function mapChainEventToGameEvent(
+  eventName: string,
+  args: Record<string, unknown>,
+  roomId: string,
+  timestamp: number,
+): GameEvent | null {
+  switch (eventName) {
+    case 'PlayerJoined':
+      return { type: 'player_joined', roomId, payload: { address: String(args.player) }, timestamp }
+    case 'GameStarted':
+      return { type: 'game_started', roomId, payload: {}, timestamp }
+    case 'RoundStarted':
+      return { type: 'round_started', roomId, payload: { round: Number(args.round) }, timestamp }
+    case 'PhaseChanged':
+      return { type: 'phase_changed', roomId, payload: { phase: Number(args.phase) }, timestamp }
+    case 'VoteCast':
+      return {
+        type: 'vote_cast',
+        roomId,
+        payload: { voter: String(args.voter), target: String(args.target) },
+        timestamp,
+      }
+    case 'ProofSubmitted':
+      return { type: 'proof_submitted', roomId, payload: { player: String(args.player) }, timestamp }
+    case 'PlayerEliminated':
+      return { type: 'player_eliminated', roomId, payload: { player: String(args.player) }, timestamp }
+    case 'PlayerSavedByProof':
+      return { type: 'player_saved_by_proof', roomId, payload: { player: String(args.player) }, timestamp }
+    case 'VoteResolved':
+      return { type: 'vote_resolved', roomId, payload: { message: String(args.message) }, timestamp }
+    case 'GameEnded':
+      return { type: 'game_ended', roomId, payload: { outcome: Number(args.outcome) }, timestamp }
+    case 'PotDrained':
+      return {
+        type: 'pot_drained',
+        roomId,
+        payload: { winner: String(args.winner), amount: String(args.amount) },
+        timestamp,
+      }
+    case 'RoomExpired':
+      return { type: 'room_expired', roomId, payload: {}, timestamp }
+    default:
+      return null
+  }
 }
 
 /**

@@ -145,6 +145,13 @@ export const chainAdapter = {
     })
   },
 
+  async getLatestBlockHash(): Promise<string> {
+    const { publicClient } = clients()
+    const blockNumber = await publicClient.getBlockNumber()
+    const block = await publicClient.getBlock({ blockNumber })
+    return block.hash ?? '0x0'
+  },
+
   // ── Writes (signed by BACKEND_SIGNER) ─────────────────────────────────────
 
   /**
