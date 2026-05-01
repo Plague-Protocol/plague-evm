@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Space_Grotesk, Space_Mono, Bebas_Neue } from 'next/font/google'
+import { Providers } from '@/providers/providers'
 import './globals.css'
 
 const displayFont = Bebas_Neue({
@@ -37,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
       <body className="antialiased">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )
