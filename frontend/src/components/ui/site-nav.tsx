@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ConnectButton } from './connect-button'
+import { MuteButton } from './mute-button'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -56,8 +57,11 @@ export function SiteNav({ currentPath }: SiteNavProps) {
         })}
       </nav>
 
-      {/* Wallet button */}
-      <ConnectButton />
+      {/* Sound + Wallet */}
+      <div className="flex items-center gap-2">
+        <MuteButton />
+        <ConnectButton />
+      </div>
     </header>
   )
 }

@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useGameState } from '@/hooks/useGameState'
 import { useWallet } from '@/hooks/useWallet'
+import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscape'
+import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import type { RoundPhase } from '@/types/game'
 
@@ -91,6 +93,21 @@ function GamePageInner() {
   const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !voting
   const canProve      = phase === 'discussion' && isConnected && !localPlayer?.isEliminated && !proofDone
   const canCommit     = room?.status === 'starting' && isConnected && !committing
+
+  // ── Soundscape ───────────────────────────────────────────────────────────
+  const { muted } = useSound()
+  const soundScene = room?.status === 'ended' ? 'ended' : (phase as RoundPhase)
+  useSoundscape(soundScene, muted)
+
+  // Play game-over sting once when result arrives
+  useEffect(() => {
+    if (!result) return
+    const src = result.outcome === 'infected_win'
+      ? GAME_OVER_TRACKS.infected
+      : GAME_OVER_TRACKS.clean
+    playSting(src, muted, 0.55)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.outcome])
 
   // ── Vote tally ────────────────────────────────────────────────────────────
   const voteTally: Record<string, number> = {}

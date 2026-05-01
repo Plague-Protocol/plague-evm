@@ -3,6 +3,8 @@
 import { SiteNav } from '@/components/ui/site-nav'
 import { useEffect, useState, useCallback } from 'react'
 import { useWallet } from '@/hooks/useWallet'
+import { useSoundscape } from '@/hooks/useSoundscape'
+import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import { useRouter } from 'next/navigation'
 
@@ -66,6 +68,8 @@ function getContractClient() {
 export default function LobbyPage() {
   const router = useRouter()
   const { isConnected, address, chainId, connect } = useWallet()
+  const { muted } = useSound()
+  useSoundscape('lobby', muted)
 
   // ── Room list from chain ───────────────────────────────────────────────────
   const [rooms, setRooms]           = useState<RoomRow[]>([])
