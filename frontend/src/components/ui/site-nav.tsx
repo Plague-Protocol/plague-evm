@@ -21,7 +21,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
-    <div className="rise-in relative">
+    <div className="rise-in relative" style={{ isolation: 'isolate', zIndex: 50 }}>
       <header
         className="flex items-center justify-between gap-4 rounded-xl border px-5 py-3 backdrop-blur"
         style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: 'rgba(6,11,6,0.92)' }}
@@ -66,7 +66,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
         {/* Right: Sound + Wallet (desktop) + Hamburger (mobile) */}
         <div className="flex items-center gap-2">
           <MuteButton />
-          <div className="hidden md:block">
+          <div className="hidden md:block" style={{ position: 'relative', zIndex: 100 }}>
             <ConnectButton />
           </div>
           {/* Hamburger button — mobile only */}

@@ -50,7 +50,7 @@ export function ConnectButton() {
   const short = `${address.slice(0, 6)}…${address.slice(-4)}`
 
   return (
-    <div ref={ref} className="relative flex-shrink-0">
+    <div ref={ref} className="relative flex-shrink-0" style={{ zIndex: 100 }}>
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150 hover:opacity-90"
@@ -75,8 +75,8 @@ export function ConnectButton() {
 
       {open && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-xl border p-2"
-          style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}
+          className="absolute right-0 top-full mt-1 min-w-[200px] rounded-xl border p-2"
+          style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200, position: 'absolute' }}
         >
           {/* Full address */}
           <div className="px-3 py-2">
