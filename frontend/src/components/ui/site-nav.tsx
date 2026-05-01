@@ -18,19 +18,19 @@ export function SiteNav({ currentPath }: SiteNavProps) {
   return (
     <header
       className="rise-in flex items-center justify-between gap-4 rounded-xl border px-5 py-3 backdrop-blur"
-      style={{ borderColor: 'rgba(168,85,247,0.25)', backgroundColor: 'rgba(22,27,53,0.85)' }}
+      style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: 'rgba(6,11,6,0.92)' }}
     >
       {/* Logo */}
       <Link href="/" className="flex flex-shrink-0 items-center gap-3">
         <div
           className="flex h-9 w-9 items-center justify-center rounded-lg font-display text-xl"
-          style={{ background: 'linear-gradient(135deg, #a855f7, #e63329)', color: '#f0f4f8' }}
+          style={{ background: 'linear-gradient(135deg, #39ff14, #cc1414)', color: '#060b06' }}
         >
           P
         </div>
         <div className="hidden sm:block">
-          <p className="font-display text-xl leading-none" style={{ color: '#f0f4f8' }}>PlagueProtocol</p>
-          <p className="font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#7a8592' }}>
+          <p className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>PlagueProtocol</p>
+          <p className="font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>
             social deduction on celo
           </p>
         </div>
@@ -47,8 +47,8 @@ export function SiteNav({ currentPath }: SiteNavProps) {
               className="whitespace-nowrap rounded-lg px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150"
               style={
                 isActive
-                  ? { backgroundColor: 'rgba(168,85,247,0.2)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.5)' }
-                  : { backgroundColor: 'transparent', color: '#7a8592', border: '1px solid transparent' }
+                  ? { backgroundColor: 'rgba(57,255,20,0.1)', color: '#39ff14', border: '1px solid rgba(57,255,20,0.35)' }
+                  : { backgroundColor: 'transparent', color: '#4a5e44', border: '1px solid transparent' }
               }
             >
               {item.label}

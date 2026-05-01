@@ -1,22 +1,23 @@
 import type { Metadata } from 'next'
-import { Space_Grotesk, Space_Mono, Bebas_Neue } from 'next/font/google'
+import { Creepster, Oswald, VT323 } from 'next/font/google'
 import { Providers } from '@/providers/providers'
 import './globals.css'
 
-const displayFont = Bebas_Neue({
+const displayFont = Creepster({
   subsets: ['latin'],
   weight: '400',
   variable: '--font-display',
 })
 
-const bodyFont = Space_Grotesk({
+const bodyFont = Oswald({
   subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
   variable: '--font-body',
 })
 
-const monoFont = Space_Mono({
+const monoFont = VT323({
   subsets: ['latin'],
-  weight: ['400', '700'],
+  weight: '400',
   variable: '--font-mono',
 })
 

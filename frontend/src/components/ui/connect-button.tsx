@@ -18,10 +18,10 @@ export function ConnectButton() {
       className="flex-shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150 hover:opacity-90 disabled:opacity-50"
       style={{
         background: isConnected
-          ? 'linear-gradient(135deg, #06b6d4, #a855f7)'
-          : 'linear-gradient(135deg, #a855f7, #06b6d4)',
-        color: '#f0f4f8',
-        boxShadow: '0 0 12px rgba(168,85,247,0.4)',
+          ? 'linear-gradient(135deg, #39ff14, #5a8a2a)'
+          : 'linear-gradient(135deg, #cc1414, #39ff14)',
+        color: '#060b06',
+        boxShadow: '0 0 12px rgba(57,255,20,0.35)',
       }}
     >
       {label}

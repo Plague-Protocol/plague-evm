@@ -3,30 +3,30 @@
 @tailwind utilities;
 
 :root {
-  --font-display: 'Bebas Neue', serif;
-  --font-body: 'Space Grotesk', sans-serif;
-  --font-mono: 'Space Mono', monospace;
+  --font-display: 'Creepster', cursive;
+  --font-body: 'Oswald', sans-serif;
+  --font-mono: 'VT323', monospace;
 
-  /* Dark game palette */
-  --bg-primary: #0a0e27;
-  --bg-secondary: #12172c;
-  --bg-tertiary: #1a1f3a;
-  --bg-card: #161b35;
+  /* Zombie / Horror palette */
+  --bg-primary: #060b06;
+  --bg-secondary: #0a100a;
+  --bg-tertiary: #0e180d;
+  --bg-card: #0c1309;
 
-  --text-primary: #f0f4f8;
-  --text-secondary: #b4c1d1;
-  --text-muted: #7a8592;
+  --text-primary: #d4c9b2;
+  --text-secondary: #8fa882;
+  --text-muted: #4a5e44;
 
-  --accent-purple: #a855f7;
-  --accent-cyan: #06b6d4;
-  --accent-lime: #84cc16;
-  --accent-coral: #ff6b6b;
-  --accent-pink: #ec4899;
+  --accent-bio: #39ff14;
+  --accent-blood: #cc1414;
+  --accent-bone: #c8b89a;
+  --accent-rust: #c97a12;
+  --accent-mold: #5a8a2a;
 
-  --glow-purple: 0 0 20px rgba(168, 85, 247, 0.4);
-  --glow-cyan: 0 0 20px rgba(6, 182, 212, 0.4);
-  --glow-lime: 0 0 20px rgba(132, 204, 22, 0.4);
-  --glow-coral: 0 0 20px rgba(255, 107, 107, 0.4);
+  --glow-bio: 0 0 20px rgba(57, 255, 20, 0.5);
+  --glow-blood: 0 0 20px rgba(204, 20, 20, 0.5);
+  --glow-bone: 0 0 12px rgba(200, 184, 154, 0.3);
+  --glow-rust: 0 0 16px rgba(201, 122, 18, 0.4);
 }
 
 @layer base {
@@ -52,7 +52,7 @@
     background: var(--bg-secondary);
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--accent-purple);
+    background: var(--accent-bio);
     border-radius: 3px;
   }
 }
@@ -75,7 +75,7 @@
   /* Card */
   .card-brutal {
     @apply border rounded-lg;
-    border-color: rgba(168, 85, 247, 0.25);
+    border-color: rgba(57, 255, 20, 0.12);
     background-color: var(--bg-card);
   }
 
@@ -83,13 +83,13 @@
   .input-brutal {
     @apply rounded-lg border bg-transparent font-mono px-4 py-3
            focus:outline-none transition-all;
-    border-color: rgba(168, 85, 247, 0.4);
+    border-color: rgba(57, 255, 20, 0.3);
     color: var(--text-primary);
   }
 
   .input-brutal:focus {
-    border-color: var(--accent-purple);
-    box-shadow: var(--glow-purple);
+    border-color: var(--accent-bio);
+    box-shadow: var(--glow-bio);
   }
 
   /* Player token */
@@ -99,13 +99,13 @@
   }
 
   .player-token.infected {
-    border-color: #e63329;
-    background-color: rgba(230, 51, 41, 0.15);
+    border-color: #cc1414;
+    background-color: rgba(204, 20, 20, 0.15);
   }
 
   .player-token.clean {
-    border-color: #06b6d4;
-    background-color: rgba(6, 182, 212, 0.08);
+    border-color: #39ff14;
+    background-color: rgba(57, 255, 20, 0.06);
   }
 
   .player-token.eliminated {
@@ -138,7 +138,7 @@
 
   .hud-panel {
     @apply relative overflow-hidden rounded-lg border;
-    border-color: rgba(168, 85, 247, 0.2);
+    border-color: rgba(57, 255, 20, 0.12);
     background-color: var(--bg-card);
   }
 
@@ -162,9 +162,9 @@
 
   .avatar-chip {
     @apply flex h-10 w-10 items-center justify-center rounded-full border-2 font-display text-lg;
-    border-color: var(--accent-purple);
+    border-color: var(--accent-bio);
     background-color: var(--bg-tertiary);
-    color: var(--accent-purple);
+    color: var(--accent-bio);
   }
 
   .badge-chip {
@@ -247,6 +247,50 @@
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: var(--glow-purple); }
-  50% { box-shadow: var(--glow-cyan); }
+  0%, 100% { box-shadow: var(--glow-bio); }
+  50% { box-shadow: var(--glow-blood); }
+}
+
+@keyframes flicker {
+  0% { opacity: 1; }
+  20% { opacity: 0.4; }
+  22% { opacity: 1; }
+  63% { opacity: 0.4; }
+  64% { opacity: 1; }
+  65% { opacity: 0.4; }
+  70% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes toxic-pulse {
+  0% {
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(57, 255, 20, 0.7), 0 0 56px rgba(57, 255, 20, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+  }
+}
+
+@keyframes glitch {
+  0% { transform: translate(0px, 0px); }
+  20% { transform: translate(-3px, 1px); }
+  40% { transform: translate(3px, -1px); }
+  60% { transform: translate(-2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  100% { transform: translate(0px, 0px); }
+}
+
+@keyframes rot {
+  0% {
+    filter: hue-rotate(0deg) saturate(1);
+  }
+  50% {
+    filter: hue-rotate(20deg) saturate(1.2);
+  }
+  100% {
+    filter: hue-rotate(0deg) saturate(1);
+  }
 }
