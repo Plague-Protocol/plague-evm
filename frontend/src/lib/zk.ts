@@ -48,7 +48,8 @@ export async function deriveSecret(passphrase: string): Promise<bigint> {
 /**
  * Load a compiled Noir circuit JSON from /public/circuits/<name>.json.
  */
-async function loadCircuit(name: string): Promise<{ bytecode: string; abi: object }> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadCircuit(name: string): Promise<any> {
   const url = `/circuits/${name}.json`
   const res = await fetch(url)
   if (!res.ok) {
@@ -116,8 +117,8 @@ export async function proveInnocence(params: {
   const nullifier = poseidon2([secret, roomField, roundField])
 
   const circuit = await loadCircuit('innocence_proof')
-  const backend = new UltraHonkBackend(circuit.bytecode)
-  const noir = new Noir(circuit as never)
+  const backend = new UltraHonkBackend(circuit)
+  const noir = new Noir(circuit)
 
   const { witness } = await noir.execute({
     commitment: toField(BigInt(commitment)),
@@ -173,8 +174,8 @@ export async function proveInfection(params: {
   const nullifier = poseidon2([secret, targetField, roundField])
 
   const circuit = await loadCircuit('infection_proof')
-  const backend = new UltraHonkBackend(circuit.bytecode)
-  const noir = new Noir(circuit as never)
+  const backend = new UltraHonkBackend(circuit)
+  const noir = new Noir(circuit)
 
   const { witness } = await noir.execute({
     infector_commitment: toField(BigInt(infectorCommitment)),
@@ -211,8 +212,8 @@ export async function proveRoleCommitment(params: {
   const roleNum = role === 'patient_zero' ? ROLE_PATIENT_ZERO : ROLE_CLEAN
 
   const circuit = await loadCircuit('role_commitment')
-  const backend = new UltraHonkBackend(circuit.bytecode)
-  const noir = new Noir(circuit as never)
+  const backend = new UltraHonkBackend(circuit)
+  const noir = new Noir(circuit)
 
   const { witness } = await noir.execute({
     commitment: toField(BigInt(commitment)),
@@ -247,7 +248,7 @@ export async function verifyProofLocally(
   const circuitName = circuitNames[circuitType]
 
   const circuit = await loadCircuit(circuitName)
-  const backend = new UltraHonkBackend(circuit.bytecode)
+  const backend = new UltraHonkBackend(circuit)
 
   return backend.verifyProof({
     proof: new Uint8Array(zkProof.proof),

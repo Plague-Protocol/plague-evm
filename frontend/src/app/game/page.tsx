@@ -6,8 +6,9 @@ import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useGameState } from '@/hooks/useGameState'
 import { useWallet } from '@/hooks/useWallet'
 import { createContractClient } from '@/lib/contract'
-import { proveInnocence, computeInnocenceNullifier } from '@/lib/zk'
-import type { Player, RoundPhase } from '@/types/game'
+import type { RoundPhase } from '@/types/game'
+
+export const dynamic = 'force-dynamic'
 
 // ── Phase display helpers ─────────────────────────────────────────────────────
 
@@ -130,6 +131,7 @@ function GamePageInner() {
       const commitment = localPlayer ? '0x' + '0'.repeat(64) as `0x${string}` : '0x' as `0x${string}`
       // Note: real commitment comes from the on-chain roleCommitment field;
       // here we rely on the backend to have stored it when the player committed.
+      const { proveInnocence, computeInnocenceNullifier } = await import('@/lib/zk')
       const nullifier = computeInnocenceNullifier(
         BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64)),
         BigInt(roomId),
