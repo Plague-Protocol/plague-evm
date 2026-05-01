@@ -27,7 +27,7 @@ nargo compile --workspace
 CIRCUITS=(innocence_proof infection_proof role_commitment)
 
 for circuit in "${CIRCUITS[@]}"; do
-  SRC="$ZK_DIR/packages/$circuit/target/$circuit.json"
+  SRC="$ZK_DIR/target/$circuit.json"
   if [[ -f "$SRC" ]]; then
     cp "$SRC" "$FRONTEND_CIRCUITS/$circuit.json"
     echo "  copied $circuit.json → frontend/public/circuits/"
