@@ -170,10 +170,10 @@ function GamePageInner() {
     setCommitError(null)
     try {
       const { generateRoleCommitment, proveRoleCommitment } = await import('@/lib/zk')
-      const role = 0 // clean; backend will reassign infect via assignInfection
+      const role = 'clean' as const // backend assigns infection via assignInfection
       const secretBigInt = BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64))
-      const { commitment } = generateRoleCommitment(role, secretBigInt)
-      const proofResult = await proveRoleCommitment({ role, secret: secretBigInt, commitment: BigInt(commitment) })
+      const { commitment } = await generateRoleCommitment(role, secretBigInt)
+      const proofResult = await proveRoleCommitment({ role, secret: secretBigInt, commitment })
       const commitmentHex = commitment.startsWith('0x') ? commitment as `0x${string}` : `0x${commitment}` as `0x${string}`
       const proofBytes    = ('0x' + proofResult.proof.map((b: number) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
       const client = getContractClient()!
