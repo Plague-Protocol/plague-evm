@@ -105,11 +105,11 @@ export default function HomePage() {
             </span>
 
             <h1 className="max-w-5xl font-display leading-[0.88]">
-              <span className="block text-7xl sm:text-8xl lg:text-9xl" style={{ color: '#d4c9b2' }}>
+              <span className="block text-5xl sm:text-7xl lg:text-9xl" style={{ color: '#d4c9b2' }}>
                 INFECT THE
               </span>
               <span
-                className="block text-7xl sm:text-8xl lg:text-9xl"
+                className="block text-5xl sm:text-7xl lg:text-9xl"
                 style={{
                   background: 'linear-gradient(135deg, #39ff14, #cc1414)',
                   WebkitBackgroundClip: 'text',
@@ -189,7 +189,7 @@ export default function HomePage() {
               How It Works
             </span>
             <h2
-              className="max-w-4xl text-center font-display text-6xl leading-none sm:text-7xl"
+              className="max-w-4xl text-center font-display text-4xl leading-none sm:text-6xl sm:text-7xl"
               style={{ color: '#d4c9b2' }}
             >
               THREE PHASES. ONE SURVIVOR.
@@ -239,7 +239,7 @@ export default function HomePage() {
               Game Mechanics
             </span>
             <h2
-              className="max-w-4xl text-center font-display text-6xl leading-none sm:text-7xl"
+              className="max-w-4xl text-center font-display text-4xl leading-none sm:text-6xl sm:text-7xl"
               style={{ color: '#d4c9b2' }}
             >
               BUILT ON CHAIN. PLAYED OFF IT.
@@ -300,7 +300,7 @@ export default function HomePage() {
         <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center gap-12">
           <div className="flex flex-col items-center gap-6 text-center">
             <h2
-              className="font-display text-7xl leading-none sm:text-8xl lg:text-9xl"
+              className="font-display text-5xl leading-none sm:text-7xl lg:text-9xl"
               style={{
                 background: 'linear-gradient(135deg, #39ff14, #cc1414, #c97a12)',
                 WebkitBackgroundClip: 'text',

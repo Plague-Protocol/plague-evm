@@ -93,10 +93,6 @@ export function setupSocketHandlers(io: Server) {
      *     hash(roomId, round, prevTxHash) % count
      *   ]
      *
-     * All-protected-tie case:
-     *   target is selected from among the previous round's tied protected
-     *   survivors (stored in pending_infection_next_round flag on PlayerState).
-     *
      * Only the infected player receives the private 'infection_assigned' event.
      * No event reveals who caused the infection.
      *
@@ -105,9 +101,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on('assign_infection', async ({ roomId, round }: { roomId: string; round: number }) => {
       // TODO: Issue #22
       // 1. Load alive clean players for this room
-      // 2. Check if any player has pending_infection_next_round = true
-      //    a. If yes → infect that player (clear the flag)
-      //    b. If no  → deterministic pick: hash(roomId, round, prevTxHash) % count
+      // 2. Deterministic pick: hash(roomId, round, prevTxHash) % count
       // 3. Update player status to Infected in DB
       // 4. Emit private 'infection_assigned' only to that player's socket:
       //      socket.to(playerSocketId).emit('game_event', { type: 'infection_assigned', ... })
@@ -129,8 +123,9 @@ export function setupSocketHandlers(io: Server) {
      *
      * What the proof does at resolve time:
      *   - Sole top-voted + has proof → saved, no elimination
-     *   - Tied top-voted, some have proofs → unprotected eliminated
-     *   - Tied top-voted, all have proofs → one randomly infected (not eliminated)
+     *   - Tied top-voted, any infected in tie → infected eliminated; protected clean survive
+     *   - Tied top-voted, no infected, some unprotected → unprotected eliminated
+     *   - Tied top-voted, all have proofs → all survive, no extra infection (PZ-only rule)
      *
      * TODO: Issue #45
      */

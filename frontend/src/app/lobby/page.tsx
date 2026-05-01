@@ -215,7 +215,7 @@ export default function LobbyPage() {
             Game Lobby
           </span>
           <h1
-            className="font-display text-6xl font-bold leading-none sm:text-7xl lg:text-8xl"
+            className="font-display text-4xl font-bold leading-none sm:text-6xl lg:text-8xl"
             style={{
               background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',

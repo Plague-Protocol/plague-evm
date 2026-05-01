@@ -45,8 +45,9 @@ interface IERC20 {
  *       - otherwise                 → eliminated
  *  3. Tie:
  *       - if ALL tied candidates are protected clean players → all saved (no elimination)
- *       - otherwise eliminate lowest keccak256(addr) among vulnerable ties,
- *         where vulnerable = infected OR no proof.
+ *       - otherwise, among vulnerable tied players (infected OR no proof):
+ *           a. if any infected in tie   → eliminate lowest keccak256(addr) among infected
+ *           b. else (unprotected clean) → eliminate lowest keccak256(addr) among unprotected
  *
  * ── Endgame (checked after every Reveal) ──────────────────────────────────────
  *  1. infected_alive == 0             → Clean wins
@@ -492,8 +493,8 @@ contract PlagueGame {
     /**
      * @notice Cast a vote to eliminate a suspect.
      *         Only alive players may vote; only alive, non-eliminated targets accepted.
-     *         Absent vote rule is applied by resolveRound — self-votes are only
-     *         emitted there, not here.
+     *         Absent vote rule is applied by resolveRound — abstainers receive a
+     *         self-vote (their vote is recorded against themselves).
      */
     function castVote(uint256 roomId, address target) external roomExists(roomId) {
         Room storage r          = rooms[roomId];
@@ -753,40 +754,19 @@ contract PlagueGame {
 
     /**
      * @dev Apply absent-vote rule: any alive player who hasn't voted is auto-assigned
-     *      a vote for the current leading target (or themselves if no leader yet).
+     *      a self-vote (their vote is cast against themselves). Silence = guilt.
+     *      This prevents collusion by mass-abstention and is actively dangerous
+     *      to the abstaining player.
      */
     function _applyAbsentVotes(uint256 roomId, address[] memory alive) internal {
-        address leader = _findLeader(roomId, alive);
         for (uint256 i = 0; i < alive.length; i++) {
             PlayerState storage p = players[roomId][alive[i]];
             if (!p.hasVotedThisRound) {
-                address voteFor = (leader != address(0)) ? leader : alive[i];
-                p.voteTarget      = voteFor;
+                p.voteTarget        = alive[i]; // self-vote
                 p.hasVotedThisRound = true;
-                emit VoteCast(roomId, alive[i], voteFor);
+                emit VoteCast(roomId, alive[i], alive[i]);
             }
         }
-    }
-
-    /**
-     * @dev Find the current vote leader (most votes among already-submitted votes).
-     *      Returns address(0) if no votes have been cast yet.
-     */
-    function _findLeader(uint256 roomId, address[] memory alive) internal view returns (address) {
-        uint256 maxVotes = 0;
-        address leader   = address(0);
-        for (uint256 i = 0; i < alive.length; i++) {
-            uint256 count = 0;
-            for (uint256 j = 0; j < alive.length; j++) {
-                PlayerState storage voter = players[roomId][alive[j]];
-                if (voter.hasVotedThisRound && voter.voteTarget == alive[i]) count++;
-            }
-            if (count > maxVotes) {
-                maxVotes = count;
-                leader   = alive[i];
-            }
-        }
-        return leader;
     }
 
     function _tallyVotes(uint256 roomId, address[] memory alive)

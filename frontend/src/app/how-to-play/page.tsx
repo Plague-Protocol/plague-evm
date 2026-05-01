@@ -26,7 +26,7 @@ const phases = [
     icon: '🗳️',
     color: '#39ff14',
     duration: '60 s',
-    desc: 'Every alive player casts an on-chain vote for the player they believe is infected. Absent voters automatically have their vote cast for the current leading target — collusion by abstention is impossible.',
+    desc: 'Every alive player casts an on-chain vote for the player they believe is infected. Any player who fails to vote before the timer expires automatically receives a self-vote — their vote is cast against themselves. Silence equals guilt; abstention is never safe.',
   },
   {
     number: '04',
@@ -55,17 +55,17 @@ const voteRules = [
   },
   {
     case: 'C',
-    title: 'Tie — at least one unprotected',
+    title: 'Tie — at least one infected or unprotected',
     color: '#f5c518',
-    outcome: 'Unprotected eliminated',
-    desc: 'Multiple players share the top vote count and at least one lacks a proof. Among the vulnerable tied players (infected OR no proof), the one with the lowest keccak256(address) is eliminated. Protected clean players survive.',
+    outcome: 'Vulnerable player eliminated',
+    desc: 'Multiple players share the top vote count. If any tied player is infected, the infected candidate with the lowest keccak256(address) is eliminated. If no infected players are tied, the unprotected clean candidate with the lowest keccak256(address) is eliminated. Protected clean players always survive.',
   },
   {
     case: 'D',
     title: 'Tie — all have valid proofs',
     color: '#8fa882',
-    outcome: 'No elimination; one secretly infected',
-    desc: 'All tied top-voted players proved their innocence. Nobody is eliminated. Instead, one of the tied survivors is randomly infected for the next round — selected deterministically from the group. A generic message is broadcast; no proof hints are revealed.',
+    outcome: 'No elimination',
+    desc: 'All tied top-voted players proved their innocence during Discussion. Nobody is eliminated and no extra infection is forced — only the Patient Zero drives infection through the normal next-round assignment. A generic message is broadcast; no proof hints are revealed.',
   },
 ]
 
@@ -194,7 +194,7 @@ export default function HowToPlayPage() {
           >
             Rules & Instructions
           </span>
-          <h1 className="mt-6 font-display text-6xl font-bold leading-none sm:text-7xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
+          <h1 className="mt-6 font-display text-4xl font-bold leading-none sm:text-6xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
             HOW TO PLAY
           </h1>
           <p className="mx-auto mt-6 max-w-2xl font-mono text-base leading-relaxed" style={{ color: '#4a5e44' }}>
@@ -411,7 +411,7 @@ export default function HowToPlayPage() {
           >
             <p className="font-mono text-xs font-bold" style={{ color: '#f5c518' }}>Absent Vote Rule</p>
             <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-              Any player who does not cast a vote during the Voting phase automatically has their vote applied to the current leading target. This prevents infected players from colluding by mass-abstention to avoid eliminations.
+              Any player who does not cast a vote during the Voting phase automatically has a self-vote recorded against them. Silence equals guilt — abstaining is actively dangerous regardless of who else is leading. There is no safe way to skip your vote.
             </p>
           </div>
         </section>
