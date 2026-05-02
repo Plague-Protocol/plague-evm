@@ -120,15 +120,15 @@ After the voting phase timer expires (absent-vote rule applied first):
 → Player is saved. Emit `player_saved_by_proof` (address visible; no reason stated).
 → No elimination this round. Normal system infection continues next round.
 
-**Case C — tied candidates, at least one unprotected:**
-→ Eliminate the unprotected candidate.
-→ If multiple unprotected: deterministic — lowest `hash(address)` is eliminated.
-→ Protected candidates survive. Emit `player_eliminated` + generic `vote_resolved`.
+**Case C — tied candidates, at least one infected:**
+→ Eliminate all tied infected candidates.
+→ Tied clean candidates with valid proofs are explicitly saved.
+→ Emit `player_eliminated` for each eliminated tied infected candidate.
 
-**Case D — tied candidates, ALL have active proofs:**
-→ Nobody eliminated. All tied players survive.
-→ No additional infection occurs — only the next round's normal system infection assignment applies.
-→ Emit generic `vote_resolved` to room — no names, no proof hints.
+**Case D — tied candidates, no infected:**
+→ Eliminate all tied unprotected clean candidates.
+→ Tied clean candidates with valid proofs are saved.
+→ If every tied clean candidate has a valid proof, nobody is eliminated.
 
 ---
 

@@ -431,6 +431,109 @@ contract PlagueGameTest is Test {
         );
     }
 
+    function test_Tie_WithMultipleInfectedCandidates_EliminatesAllTiedInfected() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // Round 1: infect players[0], then eliminate players[4] so game continues.
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        vm.prank(host);
+        game.castVote(1, players[4]);
+        vm.prank(players[0]);
+        game.castVote(1, players[4]);
+
+        game.resolveRound(1);
+
+        // Round 2: infect players[1] so two infected players are alive.
+        vm.prank(backend);
+        game.assignInfection(1, players[1]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Force top tie between infected players[0] and players[1].
+        vm.prank(host);
+        game.castVote(1, players[0]);
+        vm.prank(players[2]);
+        game.castVote(1, players[0]);
+
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[1]);
+        game.castVote(1, players[1]);
+
+        vm.prank(players[3]);
+        game.castVote(1, host);
+
+        game.resolveRound(1);
+
+        assertEq(
+            uint(game.getPlayer(1, players[0]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+        assertEq(
+            uint(game.getPlayer(1, players[1]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+    }
+
+    function test_Tie_NoInfectedAmongTop_EliminatesAllUnprotectedCleanAndSavesProvedClean() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        vm.prank(backend);
+        game.assignInfection(1, players[0]); // infected not in top tie below
+
+        // players[1] is protected clean; players[2] and players[3] are unprotected clean.
+        vm.prank(players[1]);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("nullifier-p1-r1"), "");
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Build a 2-2-2 tie among players[1], players[2], players[3].
+        vm.prank(host);
+        game.castVote(1, players[1]);
+        vm.prank(players[4]);
+        game.castVote(1, players[1]);
+
+        vm.prank(players[0]);
+        game.castVote(1, players[2]);
+        vm.prank(players[2]);
+        game.castVote(1, players[2]);
+
+        vm.prank(players[1]);
+        game.castVote(1, players[3]);
+        vm.prank(players[3]);
+        game.castVote(1, players[3]);
+
+        game.resolveRound(1);
+
+        assertNotEq(
+            uint(game.getPlayer(1, players[1]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+        assertEq(
+            uint(game.getPlayer(1, players[2]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+        assertEq(
+            uint(game.getPlayer(1, players[3]).status),
+            uint(PlagueGame.PlayerStatus.Eliminated)
+        );
+    }
+
     // ── Nullifier replay prevention ───────────────────────────────────────────────
 
     function test_NullifierReplay_Reverts() public {

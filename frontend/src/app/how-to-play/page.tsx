@@ -57,8 +57,8 @@ const voteRules = [
     case: 'C',
     title: 'Tie — at least one infected or unprotected',
     color: '#f5c518',
-    outcome: 'Vulnerable player eliminated',
-    desc: 'Multiple players share the top vote count. If any tied player is infected, the infected candidate with the lowest keccak256(address) is eliminated. If no infected players are tied, the unprotected clean candidate with the lowest keccak256(address) is eliminated. Protected clean players always survive.',
+    outcome: 'All vulnerable tied players eliminated',
+    desc: 'Multiple players share the top vote count. If any tied player is infected, all tied infected players are eliminated. If no infected players are tied, all tied unprotected clean players are eliminated. Any tied clean player with a valid proof is saved.',
   },
   {
     case: 'D',
@@ -348,7 +348,7 @@ export default function HowToPlayPage() {
           >
             <ul className="space-y-3">
               {patientZeroSuccession.map((rule, i) => (
-                <li key={i} className="flex items-start gap-3 font-mono text-sm" style={{ color: '#8fa882' }}>
+                <li key={rule} className="flex items-start gap-3 font-mono text-sm" style={{ color: '#8fa882' }}>
                   <span
                     className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
                     style={{ backgroundColor: 'rgba(230,51,41,0.2)', color: '#e63329' }}
@@ -529,8 +529,8 @@ export default function HowToPlayPage() {
               >
                 <h3 className="font-display text-xl font-bold" style={{ color: section.color }}>{section.title}</h3>
                 <ul className="mt-4 space-y-2">
-                  {section.tips.map((tip, i) => (
-                    <li key={i} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                  {section.tips.map((tip) => (
+                    <li key={`${section.side}-${tip}`} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#4a5e44' }}>
                       <span className="mt-0.5 flex-shrink-0" style={{ color: section.color }}>→</span>
                       {tip}
                     </li>
@@ -578,7 +578,7 @@ export default function HowToPlayPage() {
 
 // ─── Helper ────────────────────────────────────────────────────────────────
 
-function SectionTitle({ number, title }: { number: string; title: string }) {
+function SectionTitle({ number, title }: Readonly<{ number: string; title: string }>) {
   return (
     <div className="flex items-baseline gap-4">
       <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#39ff14' }}>{number}</span>

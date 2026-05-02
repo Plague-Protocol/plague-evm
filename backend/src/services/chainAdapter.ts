@@ -24,7 +24,6 @@ import {
   createWalletClient,
   http,
   parseAbi,
-  type WatchContractEventReturnType,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { celoAlfajores, celo } from 'viem/chains'
@@ -92,7 +91,7 @@ function buildClients() {
 // Lazily initialised on first use so tests can import without .env being set.
 let _clients: ReturnType<typeof buildClients> | null = null
 function clients() {
-  if (!_clients) _clients = buildClients()
+  _clients ??= buildClients()
   return _clients
 }
 
@@ -178,11 +177,8 @@ export const chainAdapter = {
   /**
    * Assign infection for the current round.
    *
-   * Normal case:
-   *   target = eligibleCleanAlive[ hash(roomId, round, prevTxHash) % count ]
-   *
-   * Case D carry-over:
-   *   pass the player flagged as pendingInfectionNextRound instead.
+    * Target selection is performed by backend game logic, typically:
+    *   target = eligibleCleanAlive[ hash(roomId, round, prevTxHash) % count ]
    */
   async assignInfection(roomId: bigint, target: `0x${string}`) {
     return writeAndWait('assignInfection', [roomId, target])

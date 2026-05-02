@@ -44,10 +44,9 @@ interface IERC20 {
  *       - protected clean candidate → saved
  *       - otherwise                 → eliminated
  *  3. Tie:
- *       - if ALL tied candidates are protected clean players → all saved (no elimination)
- *       - otherwise, among vulnerable tied players (infected OR no proof):
- *           a. if any infected in tie   → eliminate lowest keccak256(addr) among infected
- *           b. else (unprotected clean) → eliminate lowest keccak256(addr) among unprotected
+ *       - if any infected are tied → eliminate ALL tied infected candidates
+ *       - else eliminate ALL tied unprotected clean candidates
+ *       - tied clean candidates with valid proofs are always saved
  *
  * ── Endgame (checked after every Reveal) ──────────────────────────────────────
  *  1. infected_alive == 0             → Clean wins
@@ -555,32 +554,29 @@ contract PlagueGame {
                 emit VoteResolved(roomId, "Top candidate eliminated (infected or no valid protection)");
             }
         } else {
-            bool allProtectedClean = true;
             bool anyInfected = false;
             for (uint256 i = 0; i < topCandidates.length; i++) {
                 if (players[roomId][topCandidates[i]].status == PlayerStatus.Infected) {
                     anyInfected = true;
-                }
-                if (!_isProtectedCleanCandidate(roomId, topCandidates[i])) {
-                    allProtectedClean = false;
+                    break;
                 }
             }
 
-            if (allProtectedClean) {
-                // All tied candidates are clean and protected — no elimination
-                emit VoteResolved(roomId, "Tie: all tied clean candidates proved innocence; all saved");
-            } else if (anyInfected) {
-                // If any tied candidate is infected, eliminate infected candidate first.
-                address victim = _selectLowestHashInfected(roomId, topCandidates);
-                players[roomId][victim].status = PlayerStatus.Eliminated;
-                emit PlayerEliminated(roomId, victim);
-                emit VoteResolved(roomId, "Tie: infected tied candidate eliminated");
+            if (anyInfected) {
+                // If infected candidates are tied at top votes, eliminate all tied infected.
+                _eliminateAllTiedInfected(roomId, topCandidates);
+                _emitSavedProtectedTied(roomId, topCandidates);
+                emit VoteResolved(roomId, "Tie: all tied infected candidates eliminated; proved clean candidates saved");
             } else {
-                // No infected in tie, eliminate unprotected clean candidate.
-                address victim = _selectLowestHashUnprotectedClean(roomId, topCandidates);
-                players[roomId][victim].status = PlayerStatus.Eliminated;
-                emit PlayerEliminated(roomId, victim);
-                emit VoteResolved(roomId, "Tie: unprotected clean candidate eliminated");
+                // No infected in tie: eliminate all tied unprotected clean candidates.
+                uint256 eliminated = _eliminateAllTiedUnprotectedClean(roomId, topCandidates);
+                uint256 saved = _emitSavedProtectedTied(roomId, topCandidates);
+
+                if (eliminated == 0 && saved > 0) {
+                    emit VoteResolved(roomId, "Tie: all tied clean candidates proved innocence; all saved");
+                } else {
+                    emit VoteResolved(roomId, "Tie: all tied unprotected clean candidates eliminated; proved clean candidates saved");
+                }
             }
         }
 
@@ -804,42 +800,46 @@ contract PlagueGame {
     }
 
     /**
-     * @dev Among tied infected candidates return the one with the
-     *      lexicographically lowest keccak256(address).
+     * @dev In infected ties, eliminate every tied infected candidate.
      */
-    function _selectLowestHashInfected(uint256 roomId, address[] memory candidates)
+    function _eliminateAllTiedInfected(uint256 roomId, address[] memory candidates)
         internal
-        view
-        returns (address victim)
     {
-        bytes32 lowestHash = bytes32(type(uint256).max);
         for (uint256 i = 0; i < candidates.length; i++) {
-            if (players[roomId][candidates[i]].status != PlayerStatus.Infected) continue;
-            bytes32 h = keccak256(abi.encodePacked(candidates[i]));
-            if (h < lowestHash) {
-                lowestHash = h;
-                victim     = candidates[i];
-            }
+            PlayerState storage p = players[roomId][candidates[i]];
+            if (p.status != PlayerStatus.Infected) continue;
+            p.status = PlayerStatus.Eliminated;
+            emit PlayerEliminated(roomId, candidates[i]);
         }
     }
 
     /**
-     * @dev Among tied clean candidates without proof return the one with the
-     *      lexicographically lowest keccak256(address).
+     * @dev In clean-only ties, eliminate every tied clean candidate without proof.
      */
-    function _selectLowestHashUnprotectedClean(uint256 roomId, address[] memory candidates)
+    function _eliminateAllTiedUnprotectedClean(uint256 roomId, address[] memory candidates)
         internal
-        view
-        returns (address victim)
+        returns (uint256 eliminated)
     {
-        bytes32 lowestHash = bytes32(type(uint256).max);
         for (uint256 i = 0; i < candidates.length; i++) {
             PlayerState storage p = players[roomId][candidates[i]];
             if (p.status != PlayerStatus.Clean || p.hasProofThisRound) continue;
-            bytes32 h = keccak256(abi.encodePacked(candidates[i]));
-            if (h < lowestHash) {
-                lowestHash = h;
-                victim     = candidates[i];
+            p.status = PlayerStatus.Eliminated;
+            emit PlayerEliminated(roomId, candidates[i]);
+            unchecked { eliminated++; }
+        }
+    }
+
+    /**
+     * @dev Emit save events for tied clean candidates with valid proof.
+     */
+    function _emitSavedProtectedTied(uint256 roomId, address[] memory candidates)
+        internal
+        returns (uint256 saved)
+    {
+        for (uint256 i = 0; i < candidates.length; i++) {
+            if (_isProtectedCleanCandidate(roomId, candidates[i])) {
+                emit PlayerSavedByProof(roomId, candidates[i]);
+                unchecked { saved++; }
             }
         }
     }

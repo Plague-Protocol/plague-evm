@@ -176,7 +176,7 @@ Both Henry and Bob tied at 3 votes. Contract checks proofs submitted during disc
 - Henry: **active proof this round** ✓
 - Bob: **no proof** (couldn't generate one) ✕
 
-**Case C — tied, some unprotected:** Bob eliminated.
+**Case D — tied, no infected among tied candidates:** all tied unprotected clean candidates are eliminated. In this round only Bob is unprotected, so Bob is eliminated.
 
 **Endgame check:** infected=2 (Grace, Frank), clean=3 (Carol/Eve/Henry) → `2 < 3` → **continue**
 
@@ -293,14 +293,14 @@ Per winner = 80 / 3 = 26 XLM each (remainder 2 XLM stays in contract)
 
 ---
 
-## Alternate Scenario B: Case D — All-Proofs Tie
+## Alternate Scenario B: Case D — Clean-Only Tie (All Proved)
 
 > What if the tie in Round 3 had been between Henry (clean, proof submitted) and Carol (also clean, proof submitted)?
 
 1. Both submit valid proofs during discussion.
 2. Votes tied: Henry 3, Carol 3.
-3. **Case D** — all tied candidates have active proofs.
-4. Nobody eliminated. Both Henry and Carol survive.
+3. **Case D** — no infected among tied candidates.
+4. Since both tied candidates have active proofs, nobody is eliminated. Both Henry and Carol survive.
 5. No forced infection occurs — only the PZ drives infection. The next round's normal system infection proceeds as usual.
 6. Broadcast: `"Vote resolved by protocol"` — no names, no proof hints.
 

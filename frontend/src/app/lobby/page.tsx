@@ -46,6 +46,25 @@ const ROOM_STATUS_MAP: Record<number, 'waiting' | 'starting' | 'active' | 'ended
   0: 'waiting', 1: 'starting', 2: 'active', 3: 'ended',
 }
 
+function sortLobbyRooms(a: RoomRow, b: RoomRow): number {
+  if (a.status === 'waiting' && b.status !== 'waiting') return -1
+  if (a.status !== 'waiting' && b.status === 'waiting') return 1
+  return Number(b.id - a.id)
+}
+
+function formatCUSDBalance(balance: bigint): string {
+  return (Number(balance) / 1e18).toFixed(2)
+}
+
+function claimSuccessMessage(claimed: boolean): string {
+  return claimed ? '50 cUSD dropped to your wallet!' : ''
+}
+
+function getCreateButtonLabel(isConnected: boolean, creating: boolean): string {
+  if (creating) return 'Creating\u2026'
+  return isConnected ? 'Create Room' : 'Connect & Create'
+}
+
 interface RoomRow {
   id: bigint
   status: 'waiting' | 'starting' | 'active' | 'ended'
@@ -63,6 +82,116 @@ function getContractClient() {
   const addr    = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}` | undefined
   if (!addr) return null
   return createContractClient({ contractAddress: addr, network })
+}
+
+interface CreateRoomActionArgs {
+  isConnected: boolean
+  address?: `0x${string}`
+  chainId?: number
+  connect: () => Promise<void>
+  maxPlayers: number
+  stakeInput: string
+  proofFeeInput: string
+  setCreating: (value: boolean) => void
+  setCreateError: (value: string | null) => void
+  loadRooms: () => Promise<void>
+  pushToGame: (roomId: bigint) => void
+}
+
+async function runCreateRoomAction(args: CreateRoomActionArgs) {
+  const {
+    isConnected,
+    address,
+    chainId,
+    connect,
+    maxPlayers,
+    stakeInput,
+    proofFeeInput,
+    setCreating,
+    setCreateError,
+    loadRooms,
+    pushToGame,
+  } = args
+
+  if (!isConnected || !address) {
+    await connect()
+    return
+  }
+
+  const client = getContractClient()
+  if (!client) return
+
+  const stakeWei = BigInt(Math.round(Number.parseFloat(stakeInput) * 1e18))
+  const feeWei   = BigInt(Math.round(Number.parseFloat(proofFeeInput) * 1e18))
+  setCreating(true)
+  setCreateError(null)
+
+  try {
+    const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
+    if (cUSDAddr) {
+      await client.approveCUSD(address, cUSDAddr, stakeWei * BigInt(maxPlayers) + feeWei * 10n)
+    }
+    const newId = await client.createRoom(address, maxPlayers, stakeWei, feeWei, 600)
+    await loadRooms()
+    pushToGame(newId)
+  } catch (err) {
+    setCreateError(err instanceof Error ? err.message : 'Room creation failed.')
+  } finally {
+    setCreating(false)
+  }
+}
+
+interface JoinRoomActionArgs {
+  room: RoomRow
+  isConnected: boolean
+  address?: `0x${string}`
+  chainId?: number
+  connect: () => Promise<void>
+  setJoiningId: (value: bigint | null) => void
+  setJoinError: (value: string | null) => void
+  pushToGame: (roomId: bigint) => void
+}
+
+async function runJoinRoomAction(args: JoinRoomActionArgs) {
+  const {
+    room,
+    isConnected,
+    address,
+    chainId,
+    connect,
+    setJoiningId,
+    setJoinError,
+    pushToGame,
+  } = args
+
+  if (room.status !== 'waiting') {
+    pushToGame(room.id)
+    return
+  }
+
+  if (!isConnected || !address) {
+    await connect()
+    return
+  }
+
+  const client = getContractClient()
+  if (!client) return
+
+  setJoiningId(room.id)
+  setJoinError(null)
+
+  try {
+    const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
+    if (cUSDAddr) {
+      await client.approveCUSD(address, cUSDAddr, room.stakeAmount)
+    }
+    await client.joinRoom(address, room.id)
+    pushToGame(room.id)
+  } catch (err) {
+    setJoinError(err instanceof Error ? err.message : 'Failed to join room.')
+  } finally {
+    setJoiningId(null)
+  }
 }
 
 export default function LobbyPage() {
@@ -117,7 +246,7 @@ export default function LobbyPage() {
     if (!cUSDAddr) return
     try {
       const bal = await readCUSDBalance(address, cUSDAddr, chainId === 42220 ? 'mainnet' : 'testnet')
-      setCusdBalance((Number(bal) / 1e18).toFixed(2))
+      setCusdBalance(formatCUSDBalance(bal))
     } catch { /* silently ignore */ }
     if (!faucetAddr || !showFaucet) return
     try {
@@ -180,11 +309,7 @@ export default function LobbyPage() {
         }
       }))
       // Sort: waiting first, then by id desc
-      rows.sort((a, b) => {
-        if (a.status === 'waiting' && b.status !== 'waiting') return -1
-        if (a.status !== 'waiting' && b.status === 'waiting') return 1
-        return Number(b.id - a.id)
-      })
+      rows.sort(sortLobbyRooms)
       setRooms(rows)
     } catch (err) {
       setRoomsError(err instanceof Error ? err.message : 'Failed to load rooms from contract.')
@@ -195,60 +320,41 @@ export default function LobbyPage() {
 
   useEffect(() => { loadRooms() }, [loadRooms])
 
-  // ── Create Room ────────────────────────────────────────────────────────────
-  const handleCreateRoom = async () => {
-    if (!isConnected || !address) { await connect(); return }
-    const client = getContractClient()
-    if (!client) return
-    const stakeWei = BigInt(Math.round(Number.parseFloat(stakeInput) * 1e18))
-    const feeWei   = BigInt(Math.round(Number.parseFloat(proofFeeInput) * 1e18))
-    setCreating(true)
-    setCreateError(null)
-    try {
-      // Approve stake + proofFee buffer in cUSD before calling createRoom
-      // (backend will auto-stake when startGame triggers)
-      const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
-      if (cUSDAddr) {
-        await client.approveCUSD(address, cUSDAddr, stakeWei * BigInt(maxPlayers) + feeWei * 10n)
-      }
-      const newId = await client.createRoom(address, maxPlayers, stakeWei, feeWei, 600)
-      await loadRooms()
-      router.push(`/game?room=${newId.toString()}`)
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Room creation failed.')
-    } finally {
-      setCreating(false)
-    }
-  }
+  // ── Create / Join actions ──────────────────────────────────────────────────
+  const pushToGame = useCallback((roomId: bigint) => {
+    router.push(`/game?room=${roomId.toString()}`)
+  }, [router])
 
-  // ── Join Room ──────────────────────────────────────────────────────────────
-  const handleJoin = async (room: RoomRow) => {
-    if (room.status !== 'waiting') {
-      router.push(`/game?room=${room.id.toString()}`)
-      return
-    }
-    if (!isConnected || !address) { await connect(); return }
-    const client = getContractClient()
-    if (!client) return
-    setJoiningId(room.id)
-    setJoinError(null)
-    try {
-      const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
-      if (cUSDAddr) {
-        await client.approveCUSD(address, cUSDAddr, room.stakeAmount)
-      }
-      await client.joinRoom(address, room.id)
-      router.push(`/game?room=${room.id.toString()}`)
-    } catch (err) {
-      setJoinError(err instanceof Error ? err.message : 'Failed to join room.')
-    } finally {
-      setJoiningId(null)
-    }
-  }
+  const handleCreateRoom = useCallback(async () => {
+    await runCreateRoomAction({
+      isConnected,
+      address,
+      chainId,
+      connect,
+      maxPlayers,
+      stakeInput,
+      proofFeeInput,
+      setCreating,
+      setCreateError,
+      loadRooms,
+      pushToGame,
+    })
+  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, proofFeeInput, loadRooms, pushToGame])
 
-  let createBtnLabel = 'Connect & Create'
-  if (isConnected) createBtnLabel = 'Create Room'
-  if (creating) createBtnLabel = 'Creating\u2026'
+  const handleJoin = useCallback(async (room: RoomRow) => {
+    await runJoinRoomAction({
+      room,
+      isConnected,
+      address,
+      chainId,
+      connect,
+      setJoiningId,
+      setJoinError,
+      pushToGame,
+    })
+  }, [isConnected, address, chainId, connect, pushToGame])
+
+  const createBtnLabel = getCreateButtonLabel(isConnected, creating)
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-lobby.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
@@ -413,8 +519,33 @@ export default function LobbyPage() {
                     {showFaucet && isTestnet && (
                       <div className="space-y-2">
                         <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Test Faucet</p>
+                        <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(245,197,24,0.25)', backgroundColor: 'rgba(245,197,24,0.06)' }}>
+                          <p className="font-mono text-[11px]" style={{ color: '#f5c518' }}>
+                            Step 1: Get CELO gas first, then claim cUSD here.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <a
+                              href="https://faucet.celo.org/celo-sepolia"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-wider"
+                              style={{ borderColor: 'rgba(245,197,24,0.35)', color: '#f5c518' }}
+                            >
+                              Celo Faucet
+                            </a>
+                            <a
+                              href="https://cloud.google.com/application/web3/faucet/celo/sepolia"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-wider"
+                              style={{ borderColor: 'rgba(245,197,24,0.35)', color: '#f5c518' }}
+                            >
+                              Google Faucet
+                            </a>
+                          </div>
+                        </div>
                         {claimSuccess && (
-                          <p className="font-mono text-xs" style={{ color: '#39ff14' }}>50 cUSD dropped to your wallet!</p>
+                          <p className="font-mono text-xs" style={{ color: '#39ff14' }}>{claimSuccessMessage(claimSuccess)}</p>
                         )}
                         {claimError && (
                           <p className="font-mono text-xs" style={{ color: '#e63329' }}>{claimError}</p>
