@@ -86,8 +86,8 @@ function getContractClient() {
 
 interface CreateRoomActionArgs {
   isConnected: boolean
-  address?: `0x${string}`
-  chainId?: number
+  address: `0x${string}` | null
+  chainId: number | null
   connect: () => Promise<void>
   maxPlayers: number
   stakeInput: string
@@ -144,8 +144,8 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
 interface JoinRoomActionArgs {
   room: RoomRow
   isConnected: boolean
-  address?: `0x${string}`
-  chainId?: number
+  address: `0x${string}` | null
+  chainId: number | null
   connect: () => Promise<void>
   setJoiningId: (value: bigint | null) => void
   setJoinError: (value: string | null) => void
