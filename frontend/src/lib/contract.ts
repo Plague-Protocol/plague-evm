@@ -4,7 +4,6 @@ import {
   custom,
   http,
   parseAbi,
-  type Abi,
 } from 'viem'
 import { celoAlfajores, celo } from 'viem/chains'
 
@@ -80,14 +79,7 @@ export class PlagueContractClient {
   }
 
   private walletClient(account: `0x${string}`) {
-    if (typeof window === 'undefined' || !window.ethereum) {
-      throw new Error('No EIP-1193 wallet provider found. Install MetaMask or Valora.')
-    }
-    return createWalletClient({
-      account,
-      chain:     this.chain,
-      transport: custom(window.ethereum as Parameters<typeof custom>[0]),
-    })
+    return makeWalletClient(account, this.chain)
   }
 
   private async sendTx(account: `0x${string}`, request: unknown) {
@@ -277,5 +269,112 @@ export class PlagueContractClient {
 
 export function createContractClient(config: ContractConfig): PlagueContractClient {
   return new PlagueContractClient(config)
+}
+
+// ── Shared wallet helper ──────────────────────────────────────────────────────
+
+function makeWalletClient(account: `0x${string}`, chain: typeof celo | typeof celoAlfajores) {
+  if (!globalThis.window?.ethereum) {
+    throw new Error('No EIP-1193 wallet provider found. Install MetaMask or Valora.')
+  }
+  return createWalletClient({
+    account,
+    chain,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    transport: custom(globalThis.window.ethereum as any),
+  })
+}
+
+// ── FaucetCUSD ────────────────────────────────────────────────────────────────
+// Mirrors FaucetCUSD.sol — testnet only.
+
+const FAUCET_ABI = parseAbi([
+  'function claim() external',
+  'function nextClaimAt(address user) external view returns (uint256)',
+  'function faucetBalance() external view returns (uint256)',
+  'function dripAmount() external view returns (uint256)',
+] as const)
+
+const ERC20_BALANCE_ABI = parseAbi([
+  'function balanceOf(address account) external view returns (uint256)',
+] as const)
+
+export interface FaucetConfig {
+  faucetAddress: `0x${string}`
+  network: 'testnet' | 'mainnet'
+}
+
+export class FaucetClient {
+  private readonly address: `0x${string}`
+  private readonly chain: typeof celo | typeof celoAlfajores
+
+  constructor(config: FaucetConfig) {
+    this.address = config.faucetAddress
+    this.chain   = CHAINS[config.network]
+  }
+
+  private get publicClient() {
+    return createPublicClient({ chain: this.chain, transport: http() })
+  }
+
+  private walletClient(account: `0x${string}`) {
+    return makeWalletClient(account, this.chain)
+  }
+
+  /** Claim dripAmount cUSD. Reverts if in cooldown or faucet is empty. */
+  async claim(account: `0x${string}`): Promise<void> {
+    const wc   = this.walletClient(account)
+    const hash = await wc.writeContract({
+      address:      this.address,
+      abi:          FAUCET_ABI,
+      functionName: 'claim',
+      account,
+    })
+    await this.publicClient.waitForTransactionReceipt({ hash })
+  }
+
+  /**
+   * Unix timestamp (seconds) when `user` may next claim.
+   * Returns 0 if the user has never claimed (can claim immediately).
+   */
+  async getNextClaimAt(user: `0x${string}`): Promise<bigint> {
+    return this.publicClient.readContract({
+      address:      this.address,
+      abi:          FAUCET_ABI,
+      functionName: 'nextClaimAt',
+      args:         [user],
+    })
+  }
+
+  /** Amount of cUSD dispensed per claim (wei). */
+  async getDripAmount(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address:      this.address,
+      abi:          FAUCET_ABI,
+      functionName: 'dripAmount',
+    })
+  }
+}
+
+export function createFaucetClient(config: FaucetConfig): FaucetClient {
+  return new FaucetClient(config)
+}
+
+/**
+ * Read an ERC-20 (cUSD) balance for `account` without needing a full client.
+ */
+export async function readCUSDBalance(
+  account: `0x${string}`,
+  cUSDAddress: `0x${string}`,
+  network: 'testnet' | 'mainnet',
+): Promise<bigint> {
+  const chain = CHAINS[network]
+  const pc = createPublicClient({ chain, transport: http() })
+  return pc.readContract({
+    address:      cUSDAddress,
+    abi:          ERC20_BALANCE_ABI,
+    functionName: 'balanceOf',
+    args:         [account],
+  })
 }
 

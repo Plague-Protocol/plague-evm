@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
-import { createContractClient } from '@/lib/contract'
+import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib/contract'
 import { useRouter } from 'next/navigation'
 
 // ── cUSD contract addresses ───────────────────────────────────────────────────
@@ -87,12 +87,65 @@ export default function LobbyPage() {
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
   const [joinError, setJoinError] = useState<string | null>(null)
 
+  // ── Faucet / balance state ─────────────────────────────────────────────────
+  const [cusdBalance, setCusdBalance]           = useState<string | null>(null)
+  const [nextClaimTimestamp, setNextClaimTimestamp] = useState<number>(0)
+  const [claiming, setClaiming]                 = useState(false)
+  const [claimError, setClaimError]             = useState<string | null>(null)
+  const [claimSuccess, setClaimSuccess]         = useState(false)
+
+  // ── Derived faucet values ──────────────────────────────────────────────────
+  const network     = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
+  const faucetAddr  = process.env.NEXT_PUBLIC_FAUCET_ADDRESS as `0x${string}` | undefined
+  const isTestnet   = chainId !== 42220
+  const showFaucet  = network === 'testnet' && !!faucetAddr
+
   // ── Ticker ─────────────────────────────────────────────────────────────────
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+
+  // cooldown seconds remaining (0 = can claim now)
+  const cooldownSecs = Math.max(0, nextClaimTimestamp - Math.floor(now / 1000))
+
+  // ── Load faucet / cUSD balance ─────────────────────────────────────────────
+  const loadFaucetInfo = useCallback(async () => {
+    if (!isConnected || !address || !chainId) return
+    const cUSDAddr = CUSD_ADDRESSES[chainId]
+    if (!cUSDAddr) return
+    try {
+      const bal = await readCUSDBalance(address, cUSDAddr, chainId === 42220 ? 'mainnet' : 'testnet')
+      setCusdBalance((Number(bal) / 1e18).toFixed(2))
+    } catch { /* silently ignore */ }
+    if (!faucetAddr || !showFaucet) return
+    try {
+      const fc   = createFaucetClient({ faucetAddress: faucetAddr, network: 'testnet' })
+      const next = await fc.getNextClaimAt(address)
+      setNextClaimTimestamp(Number(next))
+    } catch { /* silently ignore */ }
+  }, [isConnected, address, chainId, faucetAddr, showFaucet])
+
+  useEffect(() => { loadFaucetInfo() }, [loadFaucetInfo])
+
+  // ── Claim test cUSD ────────────────────────────────────────────────────────
+  const handleClaim = async () => {
+    if (!isConnected || !address || !faucetAddr) return
+    const fc = createFaucetClient({ faucetAddress: faucetAddr, network: 'testnet' })
+    setClaiming(true)
+    setClaimError(null)
+    setClaimSuccess(false)
+    try {
+      await fc.claim(address)
+      setClaimSuccess(true)
+      await loadFaucetInfo()
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Claim failed.')
+    } finally {
+      setClaiming(false)
+    }
+  }
 
   // ── Load rooms from contract ───────────────────────────────────────────────
   const loadRooms = useCallback(async () => {
@@ -338,13 +391,51 @@ export default function LobbyPage() {
                   Wallet
                 </p>
                 {isConnected && address ? (
-                  <div className="mt-3 space-y-1">
-                    <p className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
-                      {address.slice(0, 10)}…{address.slice(-6)}
-                    </p>
-                    <p className="font-mono text-xs" style={{ color: '#84cc16' }}>
-                      Connected · {chainId === 42220 ? 'Mainnet' : 'Alfajores'}
-                    </p>
+                  <div className="mt-3 space-y-3">
+                    <div className="space-y-1">
+                      <p className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
+                        {address.slice(0, 10)}…{address.slice(-6)}
+                      </p>
+                      <p className="font-mono text-xs" style={{ color: '#84cc16' }}>
+                        Connected · {chainId === 42220 ? 'Mainnet' : 'Alfajores'}
+                      </p>
+                    </div>
+
+                    {/* cUSD balance */}
+                    <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: '#0e180d' }}>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>cUSD Balance</p>
+                      <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#4a5e44' }}>
+                        {cusdBalance ? `${cusdBalance} cUSD` : '…'}
+                      </p>
+                    </div>
+
+                    {/* Testnet faucet */}
+                    {showFaucet && isTestnet && (
+                      <div className="space-y-2">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Test Faucet</p>
+                        {claimSuccess && (
+                          <p className="font-mono text-xs" style={{ color: '#39ff14' }}>50 cUSD dropped to your wallet!</p>
+                        )}
+                        {claimError && (
+                          <p className="font-mono text-xs" style={{ color: '#e63329' }}>{claimError}</p>
+                        )}
+                        {cooldownSecs > 0 ? (
+                          <div className="flex items-center justify-between rounded border px-3 py-2" style={{ borderColor: 'rgba(143,168,130,0.2)', backgroundColor: '#0e180d' }}>
+                            <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>Next claim in</p>
+                            <p className="font-mono text-sm tabular-nums" style={{ color: '#8fa882' }}>{formatCountdown(cooldownSecs)}</p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={handleClaim}
+                            disabled={claiming}
+                            className="w-full rounded border py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
+                            style={{ borderColor: 'rgba(57,255,20,0.45)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.06)' }}
+                          >
+                            {claiming ? 'Claiming…' : 'Claim 50 test cUSD'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <button
