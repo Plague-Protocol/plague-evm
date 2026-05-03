@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
-import "../src/FaucetCUSD.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {FaucetCUSD} from "../src/FaucetCUSD.sol";
 
 /**
  * @title DeployFaucetScript
@@ -30,16 +30,16 @@ contract DeployFaucetScript is Script {
         );
 
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        address cUSDToken   = vm.envAddress("CUSD_TOKEN");
+        address cUsdToken   = vm.envAddress("CUSD_TOKEN");
 
         address deployer = vm.addr(deployerKey);
         console.log("Deployer         :", deployer);
-        console.log("cUSD token       :", cUSDToken);
+        console.log("cUSD token       :", cUsdToken);
         console.log("Chain ID         :", block.chainid);
 
         vm.startBroadcast(deployerKey);
 
-        FaucetCUSD faucet = new FaucetCUSD(cUSDToken);
+        FaucetCUSD faucet = new FaucetCUSD(cUsdToken);
         console.log("FaucetCUSD       :", address(faucet));
         console.log("Drip amount      : 50 cUSD");
         console.log("Cooldown         : 24 hours");

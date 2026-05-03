@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
-import "../src/PlagueGame.sol";
-import "../src/ZKVerifier.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {PlagueGame} from "../src/PlagueGame.sol";
+import {ZKVerifier} from "../src/ZKVerifier.sol";
 
 /**
  * @title DeployScript
@@ -38,14 +38,14 @@ contract DeployScript is Script {
         uint256 deployerKey      = vm.envUint("PRIVATE_KEY");
         address backendSigner    = vm.envAddress("BACKEND_SIGNER");
         address platformReceiver = vm.envAddress("PLATFORM_RECEIVER");
-        address cUSDToken        = vm.envAddress("CUSD_TOKEN");
+        address cUsdToken        = vm.envAddress("CUSD_TOKEN");
 
         // Deployer address derived from the key
         address deployer = vm.addr(deployerKey);
         console.log("Deployer           :", deployer);
         console.log("Backend signer     :", backendSigner);
         console.log("Platform receiver  :", platformReceiver);
-        console.log("cUSD token         :", cUSDToken);
+        console.log("cUSD token         :", cUsdToken);
 
         vm.startBroadcast(deployerKey);
 
@@ -64,7 +64,7 @@ contract DeployScript is Script {
 
         // ── PlagueGame ───────────────────────────────────────────────────────────
         PlagueGame game = new PlagueGame();
-        game.initialize(deployer, backendSigner, zkVerifierAddr, platformReceiver, cUSDToken);
+        game.initialize(deployer, backendSigner, zkVerifierAddr, platformReceiver, cUsdToken);
         console.log("PlagueGame deployed       :", address(game));
 
         vm.stopBroadcast();

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Test.sol";
-import "../src/PlagueGame.sol";
-import "../src/ZKVerifier.sol";
+import {Test} from "forge-std/Test.sol";
+import {PlagueGame} from "../src/PlagueGame.sol";
+import {ZKVerifier} from "../src/ZKVerifier.sol";
 
 /// @dev Minimal ERC-20 mock used by tests in place of real cUSD.
 contract MockERC20 {

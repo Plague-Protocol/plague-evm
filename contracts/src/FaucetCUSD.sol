@@ -19,7 +19,7 @@ interface IERC20Faucet {
  */
 contract FaucetCUSD {
     address public owner;
-    IERC20Faucet public cUSD;
+    IERC20Faucet public cUsd;
 
     uint256 public dripAmount = 50 ether;  // 50 cUSD (18 decimals)
     uint256 public cooldown   = 24 hours;
@@ -41,14 +41,18 @@ contract FaucetCUSD {
     error ZeroDripAmount();
 
     modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
+        _onlyOwner();
         _;
     }
 
-    constructor(address _cUSD) {
-        if (_cUSD == address(0)) revert ZeroAddress();
+    function _onlyOwner() internal view {
+        if (msg.sender != owner) revert NotOwner();
+    }
+
+    constructor(address _cUsd) {
+        if (_cUsd == address(0)) revert ZeroAddress();
         owner = msg.sender;
-        cUSD  = IERC20Faucet(_cUSD);
+        cUsd  = IERC20Faucet(_cUsd);
     }
 
     // ── Public ────────────────────────────────────────────────────────────────
@@ -60,12 +64,12 @@ contract FaucetCUSD {
     function claim() external {
         uint256 availableAt = lastClaimed[msg.sender] + cooldown;
         if (block.timestamp < availableAt) revert CooldownActive(availableAt);
-        if (cUSD.balanceOf(address(this)) < dripAmount) revert InsufficientFaucetBalance();
+        if (cUsd.balanceOf(address(this)) < dripAmount) revert InsufficientFaucetBalance();
 
         // Update state before transfer (checks-effects-interactions)
         lastClaimed[msg.sender] = block.timestamp;
 
-        bool ok = cUSD.transfer(msg.sender, dripAmount);
+        bool ok = cUsd.transfer(msg.sender, dripAmount);
         require(ok, "cUSD transfer failed");
 
         emit Claimed(msg.sender, dripAmount);
@@ -85,7 +89,7 @@ contract FaucetCUSD {
 
     /** @notice cUSD balance currently held by this faucet. */
     function faucetBalance() external view returns (uint256) {
-        return cUSD.balanceOf(address(this));
+        return cUsd.balanceOf(address(this));
     }
 
     // ── Owner ─────────────────────────────────────────────────────────────────
@@ -109,7 +113,7 @@ contract FaucetCUSD {
      */
     function withdraw(address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert ZeroAddress();
-        bool ok = cUSD.transfer(to, amount);
+        bool ok = cUsd.transfer(to, amount);
         require(ok, "cUSD transfer failed");
         emit Withdrawn(to, amount);
     }

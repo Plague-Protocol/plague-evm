@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "./ZKVerifier.sol";
+import {IZKVerifier} from "./ZKVerifier.sol";
 
 /// @dev Minimal ERC-20 interface used by the game contract.
 interface IERC20 {
@@ -135,7 +135,7 @@ contract PlagueGame {
     address public platformReceiver;
     /// @dev cUSD token contract. Alfajores: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
     ///      Mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
-    IERC20  public cUSDToken;
+    IERC20  public cUsdToken;
     bool private _initialized;
 
     // ─── Events ───────────────────────────────────────────────────────────────────
@@ -185,44 +185,56 @@ contract PlagueGame {
     // ─── Modifiers ────────────────────────────────────────────────────────────────
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert Unauthorized();
+        _onlyAdmin();
         _;
     }
 
     modifier onlyBackend() {
-        if (msg.sender != backendSigner && msg.sender != admin) revert Unauthorized();
+        _onlyBackend();
         _;
     }
 
     modifier roomExists(uint256 roomId) {
-        if (roomId == 0 || roomId > roomCount) revert InvalidRoom();
+        _roomExists(roomId);
         _;
+    }
+
+    function _onlyAdmin() internal view {
+        if (msg.sender != admin) revert Unauthorized();
+    }
+
+    function _onlyBackend() internal view {
+        if (msg.sender != backendSigner && msg.sender != admin) revert Unauthorized();
+    }
+
+    function _roomExists(uint256 roomId) internal view {
+        if (roomId == 0 || roomId > roomCount) revert InvalidRoom();
     }
 
     // ─── Initialisation ───────────────────────────────────────────────────────────
 
     /**
-     * @param _admin          Address that owns admin functions (setBackendSigner, setZKVerifier, setPlatformReceiver).
+     * @param _admin          Address that owns admin functions (setBackendSigner, setZkVerifier, setPlatformReceiver).
      * @param _backendSigner  Address authorised to drive phase transitions server-side.
      * @param _zkVerifier     Address of the IZKVerifier implementation (stub or Noir-generated).
      * @param _platformReceiver Address to receive platform fees (proof fees + 0.3% of pot).
-     * @param _cUSDToken      cUSD ERC-20 token address for the target network.
+     * @param _cUsdToken      cUSD ERC-20 token address for the target network.
      */
     function initialize(
         address _admin,
         address _backendSigner,
         address _zkVerifier,
         address _platformReceiver,
-        address _cUSDToken
+        address _cUsdToken
     ) external {
         if (_initialized) revert AlreadyInitialized();
-        require(_cUSDToken != address(0), "cUSD token address required");
+        require(_cUsdToken != address(0), "cUSD token address required");
         _initialized      = true;
         admin             = _admin;
         backendSigner     = _backendSigner;
         zkVerifier        = IZKVerifier(_zkVerifier);
         platformReceiver  = _platformReceiver;
-        cUSDToken         = IERC20(_cUSDToken);
+        cUsdToken         = IERC20(_cUsdToken);
     }
 
     // ─── Room Management ──────────────────────────────────────────────────────────
@@ -283,7 +295,7 @@ contract PlagueGame {
         if (players[roomId][msg.sender].addr != address(0))        revert AlreadyJoined();
 
         uint256 stake = r.config.stakeAmount;
-        bool ok = cUSDToken.transferFrom(msg.sender, address(this), stake);
+        bool ok = cUsdToken.transferFrom(msg.sender, address(this), stake);
         require(ok, "cUSD transfer failed");
 
         r.players.push(msg.sender);
@@ -468,7 +480,7 @@ contract PlagueGame {
         if (p.freeProofUsed) {
             uint256 fee = r.config.proofFee;
             if (fee > 0) {
-                bool ok = cUSDToken.transferFrom(msg.sender, address(this), fee);
+                bool ok = cUsdToken.transferFrom(msg.sender, address(this), fee);
                 require(ok, "Proof fee transfer failed");
                 platformFees += fee;
             }
@@ -642,7 +654,7 @@ contract PlagueGame {
             if (refund == 0) continue;
             p.staked = 0;
             r.pot   -= refund;
-            bool ok = cUSDToken.transfer(playerList[i], refund);
+            bool ok = cUsdToken.transfer(playerList[i], refund);
             require(ok, "Refund transfer failed");
         }
 
@@ -681,7 +693,7 @@ contract PlagueGame {
         require(platformReceiver != address(0), "platformReceiver not set");
         uint256 amount = platformFees;
         platformFees = 0;
-        bool ok = cUSDToken.transfer(platformReceiver, amount);
+        bool ok = cUsdToken.transfer(platformReceiver, amount);
         require(ok, "Platform fee withdrawal failed");
     }
 
@@ -689,7 +701,7 @@ contract PlagueGame {
         backendSigner = signer;
     }
 
-    function setZKVerifier(address verifier) external onlyAdmin {
+    function setZkVerifier(address verifier) external onlyAdmin {
         zkVerifier = IZKVerifier(verifier);
     }
 
@@ -891,7 +903,7 @@ contract PlagueGame {
         r.pot = 0;
 
         for (uint256 i = 0; i < winnerCount; i++) {
-            bool ok = cUSDToken.transfer(winners[i], share);
+            bool ok = cUsdToken.transfer(winners[i], share);
             require(ok, "Payout transfer failed");
             emit PotDrained(roomId, winners[i], share);
         }
