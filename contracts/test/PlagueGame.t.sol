@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
 import {ZKVerifier} from "../src/ZKVerifier.sol";
+import {PlagueGameVerifier} from "../src/PlagueGameVerifier.sol";
+import {FaucetCUSD}         from "../src/FaucetCUSD.sol";
 
 /// @dev Minimal ERC-20 mock used by tests in place of real cUSD.
 contract MockERC20 {
@@ -37,6 +39,16 @@ contract MockERC20 {
         balanceOf[from]             -= amount;
         balanceOf[to]               += amount;
         return true;
+    }
+}
+
+/// @dev Mock Noir verifier with a configurable pass/fail toggle.
+contract MockNoirVerifier {
+    bool public shouldPass;
+    constructor(bool _shouldPass) { shouldPass = _shouldPass; }
+    function setShouldPass(bool v) external { shouldPass = v; }
+    function verify(bytes calldata, bytes32[] calldata) external view returns (bool) {
+        return shouldPass;
     }
 }
 
@@ -775,5 +787,730 @@ contract PlagueGameTest is Test {
             vm.prank(players[i]);
             game.submitRoleCommitment(1, keccak256(abi.encodePacked("commitment", i)), "");
         }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Additional PlagueGame coverage (admin setters, fees, maxActiveRooms, payouts)
+// ══════════════════════════════════════════════════════════════════════════════
+
+contract PlagueGameExtendedTest is Test {
+    PlagueGame  game;
+    ZKVerifier  zkVerifier;
+    MockERC20   token;
+
+    address admin    = makeAddr("admin");
+    address backend  = makeAddr("backend");
+    address platform = makeAddr("platform");
+    address host     = makeAddr("host");
+
+    address[] players;
+
+    uint256 constant STAKE = 10e18;
+    uint256 constant FEE   = 1e18;
+    uint256 constant MINT  = 1000e18;
+
+    function setUp() public {
+        token = new MockERC20();
+        token.mint(host, MINT);
+        for (uint8 i = 0; i < 6; i++) {
+            address p = makeAddr(string(abi.encodePacked("ext_player", i)));
+            players.push(p);
+            token.mint(p, MINT);
+        }
+        vm.startPrank(admin);
+        zkVerifier = new ZKVerifier(true);
+        game       = new PlagueGame();
+        game.initialize(admin, backend, address(zkVerifier), platform, address(token));
+        vm.stopPrank();
+    }
+
+    // ── Initialize zero-address guards ────────────────────────────────────────
+
+    function test_Initialize_ZeroAdmin_Reverts() public {
+        PlagueGame fresh = new PlagueGame();
+        vm.expectRevert("admin address required");
+        fresh.initialize(address(0), backend, address(zkVerifier), platform, address(token));
+    }
+
+    function test_Initialize_ZeroBackend_Reverts() public {
+        PlagueGame fresh = new PlagueGame();
+        vm.expectRevert("backendSigner address required");
+        fresh.initialize(admin, address(0), address(zkVerifier), platform, address(token));
+    }
+
+    function test_Initialize_ZeroZkVerifier_Reverts() public {
+        PlagueGame fresh = new PlagueGame();
+        vm.expectRevert("zkVerifier address required");
+        fresh.initialize(admin, backend, address(0), platform, address(token));
+    }
+
+    function test_Initialize_ZeroPlatformReceiver_Reverts() public {
+        PlagueGame fresh = new PlagueGame();
+        vm.expectRevert("platformReceiver address required");
+        fresh.initialize(admin, backend, address(zkVerifier), address(0), address(token));
+    }
+
+    function test_Initialize_ZeroCUSD_Reverts() public {
+        PlagueGame fresh = new PlagueGame();
+        vm.expectRevert("cUSD token address required");
+        fresh.initialize(admin, backend, address(zkVerifier), platform, address(0));
+    }
+
+    // ── Admin setters ─────────────────────────────────────────────────────────
+
+    function test_SetPlatformReceiver_UpdatesValue() public {
+        address newR = makeAddr("newReceiver");
+        vm.prank(admin);
+        game.setPlatformReceiver(newR);
+        assertEq(game.platformReceiver(), newR);
+    }
+
+    function test_SetPlatformReceiver_Zero_Reverts() public {
+        vm.prank(admin);
+        vm.expectRevert("platformReceiver address required");
+        game.setPlatformReceiver(address(0));
+    }
+
+    function test_SetPlatformReceiver_NotAdmin_Reverts() public {
+        vm.prank(players[0]);
+        vm.expectRevert(PlagueGame.Unauthorized.selector);
+        game.setPlatformReceiver(makeAddr("x"));
+    }
+
+    function test_SetBackendSigner_UpdatesValue() public {
+        address nb = makeAddr("newBackend");
+        vm.prank(admin);
+        game.setBackendSigner(nb);
+        assertEq(game.backendSigner(), nb);
+    }
+
+    function test_SetBackendSigner_Zero_Reverts() public {
+        vm.prank(admin);
+        vm.expectRevert("backendSigner address required");
+        game.setBackendSigner(address(0));
+    }
+
+    function test_SetBackendSigner_NotAdmin_Reverts() public {
+        vm.prank(players[0]);
+        vm.expectRevert(PlagueGame.Unauthorized.selector);
+        game.setBackendSigner(makeAddr("x"));
+    }
+
+    function test_SetZkVerifier_UpdatesValue() public {
+        ZKVerifier newV = new ZKVerifier(true);
+        vm.prank(admin);
+        game.setZkVerifier(address(newV));
+        assertEq(address(game.zkVerifier()), address(newV));
+    }
+
+    function test_SetZkVerifier_Zero_Reverts() public {
+        vm.prank(admin);
+        vm.expectRevert("zkVerifier address required");
+        game.setZkVerifier(address(0));
+    }
+
+    function test_SetZkVerifier_NotAdmin_Reverts() public {
+        vm.prank(players[0]);
+        vm.expectRevert(PlagueGame.Unauthorized.selector);
+        game.setZkVerifier(makeAddr("x"));
+    }
+
+    // ── maxActiveRooms ────────────────────────────────────────────────────────
+
+    function test_SetMaxActiveRooms_UpdatesValue() public {
+        vm.prank(admin);
+        game.setMaxActiveRooms(5);
+        assertEq(game.maxActiveRooms(), 5);
+    }
+
+    function test_SetMaxActiveRooms_Zero_Reverts() public {
+        vm.prank(admin);
+        vm.expectRevert("maxActiveRooms must be > 0");
+        game.setMaxActiveRooms(0);
+    }
+
+    function test_SetMaxActiveRooms_NotAdmin_Reverts() public {
+        vm.prank(players[0]);
+        vm.expectRevert(PlagueGame.Unauthorized.selector);
+        game.setMaxActiveRooms(1);
+    }
+
+    function test_TooManyActiveRooms_Reverts() public {
+        vm.prank(admin);
+        game.setMaxActiveRooms(2);
+
+        vm.prank(host);
+        game.createRoom(6, STAKE, FEE, 600);
+        vm.prank(host);
+        game.createRoom(6, STAKE, FEE, 600);
+
+        vm.prank(host);
+        vm.expectRevert(PlagueGame.TooManyActiveRooms.selector);
+        game.createRoom(6, STAKE, FEE, 600);
+    }
+
+    function test_ActiveRoomCount_DecreasesOnExpiry() public {
+        vm.prank(host);
+        game.createRoom(6, STAKE, FEE, 600);
+        uint256 before = game.activeRoomCount();
+
+        vm.warp(block.timestamp + 601);
+        game.expireRoom(1);
+
+        assertEq(game.activeRoomCount(), before - 1);
+    }
+
+    // ── Platform fees accumulation and withdrawal ─────────────────────────────
+
+    function test_PlatformFees_AccumulateFromProofFees() public {
+        _createAndStart();
+        _submitAllCommitments();
+        vm.prank(backend);
+        game.beginActivePhase(1);
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        // First proof free; end round 1 without anyone being eliminated
+        vm.prank(players[1]);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("null-r1-p1"), "");
+        vm.prank(backend);
+        game.openVoting(1);
+        vm.prank(players[0]);
+        game.castVote(1, host);
+        game.resolveRound(1);
+
+        // Round 2: players[1]'s second proof must be paid
+        vm.prank(backend);
+        game.assignInfection(1, players[2]);
+
+        vm.startPrank(players[1]);
+        token.approve(address(game), FEE);
+        game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("null-r2-p1"), "");
+        vm.stopPrank();
+
+        assertEq(game.platformFees(), FEE);
+    }
+
+    function test_PlatformFees_AccumulateFromPot() public {
+        _createAndStart();
+        _submitAllCommitments();
+        vm.prank(backend);
+        game.beginActivePhase(1);
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+        vm.prank(backend);
+        game.openVoting(1);
+        for (uint256 i = 1; i < 5; i++) {
+            vm.prank(players[i]);
+            game.castVote(1, players[0]);
+        }
+        vm.prank(host);
+        game.castVote(1, players[0]);
+        game.resolveRound(1);
+
+        uint256 totalStaked = STAKE * 6;
+        uint256 expectedFee = (totalStaked * 3) / 1000;
+        assertGe(game.platformFees(), expectedFee);
+    }
+
+    function test_WithdrawPlatformFees_TransfersToPlatformReceiver() public {
+        _runOneCompleteGame();
+
+        uint256 fees      = game.platformFees();
+        assertGt(fees, 0, "should have accumulated fees");
+
+        uint256 balBefore = token.balanceOf(platform);
+        vm.prank(admin);
+        game.withdrawPlatformFees();
+
+        assertEq(token.balanceOf(platform), balBefore + fees);
+        assertEq(game.platformFees(), 0);
+    }
+
+    function test_WithdrawPlatformFees_NotAdmin_Reverts() public {
+        vm.prank(players[0]);
+        vm.expectRevert(PlagueGame.Unauthorized.selector);
+        game.withdrawPlatformFees();
+    }
+
+    // ── Pot conservation (no dust stranded) ───────────────────────────────────
+
+    function test_PotConservation_AfterCleanWin() public {
+        _runOneCompleteGame();
+
+        assertEq(game.getRoom(1).pot, 0, "pot should be zeroed after payout");
+        // Contract balance must equal exactly the unclaimed platform fees
+        assertEq(
+            token.balanceOf(address(game)),
+            game.platformFees(),
+            "contract balance != platformFees (dust stranded)"
+        );
+    }
+
+    // ── Endgame: clean win payout math ────────────────────────────────────────
+
+    function test_Endgame_CleanWin_WinnersReceiveShares() public {
+        _createAndStart();
+        _submitAllCommitments();
+        vm.prank(backend);
+        game.beginActivePhase(1);
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+        vm.prank(backend);
+        game.openVoting(1);
+        for (uint256 i = 1; i < 5; i++) {
+            vm.prank(players[i]);
+            game.castVote(1, players[0]);
+        }
+        vm.prank(host);
+        game.castVote(1, players[0]);
+
+        uint256 pot          = game.getRoom(1).pot;
+        uint256 platformFee  = (pot * 3) / 1000;
+        uint256 netPot       = pot - platformFee;
+        uint256 winnerCount  = 5;
+        uint256 share        = netPot / winnerCount;
+        uint256 dust         = netPot - (share * winnerCount);
+
+        uint256 hostBefore   = token.balanceOf(host);
+
+        game.resolveRound(1);
+
+        assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
+        assertEq(token.balanceOf(host), hostBefore + share);
+        assertEq(game.platformFees(), platformFee + dust);
+    }
+
+    // ── Reentrancy guard (structural check) ───────────────────────────────────
+
+    function test_Reentrancy_FlagResetAfterCall() public {
+        // Verify calls succeed sequentially (flag is reset after each call)
+        vm.prank(host);
+        game.createRoom(6, STAKE, FEE, 600);
+
+        vm.startPrank(players[0]);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
+
+        // Second join by a different player must also succeed (flag reset properly)
+        vm.startPrank(players[1]);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
+
+        assertEq(game.getRoom(1).players.length, 2);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    function _createRoom() internal {
+        vm.prank(host);
+        game.createRoom(6, STAKE, FEE, 600);
+    }
+
+    function _fillRoom() internal {
+        vm.startPrank(host);
+        token.approve(address(game), STAKE);
+        game.joinRoom(1);
+        vm.stopPrank();
+        for (uint256 i = 0; i < 5; i++) {
+            vm.startPrank(players[i]);
+            token.approve(address(game), STAKE);
+            game.joinRoom(1);
+            vm.stopPrank();
+        }
+    }
+
+    function _createAndStart() internal {
+        _createRoom();
+        _fillRoom();
+        vm.prank(host);
+        game.startGame(1);
+    }
+
+    function _submitAllCommitments() internal {
+        vm.prank(host);
+        game.submitRoleCommitment(1, keccak256("commitment-host"), "");
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(players[i]);
+            game.submitRoleCommitment(1, keccak256(abi.encodePacked("commitment", i)), "");
+        }
+    }
+
+    function _runOneCompleteGame() internal {
+        _createAndStart();
+        _submitAllCommitments();
+        vm.prank(backend);
+        game.beginActivePhase(1);
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+        vm.prank(backend);
+        game.openVoting(1);
+        for (uint256 i = 1; i < 5; i++) {
+            vm.prank(players[i]);
+            game.castVote(1, players[0]);
+        }
+        vm.prank(host);
+        game.castVote(1, players[0]);
+        game.resolveRound(1);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ZKVerifierTest
+// ══════════════════════════════════════════════════════════════════════════════
+
+contract ZKVerifierTest is Test {
+    ZKVerifier verifier;
+    address    owner = makeAddr("zkOwner");
+
+    function setUp() public {
+        vm.prank(owner);
+        verifier = new ZKVerifier(true);
+    }
+
+    function test_BypassOn_AcceptsAnyRoleCommitment() public view {
+        assertTrue(verifier.verifyRoleCommitment(bytes32(0), ""));
+    }
+
+    function test_BypassOn_AcceptsAnyInnocenceProof() public view {
+        assertTrue(verifier.verifyInnocenceProof(bytes32(0), bytes32(0), ""));
+    }
+
+    function test_BypassOff_RejectsRoleCommitment() public {
+        vm.prank(owner);
+        verifier.setBypass(false);
+        assertFalse(verifier.verifyRoleCommitment(bytes32(0), ""));
+    }
+
+    function test_BypassOff_RejectsInnocenceProof() public {
+        vm.prank(owner);
+        verifier.setBypass(false);
+        assertFalse(verifier.verifyInnocenceProof(bytes32(0), bytes32(0), ""));
+    }
+
+    function test_SetBypass_EmitsEvent() public {
+        vm.prank(owner);
+        vm.expectEmit(false, false, false, true);
+        emit ZKVerifier.BypassSet(false);
+        verifier.setBypass(false);
+    }
+
+    function test_SetBypass_NotOwner_Reverts() public {
+        vm.prank(makeAddr("attacker"));
+        vm.expectRevert("ZKVerifier: not owner");
+        verifier.setBypass(false);
+    }
+
+    function test_Constructor_BypassDisabled() public {
+        ZKVerifier v = new ZKVerifier(false);
+        assertFalse(v.bypassEnabled());
+    }
+
+    function test_Constructor_OwnerSet() public view {
+        assertEq(verifier.owner(), owner);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PlagueGameVerifierTest
+// ══════════════════════════════════════════════════════════════════════════════
+
+contract PlagueGameVerifierTest is Test {
+    MockNoirVerifier roleV;
+    MockNoirVerifier innocV;
+    PlagueGameVerifier adapter;
+
+    function setUp() public {
+        roleV   = new MockNoirVerifier(true);
+        innocV  = new MockNoirVerifier(true);
+        adapter = new PlagueGameVerifier(address(roleV), address(innocV));
+    }
+
+    function test_VerifyRoleCommitment_PassesWhenVerifierPasses() public view {
+        assertTrue(adapter.verifyRoleCommitment(keccak256("commitment"), "proof"));
+    }
+
+    function test_VerifyRoleCommitment_FailsWhenVerifierFails() public {
+        roleV.setShouldPass(false);
+        assertFalse(adapter.verifyRoleCommitment(keccak256("commitment"), "proof"));
+    }
+
+    function test_VerifyInnocenceProof_PassesWhenVerifierPasses() public view {
+        assertTrue(adapter.verifyInnocenceProof(keccak256("c"), keccak256("n"), "proof"));
+    }
+
+    function test_VerifyInnocenceProof_FailsWhenVerifierFails() public {
+        innocV.setShouldPass(false);
+        assertFalse(adapter.verifyInnocenceProof(keccak256("c"), keccak256("n"), "proof"));
+    }
+
+    function test_VerifyRoleCommitment_DoesNotCallInnocenceVerifier() public {
+        // Role commitment should only hit roleV, not innocV
+        innocV.setShouldPass(false);
+        // Still passes because only roleV is queried
+        assertTrue(adapter.verifyRoleCommitment(keccak256("c"), ""));
+    }
+
+    function test_VerifyInnocenceProof_DoesNotCallRoleVerifier() public {
+        // Innocence proof should only hit innocV, not roleV
+        roleV.setShouldPass(false);
+        // Still passes because only innocV is queried
+        assertTrue(adapter.verifyInnocenceProof(keccak256("c"), keccak256("n"), ""));
+    }
+
+    function test_Constructor_ZeroRoleVerifier_Reverts() public {
+        vm.expectRevert(PlagueGameVerifier.ZeroAddress.selector);
+        new PlagueGameVerifier(address(0), address(innocV));
+    }
+
+    function test_Constructor_ZeroInnocenceVerifier_Reverts() public {
+        vm.expectRevert(PlagueGameVerifier.ZeroAddress.selector);
+        new PlagueGameVerifier(address(roleV), address(0));
+    }
+
+    function test_ImmutableAddressesStoredCorrectly() public view {
+        assertEq(address(adapter.ROLE_COMMITMENT_VERIFIER()), address(roleV));
+        assertEq(address(adapter.INNOCENCE_PROOF_VERIFIER()), address(innocV));
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FaucetCUSDTest
+// ══════════════════════════════════════════════════════════════════════════════
+
+contract FaucetCUSDTest is Test {
+    FaucetCUSD faucet;
+    MockERC20  token;
+
+    address faucetOwner = makeAddr("faucetOwner");
+    address user1       = makeAddr("user1");
+    address user2       = makeAddr("user2");
+
+    uint256 constant DRIP = 50 ether;
+
+    function setUp() public {
+        token = new MockERC20();
+        vm.prank(faucetOwner);
+        faucet = new FaucetCUSD(address(token));
+        token.mint(address(faucet), 1000 ether);
+    }
+
+    // ── constructor ───────────────────────────────────────────────────────────
+
+    function test_Constructor_SetsOwnerAndToken() public view {
+        assertEq(faucet.owner(), faucetOwner);
+        assertEq(address(faucet.cUsd()), address(token));
+    }
+
+    function test_Constructor_DefaultDripAmount() public view {
+        assertEq(faucet.dripAmount(), DRIP);
+    }
+
+    function test_Constructor_DefaultCooldown() public view {
+        assertEq(faucet.cooldown(), 24 hours);
+    }
+
+    function test_Constructor_ZeroToken_Reverts() public {
+        vm.expectRevert(FaucetCUSD.ZeroAddress.selector);
+        new FaucetCUSD(address(0));
+    }
+
+    // ── claim ─────────────────────────────────────────────────────────────────
+
+    function test_Claim_TransfersDripToUser() public {
+        uint256 before = token.balanceOf(user1);
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(token.balanceOf(user1), before + DRIP);
+    }
+
+    function test_Claim_ReducesFaucetBalance() public {
+        uint256 before = faucet.faucetBalance();
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(faucet.faucetBalance(), before - DRIP);
+    }
+
+    function test_Claim_SetsLastClaimed() public {
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(faucet.lastClaimed(user1), block.timestamp);
+    }
+
+    function test_Claim_DuringCooldown_Reverts() public {
+        vm.prank(user1);
+        faucet.claim();
+        uint256 cd = faucet.cooldown();
+        uint256 claimedAt = faucet.lastClaimed(user1);
+
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(FaucetCUSD.CooldownActive.selector, claimedAt + cd));
+        faucet.claim();
+    }
+
+    function test_Claim_AfterCooldown_Succeeds() public {
+        vm.prank(user1);
+        faucet.claim();
+        vm.warp(block.timestamp + 24 hours + 1);
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(token.balanceOf(user1), DRIP * 2);
+    }
+
+    function test_Claim_DifferentUsersIndependentCooldowns() public {
+        vm.prank(user1); faucet.claim();
+        vm.prank(user2); faucet.claim();
+        assertEq(token.balanceOf(user1), DRIP);
+        assertEq(token.balanceOf(user2), DRIP);
+    }
+
+    function test_Claim_InsufficientFaucetBalance_Reverts() public {
+        // Drain the faucet
+        vm.prank(faucetOwner);
+        faucet.withdraw(faucetOwner, 1000 ether);
+
+        vm.prank(user1);
+        vm.expectRevert(FaucetCUSD.InsufficientFaucetBalance.selector);
+        faucet.claim();
+    }
+
+    // ── nextClaimAt ───────────────────────────────────────────────────────────
+
+    function test_NextClaimAt_ZeroBeforeFirstClaim() public view {
+        assertEq(faucet.nextClaimAt(user1), 0);
+    }
+
+    function test_NextClaimAt_AfterFirstClaim() public {
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(faucet.nextClaimAt(user1), block.timestamp + 24 hours);
+    }
+
+    // ── faucetBalance ─────────────────────────────────────────────────────────
+
+    function test_FaucetBalance_ReturnsCorrectBalance() public view {
+        assertEq(faucet.faucetBalance(), 1000 ether);
+    }
+
+    // ── setDripAmount ─────────────────────────────────────────────────────────
+
+    function test_SetDripAmount_UpdatesValue() public {
+        vm.prank(faucetOwner);
+        faucet.setDripAmount(100 ether);
+        assertEq(faucet.dripAmount(), 100 ether);
+    }
+
+    function test_SetDripAmount_Zero_Reverts() public {
+        vm.prank(faucetOwner);
+        vm.expectRevert(FaucetCUSD.ZeroDripAmount.selector);
+        faucet.setDripAmount(0);
+    }
+
+    function test_SetDripAmount_NotOwner_Reverts() public {
+        vm.prank(user1);
+        vm.expectRevert(FaucetCUSD.NotOwner.selector);
+        faucet.setDripAmount(1 ether);
+    }
+
+    function test_SetDripAmount_AffectsNextClaim() public {
+        vm.prank(faucetOwner);
+        faucet.setDripAmount(100 ether);
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(token.balanceOf(user1), 100 ether);
+    }
+
+    // ── setCooldown ───────────────────────────────────────────────────────────
+
+    function test_SetCooldown_UpdatesValue() public {
+        vm.prank(faucetOwner);
+        faucet.setCooldown(12 hours);
+        assertEq(faucet.cooldown(), 12 hours);
+    }
+
+    function test_SetCooldown_NotOwner_Reverts() public {
+        vm.prank(user1);
+        vm.expectRevert(FaucetCUSD.NotOwner.selector);
+        faucet.setCooldown(1 hours);
+    }
+
+    function test_SetCooldown_ZeroAllowed() public {
+        // Zero cooldown means claim anytime
+        vm.prank(faucetOwner);
+        faucet.setCooldown(0);
+        vm.prank(user1);
+        faucet.claim();
+        vm.prank(user1);
+        faucet.claim();
+        assertEq(token.balanceOf(user1), DRIP * 2);
+    }
+
+    // ── withdraw ──────────────────────────────────────────────────────────────
+
+    function test_Withdraw_TransfersAmount() public {
+        uint256 before = token.balanceOf(faucetOwner);
+        vm.prank(faucetOwner);
+        faucet.withdraw(faucetOwner, 100 ether);
+        assertEq(token.balanceOf(faucetOwner), before + 100 ether);
+    }
+
+    function test_Withdraw_ZeroRecipient_Reverts() public {
+        vm.prank(faucetOwner);
+        vm.expectRevert(FaucetCUSD.ZeroAddress.selector);
+        faucet.withdraw(address(0), 1 ether);
+    }
+
+    function test_Withdraw_NotOwner_Reverts() public {
+        vm.prank(user1);
+        vm.expectRevert(FaucetCUSD.NotOwner.selector);
+        faucet.withdraw(user1, 1 ether);
+    }
+
+    // ── transferOwnership ─────────────────────────────────────────────────────
+
+    function test_TransferOwnership_UpdatesOwner() public {
+        vm.prank(faucetOwner);
+        faucet.transferOwnership(user1);
+        assertEq(faucet.owner(), user1);
+    }
+
+    function test_TransferOwnership_ZeroAddress_Reverts() public {
+        vm.prank(faucetOwner);
+        vm.expectRevert(FaucetCUSD.ZeroAddress.selector);
+        faucet.transferOwnership(address(0));
+    }
+
+    function test_TransferOwnership_NotOwner_Reverts() public {
+        vm.prank(user1);
+        vm.expectRevert(FaucetCUSD.NotOwner.selector);
+        faucet.transferOwnership(user2);
+    }
+
+    function test_TransferOwnership_NewOwnerCanAdminister() public {
+        vm.prank(faucetOwner);
+        faucet.transferOwnership(user1);
+
+        vm.prank(user1);
+        faucet.setDripAmount(1 ether);
+        assertEq(faucet.dripAmount(), 1 ether);
+    }
+
+    function test_TransferOwnership_OldOwnerLosesAccess() public {
+        vm.prank(faucetOwner);
+        faucet.transferOwnership(user1);
+
+        vm.prank(faucetOwner);
+        vm.expectRevert(FaucetCUSD.NotOwner.selector);
+        faucet.setDripAmount(1 ether);
+    }
+
+    function test_TransferOwnership_EmitsEvent() public {
+        vm.prank(faucetOwner);
+        vm.expectEmit(true, true, false, false);
+        emit FaucetCUSD.OwnershipTransferred(faucetOwner, user1);
+        faucet.transferOwnership(user1);
     }
 }

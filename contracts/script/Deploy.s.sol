@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Script, console} from "forge-std/Script.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
 import {ZKVerifier} from "../src/ZKVerifier.sol";
+import {PlagueGameVerifier} from "../src/PlagueGameVerifier.sol";
 
 /**
  * @title DeployScript
@@ -18,7 +19,10 @@ import {ZKVerifier} from "../src/ZKVerifier.sol";
  *                       Mainnet  : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
- *   ZK_VERIFIER_ADDR   If set, uses an existing verifier instead of deploying stub
+ *   ZK_VERIFIER_ADDR              If set, uses this address directly (skip all deployment)
+ *   ROLE_COMMITMENT_VERIFIER_ADDR Address of the Noir-generated role_commitment verifier
+ *   INNOCENCE_PROOF_VERIFIER_ADDR Address of the Noir-generated innocence_proof verifier
+ *   ZK_BYPASS_ENABLED             If both verifier addrs are absent, deploy dev stub with bypass
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
  *   # Alfajores testnet (bypass ZK for dev)
@@ -50,16 +54,59 @@ contract DeployScript is Script {
         vm.startBroadcast(deployerKey);
 
         // ── ZK Verifier ──────────────────────────────────────────────────────────
-        // Use an existing verifier address if provided (e.g. Noir-generated Groth16
-        // verifier on mainnet). Otherwise deploy the dev stub with bypass enabled.
+        // Priority order:
+        //   1. ZK_VERIFIER_ADDR set            → use it directly
+        //   2. Both Noir verifier addrs set     → deploy PlagueGameVerifier adapter
+        //   3. Neither                          → deploy dev bypass stub
         address zkVerifierAddr;
         try vm.envAddress("ZK_VERIFIER_ADDR") returns (address existing) {
+            // Option 1: caller already has a fully deployed adapter.
             zkVerifierAddr = existing;
             console.log("Using existing ZKVerifier :", zkVerifierAddr);
         } catch {
-            ZKVerifier stub = new ZKVerifier(true /* bypassEnabled for dev */);
-            zkVerifierAddr  = address(stub);
-            console.log("ZKVerifier stub deployed  :", zkVerifierAddr);
+            address roleVerifier;
+            address innocenceVerifier;
+            bool hasRoleVerifier     = false;
+            bool hasInnocenceVerifier = false;
+
+            try vm.envAddress("ROLE_COMMITMENT_VERIFIER_ADDR") returns (address a) {
+                roleVerifier     = a;
+                hasRoleVerifier  = true;
+            } catch {}
+
+            try vm.envAddress("INNOCENCE_PROOF_VERIFIER_ADDR") returns (address a) {
+                innocenceVerifier     = a;
+                hasInnocenceVerifier  = true;
+            } catch {}
+
+            if (hasRoleVerifier && hasInnocenceVerifier) {
+                // Option 2: deploy the production adapter pointing at the two
+                // Noir-generated verifiers.
+                PlagueGameVerifier adapter = new PlagueGameVerifier(
+                    roleVerifier,
+                    innocenceVerifier
+                );
+                zkVerifierAddr = address(adapter);
+                console.log("PlagueGameVerifier adapter:", zkVerifierAddr);
+                console.log("  role_commitment verifier :", roleVerifier);
+                console.log("  innocence_proof verifier :", innocenceVerifier);
+            } else {
+                // Option 3: fall back to the bypass stub (dev/local only).
+                bool bypassEnabled = false;
+                try vm.envBool("ZK_BYPASS_ENABLED") returns (bool configuredBypass) {
+                    bypassEnabled = configuredBypass;
+                } catch {}
+
+                require(
+                    !(block.chainid == 42220 && bypassEnabled),
+                    "Refusing bypass-enabled verifier on Celo mainnet"
+                );
+
+                ZKVerifier stub = new ZKVerifier(bypassEnabled);
+                zkVerifierAddr  = address(stub);
+                console.log("ZKVerifier stub deployed  :", zkVerifierAddr);
+                console.log("ZK bypass enabled         :", bypassEnabled);
+            }
         }
 
         // ── PlagueGame ───────────────────────────────────────────────────────────

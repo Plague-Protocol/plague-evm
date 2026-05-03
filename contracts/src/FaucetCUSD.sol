@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @dev Minimal ERC-20 surface needed by the faucet.
-interface IERC20Faucet {
-    function transfer(address to, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
-}
+import {IERC20Faucet} from "./interfaces/IERC20Faucet.sol";
 
 /**
  * @title FaucetCUSD
@@ -62,8 +58,11 @@ contract FaucetCUSD {
      *         Reverts if the faucet is empty or the caller is in cooldown.
      */
     function claim() external {
-        uint256 availableAt = lastClaimed[msg.sender] + cooldown;
-        if (block.timestamp < availableAt) revert CooldownActive(availableAt);
+        uint256 last = lastClaimed[msg.sender];
+        if (last != 0) {
+            uint256 availableAt = last + cooldown;
+            if (block.timestamp < availableAt) revert CooldownActive(availableAt);
+        }
         if (cUsd.balanceOf(address(this)) < dripAmount) revert InsufficientFaucetBalance();
 
         // Update state before transfer (checks-effects-interactions)
