@@ -35,6 +35,7 @@ const PLAGUE_GAME_ABI = parseAbi([
   'event PlayerSavedByProof(uint256 indexed roomId, address player)',
   'event VoteResolved(uint256 indexed roomId, string message)',
   'event InfectionAssigned(uint256 indexed roomId, address player)',
+  'event PatientZeroUpdated(uint256 indexed roomId, address patientZero)',
   'event GameEnded(uint256 indexed roomId, uint8 outcome)',
   'event PotDrained(uint256 indexed roomId, address winner, uint256 amount)',
   'event RoomExpired(uint256 indexed roomId)',
@@ -101,7 +102,9 @@ export class PlagueContractClient {
     proofFee: bigint,
     expirySecs = 600,
   ): Promise<bigint> {
-    const { request } = await this.publicClient.simulateContract({
+    // Use simulateContract to get the returned roomId from the call — avoids
+    // the roomCount() race when two rooms are created near-simultaneously.
+    const { request, result: roomId } = await this.publicClient.simulateContract({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'createRoom',
@@ -109,12 +112,7 @@ export class PlagueContractClient {
       account,
     })
     await this.sendTx(account, request)
-    // roomCount increments by 1 after each createRoom call
-    return this.publicClient.readContract({
-      address:      this.address,
-      abi:          PLAGUE_GAME_ABI,
-      functionName: 'roomCount',
-    })
+    return roomId
   }
 
   /**

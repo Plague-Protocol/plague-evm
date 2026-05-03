@@ -71,6 +71,10 @@ function mapPlayer(raw: any, address: string): Player {
     joinedAt:             Number(raw.joinedAt) * 1000,
     freeProofUsed:        raw.freeProofUsed,
     proofsSubmittedTotal: Number(raw.proofsSubmittedTotal),
+    // Keep commitment only if actually set (non-zero bytes32)
+    roleCommitment: raw.roleCommitment && raw.roleCommitment !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+      ? String(raw.roleCommitment)
+      : undefined,
   }
 }
 

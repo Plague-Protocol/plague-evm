@@ -26,6 +26,8 @@ export interface Player {
    */
   freeProofUsed: boolean
   proofsSubmittedTotal: number
+  /** Poseidon(role, secret) stored on-chain after submitRoleCommitment. 0x-prefixed hex. */
+  roleCommitment?: string
 }
 
 // ─── Room ──────────────────────────────────────────────────────────────────
