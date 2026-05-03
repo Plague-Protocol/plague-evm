@@ -125,6 +125,10 @@ contract PlagueGame {
     mapping(uint256 => mapping(bytes32 => bool))           public usedNullifiers;
 
     uint256 public roomCount;
+    /// @dev Number of rooms currently in Waiting, Starting, or Active status.
+    uint256 public activeRoomCount;
+    /// @dev Maximum concurrent non-ended rooms. Admin-adjustable. Default 10.
+    uint256 public maxActiveRooms = 10;
     address public admin;
     /// @dev backendSigner is authorised to call assignInfection, beginActivePhase,
     ///      and openVoting. Set to your off-chain game-server address.
@@ -158,6 +162,7 @@ contract PlagueGame {
     event GameEnded(uint256 indexed roomId, GameOutcome outcome);
     event PotDrained(uint256 indexed roomId, address winner, uint256 amount);
     event RoomExpired(uint256 indexed roomId);
+    event MaxActiveRoomsSet(uint256 newMax);
 
     // ─── Custom Errors ────────────────────────────────────────────────────────────
 
@@ -181,6 +186,7 @@ contract PlagueGame {
     error NotParticipant();
     error NotAlive();
     error InvalidInfectionTarget();
+    error TooManyActiveRooms();
 
     // ─── Modifiers ────────────────────────────────────────────────────────────────
 
@@ -256,8 +262,10 @@ contract PlagueGame {
         require(maxPlayers >= 4 && maxPlayers <= 20, "maxPlayers must be 4-20");
         require(stakeAmount > 0, "stakeAmount must be > 0");
         require(expirySecs >= 60, "expirySecs must be >= 60");
+        if (activeRoomCount >= maxActiveRooms) revert TooManyActiveRooms();
 
         unchecked { roomId = ++roomCount; }
+        unchecked { activeRoomCount++; }
 
         uint64 ts = uint64(block.timestamp);
 
@@ -616,6 +624,7 @@ contract PlagueGame {
         if (gameOver) {
             r.status       = RoomStatus.Ended;
             r.currentPhase = RoundPhase.Ended;
+            unchecked { activeRoomCount--; }
             emit GameEnded(roomId, outcome);
             _distributePot(roomId, outcome);
         } else {
@@ -646,6 +655,7 @@ contract PlagueGame {
 
         r.status       = RoomStatus.Ended;
         r.currentPhase = RoundPhase.Ended;
+        unchecked { activeRoomCount--; }
 
         address[] memory playerList = r.players;
         for (uint256 i = 0; i < playerList.length; i++) {
@@ -703,6 +713,12 @@ contract PlagueGame {
 
     function setZkVerifier(address verifier) external onlyAdmin {
         zkVerifier = IZKVerifier(verifier);
+    }
+
+    function setMaxActiveRooms(uint256 newMax) external onlyAdmin {
+        require(newMax > 0, "maxActiveRooms must be > 0");
+        maxActiveRooms = newMax;
+        emit MaxActiveRoomsSet(newMax);
     }
 
     function getInfectionChain(uint256 roomId)
