@@ -143,20 +143,16 @@ function GamePageInner() {
       const client = getContractClient()
       if (!client) throw new Error('Contract not configured.')
 
-      // Get the player's commitment stored on chain
-      const rawPlayer = await client['publicClient' as never] // direct access not exposed; use room data
-      const commitment = localPlayer ? '0x' + '0'.repeat(64) as `0x${string}` : '0x' as `0x${string}`
-      // Note: real commitment comes from the on-chain roleCommitment field;
-      // here we rely on the backend to have stored it when the player committed.
-      const { proveInnocence, computeInnocenceNullifier } = await import('@/lib/zk')
-      const nullifier = computeInnocenceNullifier(
-        BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64)),
-        BigInt(roomId),
-        BigInt(round),
-      )
+      // Use on-chain roleCommitment stored when player submitted their role.
+      const commitment = (localPlayer?.roleCommitment ?? '') as `0x${string}`
+      if (!commitment) throw new Error('Role commitment not found. Submit your role first.')
+
+      const { proveInnocence, computeInnocenceNullifier, deriveSecret } = await import('@/lib/zk')
+      const secretBigInt = await deriveSecret(secretPhrase)
+      const nullifier = computeInnocenceNullifier(secretBigInt, BigInt(roomId), BigInt(round))
       const proof = await proveInnocence({
         role:        'clean',
-        secret:      BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64)),
+        secret:      secretBigInt,
         roomId:      BigInt(roomId),
         roundNumber: BigInt(round),
         commitment,
@@ -165,10 +161,12 @@ function GamePageInner() {
       const nullifierHex = `0x${nullifier.toString(16).padStart(64, '0')}` as `0x${string}`
       const proofBytes   = ('0x' + proof.proof.map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
 
-      // Approve proof fee if not free
+      // Approve exact proof fee (not stakeAmount) for paid proofs
       if (localPlayer?.freeProofUsed && chainId && CUSD_ADDRESSES[chainId]) {
-        const stakeAmt = room?.stakeAmount ?? 0n
-        await client.approveCUSD(address, CUSD_ADDRESSES[chainId], stakeAmt)
+        const feeAmt = room?.proofFee ?? 0n
+        if (feeAmt > 0n) {
+          await client.approveCUSD(address, CUSD_ADDRESSES[chainId], feeAmt)
+        }
       }
 
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
@@ -188,9 +186,9 @@ function GamePageInner() {
     setCommitting(true)
     setCommitError(null)
     try {
-      const { generateRoleCommitment, proveRoleCommitment } = await import('@/lib/zk')
+      const { generateRoleCommitment, proveRoleCommitment, deriveSecret } = await import('@/lib/zk')
       const role = 'clean' as const // backend assigns infection via assignInfection
-      const secretBigInt = BigInt('0x' + Buffer.from(secretPhrase).toString('hex').padEnd(64, '0').slice(0, 64))
+      const secretBigInt = await deriveSecret(secretPhrase)
       const { commitment } = await generateRoleCommitment(role, secretBigInt)
       const proofResult = await proveRoleCommitment({ role, secret: secretBigInt, commitment })
       const commitmentHex = commitment.startsWith('0x') ? commitment as `0x${string}` : `0x${commitment}` as `0x${string}`
