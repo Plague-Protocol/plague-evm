@@ -384,7 +384,7 @@ contract PlagueGameTest is Test {
         );
     }
 
-    function test_Tie_WithInfectedCandidate_EliminatesInfectedEvenWithProof() public {
+    function test_Tie_WithInfectedCandidate_EliminatesInfectedAndSavesProvedClean() public {
         _createAndStart();
         _submitAllCommitments();
 
@@ -395,9 +395,7 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.assignInfection(1, players[0]);
 
-        // In bypass mode even infected can submit; resolution must still eliminate infected candidate
-        vm.prank(players[0]);
-        game.submitInnocenceProof(1, keccak256("comm-0"), keccak256("nullifier-p0-r1"), "");
+        // Only the clean tied candidate can submit a valid innocence proof.
         vm.prank(players[1]);
         game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("nullifier-p1-r1"), "");
 

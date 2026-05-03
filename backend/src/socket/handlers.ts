@@ -26,11 +26,31 @@ import { keccak256, toBytes } from 'viem'
 export function startRoomExpiryMonitor(io: Server, intervalMs = 15_000): NodeJS.Timeout {
   return setInterval(async () => {
     try {
-      const expired = await listExpiredWaitingRooms(new Date())
-      if (expired.length === 0) return
+      const expiredRoomIds = new Set<string>()
 
-      for (const room of expired) {
-        const roomId = room.roomId
+      const expiredPersistedRooms = await listExpiredWaitingRooms(new Date())
+      for (const room of expiredPersistedRooms) {
+        expiredRoomIds.add(room.roomId)
+      }
+
+      const count = await chainAdapter.getRoomCount()
+      const nowSecs = Math.floor(Date.now() / 1000)
+      for (let id = 1n; id <= count; id++) {
+        try {
+          const rawRoom: any = await chainAdapter.getRoom(id)
+          // RoomStatus.Waiting = 0
+          if (Number(rawRoom.status) !== 0) continue
+          if (Number(rawRoom.expiresAt) > nowSecs) continue
+          expiredRoomIds.add(id.toString())
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          logger.warn(`[expiry-monitor] failed to inspect room ${id}: ${message}`)
+        }
+      }
+
+      if (expiredRoomIds.size === 0) return
+
+      for (const roomId of expiredRoomIds) {
         try {
           await chainAdapter.expireRoom(BigInt(roomId))
         } catch (err) {
@@ -39,7 +59,12 @@ export function startRoomExpiryMonitor(io: Server, intervalMs = 15_000): NodeJS.
           continue
         }
 
-        await setRoomStatus(roomId, 'ended')
+        try {
+          await setRoomStatus(roomId, 'ended')
+        } catch {
+          // Some rooms are created directly on-chain from the frontend and do not
+          // have a persisted room record yet.
+        }
 
         const event: GameEvent = {
           type: 'room_expired',
@@ -63,14 +88,36 @@ export function setupSocketHandlers(io: Server) {
 
   // Start a single chain watcher for the whole server process.
   // It will broadcast public events to the room, and route private events using playerSockets.
-  const unwatch = chainAdapter.watchAll(({ eventName, args }) => {
+  const unwatch = chainAdapter.watchAll(async ({ eventName, args }) => {
     const roomId = (args.roomId as bigint | undefined)?.toString()
     if (!roomId) return
 
     const timestamp = Date.now()
+    const enrichedArgs = { ...args }
+
+    if (eventName === 'RoundStarted' || eventName === 'PhaseChanged') {
+      try {
+        const rawRoom: any = await chainAdapter.getRoom(BigInt(roomId))
+        const phase = eventName === 'PhaseChanged'
+          ? Number(args.phase)
+          : Number(rawRoom.currentPhase)
+
+        let durationMs = 0
+        if (phase === 1) {
+          durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
+        } else if (phase === 2) {
+          durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
+        }
+
+        enrichedArgs.durationMs = durationMs
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] failed to enrich ${eventName} for room ${roomId}: ${message}`)
+      }
+    }
 
     if (eventName === 'InfectionAssigned') {
-      const player = String(args.player ?? '')
+      const player = String(enrichedArgs.player ?? '')
       const roomMap = playerSockets.get(roomId)
       const socketId = roomMap?.get(player.toLowerCase())
       if (!socketId) return
@@ -85,7 +132,7 @@ export function setupSocketHandlers(io: Server) {
       return
     }
 
-    const mapped = mapChainEventToGameEvent(eventName, args, roomId, timestamp)
+    const mapped = mapChainEventToGameEvent(eventName, enrichedArgs, roomId, timestamp)
     if (!mapped) return
     // mapChainEventToGameEvent can return a single event or an array
     if (Array.isArray(mapped)) {
@@ -396,6 +443,13 @@ function mapChainEventToGameEvent(
         payload: { winner: String(args.winner), amount: String(args.amount) },
         timestamp,
       }
+    case 'PatientZeroUpdated':
+      return {
+        type: 'patient_zero_updated',
+        roomId,
+        payload: { patientZero: String(args.patientZero) },
+        timestamp,
+      }
     case 'RoomExpired':
       return { type: 'room_expired', roomId, payload: {}, timestamp }
     default:
@@ -474,6 +528,40 @@ export function startPhaseAdvanceMonitor(_io: Server, intervalMs = 5_000): NodeJ
 
         const phase = Number(rawRoom.currentPhase)
         const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
+
+        // RoundPhase.Infection = 0 — assign infection immediately (no timer)
+        if (phase === 0) {
+          try {
+            const playerAddrs: string[] = rawRoom.players ?? []
+            const playerStates = await Promise.all(
+              playerAddrs.map((addr: string) =>
+                chainAdapter.getPlayer(id, addr as `0x${string}`)
+              )
+            )
+            const cleanAlive: string[] = []
+            for (let i = 0; i < playerAddrs.length; i++) {
+              const st: any = playerStates[i]
+              if (Number(st.status) === 0) cleanAlive.push(playerAddrs[i])
+            }
+            if (cleanAlive.length === 0) continue
+
+            const blockHash = await chainAdapter.getLatestBlockHash()
+            const round = Number(rawRoom.currentRound)
+            const seed = `${id}:${round}:${blockHash}`
+            const h = BigInt(keccak256(toBytes(seed)))
+            const idx = Number(h % BigInt(cleanAlive.length))
+            const target = cleanAlive[idx] as `0x${string}`
+
+            await chainAdapter.assignInfection(id, target)
+            logger.info(`[phase-advance-monitor] assignInfection called for room ${id} round ${round} target ${target}`)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            if (!message.includes('WrongPhase') && !message.includes('NotActive') && !message.includes('InvalidInfectionTarget')) {
+              logger.warn(`[phase-advance-monitor] assignInfection failed for room ${id}: ${message}`)
+            }
+          }
+          continue
+        }
 
         // RoundPhase.Discussion = 1
         if (phase === 1) {

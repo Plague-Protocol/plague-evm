@@ -9,7 +9,7 @@
 
 import { Noir } from '@noir-lang/noir_js'
 import { UltraHonkBackend } from '@noir-lang/backend_barretenberg'
-import { poseidon2 } from 'poseidon-lite'
+import { poseidon2, poseidon3 } from 'poseidon-lite'
 import type { ZKProof, RoleCommitment } from '@/types/game'
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ export async function proveInnocence(params: {
   const roundField = BigInt(roundNumber)
 
   // Nullifier = Poseidon(secret, room_id, round_number)
-  const nullifier = poseidon2([secret, roomField, roundField])
+  const nullifier = poseidon3([secret, roomField, roundField])
 
   const circuit = await loadCircuit('innocence_proof')
   const backend = new UltraHonkBackend(circuit)
@@ -171,7 +171,7 @@ export async function proveInfection(params: {
   const targetField = BigInt(targetAddress) & ((1n << 248n) - 1n)
 
   // Nullifier = Poseidon(secret, target_address, round_number)
-  const nullifier = poseidon2([secret, targetField, roundField])
+  const nullifier = poseidon3([secret, targetField, roundField])
 
   const circuit = await loadCircuit('infection_proof')
   const backend = new UltraHonkBackend(circuit)
@@ -268,7 +268,7 @@ export function computeInnocenceNullifier(
   roomId: bigint,
   roundNumber: bigint
 ): bigint {
-  return poseidon2([secret, roomId, roundNumber])
+  return poseidon3([secret, roomId, roundNumber])
 }
 
 /**
@@ -280,5 +280,5 @@ export function computeInfectionNullifier(
   roundNumber: bigint
 ): bigint {
   const targetField = BigInt(targetAddress) & ((1n << 248n) - 1n)
-  return poseidon2([secret, targetField, roundNumber])
+  return poseidon3([secret, targetField, roundNumber])
 }

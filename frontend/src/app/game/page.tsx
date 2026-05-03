@@ -55,8 +55,8 @@ function GamePageInner() {
   const params = useSearchParams()
   const roomId = params.get('room')
 
-  const { isConnected, address, chainId, connect } = useWallet()
-  const { room, localPlayer, currentRound, result, isConnected: socketOn, isLoading, error, feed, socket } = useGameState(roomId)
+  const { isConnected, address, chainId } = useWallet()
+  const { room, localPlayer, currentRound, result, isConnected: socketOn, isLoading, error, feed } = useGameState(roomId, address)
 
   // ── Phase timer ──────────────────────────────────────────────────────────
   const [now, setNow] = useState(() => Date.now())

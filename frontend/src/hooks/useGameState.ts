@@ -80,7 +80,7 @@ function mapPlayer(raw: any, address: string): Player {
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useGameState(roomId: string | null) {
+export function useGameState(roomId: string | null, playerAddress: string | null = null) {
   const [state, setState] = useState<GameState>({
     room:        null,
     localPlayer: null,
@@ -214,6 +214,10 @@ export function useGameState(roomId: string | null) {
         }))
         break
 
+      case 'patient_zero_updated':
+        appendFeed('The patient zero mantle has passed to a new host.')
+        break
+
       case 'game_ended':
         appendFeed(`Game over — outcome: ${String(p.outcome)}`)
         setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'ended' } } : prev)
@@ -272,7 +276,7 @@ export function useGameState(roomId: string | null) {
   useEffect(() => {
     if (!roomId) return
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001'
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
 
     setState(prev => ({ ...prev, isLoading: true, isConnected: false }))
 
@@ -283,7 +287,7 @@ export function useGameState(roomId: string | null) {
       setState(prev => ({ ...prev, isConnected: true }))
       socket.emit('join_room', {
         roomId,
-        playerAddress: (globalThis.window !== undefined && (globalThis.window as unknown as { __walletAddress?: string }).__walletAddress) ?? null,
+        playerAddress,
       })
     })
 
@@ -293,10 +297,13 @@ export function useGameState(roomId: string | null) {
         const room = mapRoom(initialState.room)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         room.players = (initialState.players ?? []).map((p: any) => mapPlayer(p, p.addr ?? p.address))
-        setState(prev => ({ ...prev, room, isLoading: false }))
+        const localPlayer = playerAddress
+          ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
+          : null
+        setState(prev => ({ ...prev, room, localPlayer, isLoading: false }))
       } else {
         // Fallback: read from chain
-        loadRoomFromChain(roomId)
+        loadRoomFromChain(roomId, playerAddress ?? undefined)
       }
     })
 
@@ -304,7 +311,7 @@ export function useGameState(roomId: string | null) {
 
     socket.on('connect_error', (err) => {
       // Socket unavailable — fall back to chain read
-      loadRoomFromChain(roomId)
+      loadRoomFromChain(roomId, playerAddress ?? undefined)
       setState(prev => ({ ...prev, isConnected: false, error: `Backend offline: ${err.message}. Showing on-chain data.` }))
     })
 
@@ -316,7 +323,7 @@ export function useGameState(roomId: string | null) {
       socket.disconnect()
       socketRef.current = null
     }
-  }, [roomId, handleEvent, loadRoomFromChain])
+  }, [roomId, playerAddress, handleEvent, loadRoomFromChain])
 
   return { ...state, feed, socket: socketRef.current }
 }

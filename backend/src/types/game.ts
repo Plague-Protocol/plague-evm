@@ -32,6 +32,7 @@ export type GameEventType =
   | 'player_saved_by_proof'    // broadcast: top-voted player saved by proof
   | 'vote_resolved'            // broadcast: generic outcome, no proof hints
   | 'infection_assigned'       // private: only sent to the newly infected player
+  | 'patient_zero_updated'     // broadcast: patient zero changed (successor promoted)
   | 'game_ended'
   | 'pot_drained'
   | 'room_expired'             // broadcast: waiting room timed out — stakes refunded

@@ -495,6 +495,7 @@ contract PlagueGame {
         if (r.currentPhase != RoundPhase.Discussion) revert WrongPhase();
         if (p.addr == address(0))                    revert NotParticipant();
         if (p.status == PlayerStatus.Eliminated)     revert NotAlive();
+        if (p.status == PlayerStatus.Infected)       revert NotAlive();
         if (p.hasProofThisRound)                     revert AlreadyProvedThisRound();
         if (usedNullifiers[roomId][nullifier])        revert NullifierUsed();
 
