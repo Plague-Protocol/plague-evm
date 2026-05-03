@@ -4,55 +4,72 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {ZKVerifier} from "../src/ZKVerifier.sol";
 
-contract ZKVerifierTest is Test {
-    ZKVerifier verifier;
-    address    owner = makeAddr("zkOwner");
+/// @dev Mock Noir verifier with a configurable pass/fail toggle.
+contract MockNoirVerifier {
+    bool public shouldPass;
+    constructor(bool _shouldPass) { shouldPass = _shouldPass; }
+    function setShouldPass(bool v) external { shouldPass = v; }
+    function verify(bytes calldata, bytes32[] calldata) external view returns (bool) {
+        return shouldPass;
+    }
+}
+
+contract ZKVerifierAdapterTest is Test {
+    MockNoirVerifier roleV;
+    MockNoirVerifier innocV;
+    ZKVerifier adapter;
 
     function setUp() public {
-        vm.prank(owner);
-        verifier = new ZKVerifier(true);
+        roleV   = new MockNoirVerifier(true);
+        innocV  = new MockNoirVerifier(true);
+        adapter = new ZKVerifier(address(roleV), address(innocV));
     }
 
-    function test_BypassOn_AcceptsAnyRoleCommitment() public view {
-        assertTrue(verifier.verifyRoleCommitment(bytes32(0), ""));
+    function test_VerifyRoleCommitment_PassesWhenVerifierPasses() public view {
+        assertTrue(adapter.verifyRoleCommitment(keccak256("commitment"), "proof"));
     }
 
-    function test_BypassOn_AcceptsAnyInnocenceProof() public view {
-        assertTrue(verifier.verifyInnocenceProof(bytes32(0), bytes32(0), ""));
+    function test_VerifyRoleCommitment_FailsWhenVerifierFails() public {
+        roleV.setShouldPass(false);
+        assertFalse(adapter.verifyRoleCommitment(keccak256("commitment"), "proof"));
     }
 
-    function test_BypassOff_RejectsRoleCommitment() public {
-        vm.prank(owner);
-        verifier.setBypass(false);
-        assertFalse(verifier.verifyRoleCommitment(bytes32(0), ""));
+    function test_VerifyInnocenceProof_PassesWhenVerifierPasses() public view {
+        assertTrue(adapter.verifyInnocenceProof(keccak256("c"), keccak256("n"), "proof"));
     }
 
-    function test_BypassOff_RejectsInnocenceProof() public {
-        vm.prank(owner);
-        verifier.setBypass(false);
-        assertFalse(verifier.verifyInnocenceProof(bytes32(0), bytes32(0), ""));
+    function test_VerifyInnocenceProof_FailsWhenVerifierFails() public {
+        innocV.setShouldPass(false);
+        assertFalse(adapter.verifyInnocenceProof(keccak256("c"), keccak256("n"), "proof"));
     }
 
-    function test_SetBypass_EmitsEvent() public {
-        vm.prank(owner);
-        vm.expectEmit(false, false, false, true);
-        emit ZKVerifier.BypassSet(false);
-        verifier.setBypass(false);
+    function test_VerifyRoleCommitment_DoesNotCallInnocenceVerifier() public {
+        // Role commitment should only hit roleV, not innocV
+        innocV.setShouldPass(false);
+        // Still passes because only roleV is queried
+        assertTrue(adapter.verifyRoleCommitment(keccak256("c"), ""));
     }
 
-    function test_SetBypass_NotOwner_Reverts() public {
-        vm.prank(makeAddr("attacker"));
-        vm.expectRevert("ZKVerifier: not owner");
-        verifier.setBypass(false);
+    function test_VerifyInnocenceProof_DoesNotCallRoleVerifier() public {
+        // Innocence proof should only hit innocV, not roleV
+        roleV.setShouldPass(false);
+        // Still passes because only innocV is queried
+        assertTrue(adapter.verifyInnocenceProof(keccak256("c"), keccak256("n"), ""));
     }
 
-    function test_Constructor_BypassDisabled() public {
-        ZKVerifier v = new ZKVerifier(false);
-        assertFalse(v.bypassEnabled());
+    function test_Constructor_ZeroRoleVerifier_Reverts() public {
+        vm.expectRevert(ZKVerifier.ZeroAddress.selector);
+        new ZKVerifier(address(0), address(innocV));
     }
 
-    function test_Constructor_OwnerSet() public view {
-        assertEq(verifier.owner(), owner);
+    function test_Constructor_ZeroInnocenceVerifier_Reverts() public {
+        vm.expectRevert(ZKVerifier.ZeroAddress.selector);
+        new ZKVerifier(address(roleV), address(0));
+    }
+
+    function test_ImmutableAddressesStoredCorrectly() public view {
+        assertEq(address(adapter.ROLE_COMMITMENT_VERIFIER()), address(roleV));
+        assertEq(address(adapter.INNOCENCE_PROOF_VERIFIER()), address(innocV));
     }
 }
 

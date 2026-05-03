@@ -15,7 +15,7 @@ pragma solidity ^0.8.24;
  *           nargo prove && nargo codegen-verifier
  *
  *         Deploy the two generated Verifier.sol contracts, then deploy
- *         PlagueGameVerifier (the adapter) and point PlagueGame at it:
+ *         ZKVerifier (the adapter) and point PlagueGame at it:
  *           game.setZkVerifier(address(adapter));
  *
  * ── Circuits ──────────────────────────────────────────────────────────────────

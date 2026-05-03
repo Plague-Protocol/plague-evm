@@ -1,49 +1,89 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IZKVerifier} from "./interfaces/IZKVerifier.sol";
+import {IZKVerifier}   from "./interfaces/IZKVerifier.sol";
+import {INoirVerifier} from "./interfaces/INoirVerifier.sol";
 
 /**
  * @title ZKVerifier
- * @notice Development-only stub that accepts all proofs.
+ * @notice Production IZKVerifier adapter for PlagueGame.
  *
- *         ⚠️  NEVER deploy with bypassEnabled = true to a production network.
+ *         Wires the two Noir-generated Groth16 verifiers to the single
+ *         IZKVerifier interface that PlagueGame.sol expects.
  *
- *         Replace this contract with the Noir-generated Groth16 Verifier.sol
- *         before mainnet deployment, then call `setBypass(false)` or simply
- *         do not deploy this stub at all.
+ * ── How to deploy ──────────────────────────────────────────────────────────
+ *
+ *  1. Compile circuits and generate Solidity verifiers:
+ *
+ *       cd zk/packages/role_commitment
+ *       nargo prove
+ *       nargo codegen-verifier          # → Verifier.sol (rename: RoleCommitmentVerifier.sol)
+ *
+ *       cd ../innocence_proof
+ *       nargo prove
+ *       nargo codegen-verifier          # → Verifier.sol (rename: InnocenceProofVerifier.sol)
+ *
+ *  2. Deploy both generated Verifier.sol contracts on your target network.
+ *
+ *  3. Deploy this contract, passing those two addresses to the constructor.
+ *
+ *  4. Point PlagueGame at this adapter:
+ *       - via ZK_VERIFIER_ADDR env var at deploy time, OR
+ *       - via game.setZkVerifier(address(adapter)) after deploy.
+ *
+ * ── Circuit public input layout ────────────────────────────────────────────
+ *
+ *  role_commitment.nr
+ *    pub[0]  commitment = Poseidon(role, secret)
+ *
+ *  innocence_proof.nr
+ *    pub[0]  commitment = Poseidon(role, secret)
+ *    pub[1]  nullifier  = Poseidon(secret, room_id, round_number)
  */
 contract ZKVerifier is IZKVerifier {
-    /// @notice When true all proofs are accepted unconditionally (dev/test only).
-    bool public bypassEnabled;
+    INoirVerifier public immutable ROLE_COMMITMENT_VERIFIER;
+    INoirVerifier public immutable INNOCENCE_PROOF_VERIFIER;
 
-    address public owner;
+    error ZeroAddress();
 
-    event BypassSet(bool enabled);
-
-    constructor(bool _bypassEnabled) {
-        owner          = msg.sender;
-        bypassEnabled  = _bypassEnabled;
+    constructor(
+        address _roleCommitmentVerifier,
+        address _innocenceProofVerifier
+    ) {
+        if (_roleCommitmentVerifier  == address(0)) revert ZeroAddress();
+        if (_innocenceProofVerifier  == address(0)) revert ZeroAddress();
+        ROLE_COMMITMENT_VERIFIER = INoirVerifier(_roleCommitmentVerifier);
+        INNOCENCE_PROOF_VERIFIER = INoirVerifier(_innocenceProofVerifier);
     }
 
-    function setBypass(bool enabled) external {
-        require(msg.sender == owner, "ZKVerifier: not owner");
-        bypassEnabled = enabled;
-        emit BypassSet(enabled);
-    }
-
+    /**
+     * @inheritdoc IZKVerifier
+     * @dev Packs `commitment` as the sole public input and delegates to the
+     *      Noir-generated role_commitment verifier.
+     */
     function verifyRoleCommitment(
-        bytes32, /*commitment*/
-        bytes calldata /*proof*/
+        bytes32 commitment,
+        bytes calldata proof
     ) external view override returns (bool) {
-        return bypassEnabled;
+        bytes32[] memory publicInputs = new bytes32[](1);
+        publicInputs[0] = commitment;
+        return ROLE_COMMITMENT_VERIFIER.verify(proof, publicInputs);
     }
 
+    /**
+     * @inheritdoc IZKVerifier
+     * @dev Packs `commitment` and `nullifier` as public inputs (in the same
+     *      order as `pub` params in innocence_proof.nr main()) and delegates
+     *      to the Noir-generated innocence_proof verifier.
+     */
     function verifyInnocenceProof(
-        bytes32, /*commitment*/
-        bytes32, /*nullifier*/
-        bytes calldata /*proof*/
+        bytes32 commitment,
+        bytes32 nullifier,
+        bytes calldata proof
     ) external view override returns (bool) {
-        return bypassEnabled;
+        bytes32[] memory publicInputs = new bytes32[](2);
+        publicInputs[0] = commitment;
+        publicInputs[1] = nullifier;
+        return INNOCENCE_PROOF_VERIFIER.verify(proof, publicInputs);
     }
 }

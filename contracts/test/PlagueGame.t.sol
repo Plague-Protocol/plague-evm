@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
-import {ZKVerifier} from "../src/ZKVerifier.sol";
+import {StubZKVerifier} from "../src/StubZKVerifier.sol";
 
 /// @dev Minimal ERC-20 mock used by tests in place of real cUSD.
 contract MockERC20 {
@@ -42,7 +42,7 @@ contract MockERC20 {
 
 contract PlagueGameTest is Test {
     PlagueGame  game;
-    ZKVerifier  zkVerifier;
+    StubZKVerifier  zkVerifier;
     MockERC20   token;
 
     address admin    = makeAddr("admin");
@@ -71,7 +71,7 @@ contract PlagueGameTest is Test {
 
         // Deploy with bypass ZK verifier so tests don't need real Noir proofs
         vm.startPrank(admin);
-        zkVerifier = new ZKVerifier(true);
+        zkVerifier = new StubZKVerifier(true);
         game       = new PlagueGame();
         game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
@@ -784,7 +784,7 @@ contract PlagueGameTest is Test {
 
 contract PlagueGameExtendedTest is Test {
     PlagueGame  game;
-    ZKVerifier  zkVerifier;
+    StubZKVerifier  zkVerifier;
     MockERC20   token;
 
     address admin    = makeAddr("admin");
@@ -807,7 +807,7 @@ contract PlagueGameExtendedTest is Test {
             token.mint(p, MINT);
         }
         vm.startPrank(admin);
-        zkVerifier = new ZKVerifier(true);
+        zkVerifier = new StubZKVerifier(true);
         game       = new PlagueGame();
         game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
@@ -886,7 +886,7 @@ contract PlagueGameExtendedTest is Test {
     }
 
     function test_SetZkVerifier_UpdatesValue() public {
-        ZKVerifier newV = new ZKVerifier(true);
+        StubZKVerifier newV = new StubZKVerifier(true);
         vm.prank(admin);
         game.setZkVerifier(address(newV));
         assertEq(address(game.zkVerifier()), address(newV));

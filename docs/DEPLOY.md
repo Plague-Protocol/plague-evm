@@ -90,7 +90,7 @@ Deployer           : 0x...
 Backend signer     : 0x...
 Platform receiver  : 0x...
 cUSD token         : 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
-ZKVerifier stub deployed  : <simulated>
+StubZKVerifier deployed  : <simulated>
 PlagueGame deployed       : <simulated>
 ```
 
@@ -188,13 +188,27 @@ npm run dev
 
 ---
 
+## Production ZK predeployment sequence (testnet + mainnet)
+
+Before running `Deploy.s.sol` with production ZK enabled, do this in order:
+
+1. Generate Noir verifier contracts for each circuit:
+  - `zk/packages/role_commitment` → `nargo prove && nargo codegen-verifier`
+  - `zk/packages/innocence_proof` → `nargo prove && nargo codegen-verifier`
+2. Deploy both generated verifier contracts on the target network.
+3. Export their addresses:
+  - `ROLE_COMMITMENT_VERIFIER_ADDR`
+  - `INNOCENCE_PROOF_VERIFIER_ADDR`
+4. Run `Deploy.s.sol`.
+  - The script deploys `ZKVerifier` (the adapter) using those two addresses.
+  - Then it deploys and initializes `PlagueGame` with `_zkVerifier = address(adapter)`.
+
 ## Mainnet checklist
 
 Before deploying to mainnet:
 
-- [ ] Replace `ZKVerifier` stub with the real Noir-generated on-chain verifier
-  (`ZK_VERIFIER_ADDR` env var in the deploy script)
-- [ ] Set `bypassEnabled = false` — the stub always returns `true`; never use it on mainnet
+- [ ] Use `ZKVerifier` adapter (production) backed by deployed Noir verifiers
+- [ ] Do not use `StubZKVerifier` on mainnet (`ZK_BYPASS_ENABLED` must remain false)
 - [ ] Audit contract — especially `_distributePot` and `_applyAbsentVotes`
 - [ ] Use a hardware wallet or multisig for `PRIVATE_KEY`
 - [ ] Point `CUSD_TOKEN` to mainnet cUSD: `0x765DE816845861e75A25fCA122bb6022DB77Eaca`
@@ -204,7 +218,7 @@ Before deploying to mainnet:
 
 ## Deployed addresses (fill in after each deploy)
 
-| Network | PlagueGame | ZKVerifier | Block |
-|---------|-----------|-----------|-------|
-| Alfajores | — | — | — |
-| Celo Mainnet | — | — | — |
+| Network | PlagueGame | ZKVerifier (adapter) | StubZKVerifier (dev-only) | Block |
+|---------|-----------|-----------------------|----------------------------|-------|
+| Alfajores | — | — | — | — |
+| Celo Mainnet | — | — | n/a | — |

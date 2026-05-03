@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Script, console} from "forge-std/Script.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
 import {ZKVerifier} from "../src/ZKVerifier.sol";
-import {PlagueGameVerifier} from "../src/PlagueGameVerifier.sol";
+import {StubZKVerifier} from "../src/StubZKVerifier.sol";
 
 /**
  * @title DeployScript
@@ -19,10 +19,19 @@ import {PlagueGameVerifier} from "../src/PlagueGameVerifier.sol";
  *                       Mainnet  : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
- *   ZK_VERIFIER_ADDR              If set, uses this address directly (skip all deployment)
+ *   ZK_VERIFIER_ADDR              If set, uses this IZKVerifier address directly (skip deployment)
  *   ROLE_COMMITMENT_VERIFIER_ADDR Address of the Noir-generated role_commitment verifier
  *   INNOCENCE_PROOF_VERIFIER_ADDR Address of the Noir-generated innocence_proof verifier
- *   ZK_BYPASS_ENABLED             If both verifier addrs are absent, deploy dev stub with bypass
+ *   ZK_BYPASS_ENABLED             If both verifier addrs are absent, deploy StubZKVerifier
+ *
+ * ── Predeployment (required for production ZK) ───────────────────────────────
+ *   1. Generate Noir Groth16 verifier contracts from circuits:
+ *        cd zk/packages/role_commitment && nargo prove && nargo codegen-verifier
+ *        cd ../innocence_proof       && nargo prove && nargo codegen-verifier
+ *   2. Deploy both generated verifier contracts on target network.
+ *   3. Export deployed addresses as ROLE_COMMITMENT_VERIFIER_ADDR and
+ *      INNOCENCE_PROOF_VERIFIER_ADDR.
+ *   4. Run this script: it deploys ZKVerifier (adapter) and wires PlagueGame.
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
  *   # Alfajores testnet (bypass ZK for dev)
@@ -31,7 +40,8 @@ import {PlagueGameVerifier} from "../src/PlagueGameVerifier.sol";
  *     --broadcast \
  *     --verify
  *
- *   # Mainnet (set ZK_VERIFIER_ADDR to the Noir-generated verifier first)
+ *   # Mainnet (recommended): set ROLE_COMMITMENT_VERIFIER_ADDR and
+ *   # INNOCENCE_PROOF_VERIFIER_ADDR so this script deploys ZKVerifier adapter.
  *   forge script contracts/script/Deploy.s.sol \
  *     --rpc-url celo_mainnet \
  *     --broadcast \
@@ -56,13 +66,13 @@ contract DeployScript is Script {
         // ── ZK Verifier ──────────────────────────────────────────────────────────
         // Priority order:
         //   1. ZK_VERIFIER_ADDR set            → use it directly
-        //   2. Both Noir verifier addrs set     → deploy PlagueGameVerifier adapter
-        //   3. Neither                          → deploy dev bypass stub
+        //   2. Both Noir verifier addrs set    → deploy ZKVerifier adapter
+        //   3. Neither                         → deploy dev bypass stub
         address zkVerifierAddr;
         try vm.envAddress("ZK_VERIFIER_ADDR") returns (address existing) {
             // Option 1: caller already has a fully deployed adapter.
             zkVerifierAddr = existing;
-            console.log("Using existing ZKVerifier :", zkVerifierAddr);
+            console.log("Using existing IZKVerifier:", zkVerifierAddr);
         } catch {
             address roleVerifier;
             address innocenceVerifier;
@@ -82,12 +92,12 @@ contract DeployScript is Script {
             if (hasRoleVerifier && hasInnocenceVerifier) {
                 // Option 2: deploy the production adapter pointing at the two
                 // Noir-generated verifiers.
-                PlagueGameVerifier adapter = new PlagueGameVerifier(
+                ZKVerifier adapter = new ZKVerifier(
                     roleVerifier,
                     innocenceVerifier
                 );
                 zkVerifierAddr = address(adapter);
-                console.log("PlagueGameVerifier adapter:", zkVerifierAddr);
+                console.log("ZKVerifier adapter       :", zkVerifierAddr);
                 console.log("  role_commitment verifier :", roleVerifier);
                 console.log("  innocence_proof verifier :", innocenceVerifier);
             } else {
@@ -102,9 +112,9 @@ contract DeployScript is Script {
                     "Refusing bypass-enabled verifier on Celo mainnet"
                 );
 
-                ZKVerifier stub = new ZKVerifier(bypassEnabled);
-                zkVerifierAddr  = address(stub);
-                console.log("ZKVerifier stub deployed  :", zkVerifierAddr);
+                StubZKVerifier stub = new StubZKVerifier(bypassEnabled);
+                zkVerifierAddr      = address(stub);
+                console.log("StubZKVerifier deployed  :", zkVerifierAddr);
                 console.log("ZK bypass enabled         :", bypassEnabled);
             }
         }
