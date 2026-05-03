@@ -16,12 +16,16 @@ import {INoirVerifier} from "./interfaces/INoirVerifier.sol";
  *  1. Compile circuits and generate Solidity verifiers:
  *
  *       cd zk/packages/role_commitment
- *       nargo prove
+ *       nargo compile
  *       nargo codegen-verifier          # → Verifier.sol (rename: RoleCommitmentVerifier.sol)
  *
  *       cd ../innocence_proof
- *       nargo prove
+ *       nargo compile
  *       nargo codegen-verifier          # → Verifier.sol (rename: InnocenceProofVerifier.sol)
+ *
+ *  NOTE: Proofs are generated using UltraHonkBackend (npm: noir-lang/backend_barretenberg).
+ *        The generated Verifier.sol must be the UltraHonk variant — confirm with
+ *        nargo codegen-verifier --backend ultra_honk (or the default in your nargo version).
  *
  *  2. Deploy both generated Verifier.sol contracts on your target network.
  *
@@ -33,10 +37,10 @@ import {INoirVerifier} from "./interfaces/INoirVerifier.sol";
  *
  * ── Circuit public input layout ────────────────────────────────────────────
  *
- *  role_commitment.nr
+ *  role_commitment.nr  [UltraHonk]
  *    pub[0]  commitment = Poseidon(role, secret)
  *
- *  innocence_proof.nr
+ *  innocence_proof.nr  [UltraHonk]
  *    pub[0]  commitment = Poseidon(role, secret)
  *    pub[1]  nullifier  = Poseidon(secret, room_id, round_number)
  */

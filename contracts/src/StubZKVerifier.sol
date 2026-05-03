@@ -9,9 +9,9 @@ import {IZKVerifier} from "./interfaces/IZKVerifier.sol";
  *
  *         ⚠️  NEVER deploy with bypassEnabled = true to a production network.
  *
- *         Replace this contract with the Noir-generated Groth16 Verifier.sol
- *         before mainnet deployment, then call `setBypass(false)` or simply
- *         do not deploy this stub at all.
+ *         Replace this contract with the Noir-generated UltraHonk Verifier.sol
+ *         (via ZKVerifier.sol adapter) before mainnet deployment, then call
+ *         `setBypass(false)` or simply do not deploy this stub at all.
  */
 contract StubZKVerifier is IZKVerifier {
     /// @notice When true all proofs are accepted unconditionally (dev/test only).
