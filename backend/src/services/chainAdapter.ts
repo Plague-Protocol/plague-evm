@@ -54,6 +54,7 @@ const PLAGUE_ABI = parseAbi([
   'event PlayerSavedByProof(uint256 indexed roomId, address player)',
   'event VoteResolved(uint256 indexed roomId, string message)',
   'event InfectionAssigned(uint256 indexed roomId, address player)',
+  'event PatientZeroUpdated(uint256 indexed roomId, address patientZero)',
   'event GameEnded(uint256 indexed roomId, uint8 outcome)',
   'event PotDrained(uint256 indexed roomId, address winner, uint256 amount)',
   'event RoomExpired(uint256 indexed roomId)',
@@ -216,7 +217,7 @@ export const chainAdapter = {
     const eventNames = [
       'PlayerJoined', 'GameStarted', 'RoundStarted', 'PhaseChanged',
       'VoteCast', 'ProofSubmitted', 'PlayerEliminated', 'PlayerSavedByProof',
-      'VoteResolved', 'InfectionAssigned', 'GameEnded', 'PotDrained', 'RoomExpired',
+      'VoteResolved', 'InfectionAssigned', 'PatientZeroUpdated', 'GameEnded', 'PotDrained', 'RoomExpired',
     ] as const
 
     const unwatchers: (() => void)[] = eventNames.map(eventName =>

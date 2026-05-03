@@ -5,7 +5,12 @@ import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
 import { roomRouter } from './routes/rooms'
-import { setupSocketHandlers, startRoomExpiryMonitor } from './socket/handlers'
+import {
+  setupSocketHandlers,
+  startRoomExpiryMonitor,
+  startRoleCommitmentMonitor,
+  startPhaseAdvanceMonitor,
+} from './socket/handlers'
 import { logger } from './lib/logger'
 
 dotenv.config()
@@ -32,6 +37,8 @@ const io = new Server(httpServer, {
 
 setupSocketHandlers(io)
 startRoomExpiryMonitor(io)
+startRoleCommitmentMonitor(io)
+startPhaseAdvanceMonitor(io)
 
 // ─── Start ──────────────────────────────────────────────────────────────────
 

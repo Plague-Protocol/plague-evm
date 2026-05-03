@@ -87,7 +87,12 @@ export function setupSocketHandlers(io: Server) {
 
     const mapped = mapChainEventToGameEvent(eventName, args, roomId, timestamp)
     if (!mapped) return
-    io.to(roomId).emit('game_event', mapped)
+    // mapChainEventToGameEvent can return a single event or an array
+    if (Array.isArray(mapped)) {
+      for (const ev of mapped) io.to(roomId).emit('game_event', ev)
+    } else {
+      io.to(roomId).emit('game_event', mapped)
+    }
   })
 
   io.on('connection', (socket: Socket) => {
@@ -255,12 +260,40 @@ export function setupSocketHandlers(io: Server) {
       zkProof: string
       isFreeProof: boolean
     }) => {
-      // TODO: Issue #45
-      // 1. Verify current phase is Discussion
-      // 2. Verify player is alive
-      // 3. Forward to contract: submitInnocenceProof(...)
-      // 4. On success, broadcast proof_submitted event (address only, no outcome)
-      // 5. Lock out further submissions from this player this round
+      const { roomId: rid, playerAddress } = payload
+      try {
+        const rawRoom: any = await chainAdapter.getRoom(BigInt(rid))
+        if (Number(rawRoom.status) !== 2) {
+          socket.emit('proof_error', { roomId: rid, message: 'Room is not active' })
+          return
+        }
+        // RoundPhase.Discussion = 1
+        if (Number(rawRoom.currentPhase) !== 1) {
+          socket.emit('proof_error', { roomId: rid, message: 'Proof submission only allowed during Discussion phase' })
+          return
+        }
+        const rawPlayer: any = await chainAdapter.getPlayer(BigInt(rid), playerAddress as `0x${string}`)
+        if (rawPlayer.addr === '0x0000000000000000000000000000000000000000') {
+          socket.emit('proof_error', { roomId: rid, message: 'Player not in room' })
+          return
+        }
+        if (Number(rawPlayer.status) === 2) {
+          socket.emit('proof_error', { roomId: rid, message: 'Eliminated players cannot submit proofs' })
+          return
+        }
+        if (rawPlayer.hasProofThisRound) {
+          socket.emit('proof_error', { roomId: rid, message: 'Already submitted a proof this round' })
+          return
+        }
+        // The actual contract call is signed by the player from the frontend.
+        // Acknowledge receipt so the client knows validation passed.
+        socket.emit('proof_ack', { roomId: rid, playerAddress })
+        logger.info(`[socket] proof_ack for player ${playerAddress} in room ${rid}`)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] submit_proof validation failed for room ${rid}: ${message}`)
+        socket.emit('proof_error', { roomId: rid, message })
+      }
     })
 
     /**
@@ -315,7 +348,7 @@ function mapChainEventToGameEvent(
   args: Record<string, unknown>,
   roomId: string,
   timestamp: number,
-): GameEvent | null {
+): GameEvent | GameEvent[] | null {
   switch (eventName) {
     case 'PlayerJoined':
       return { type: 'player_joined', roomId, payload: { address: String(args.player) }, timestamp }
@@ -323,8 +356,22 @@ function mapChainEventToGameEvent(
       return { type: 'game_started', roomId, payload: {}, timestamp }
     case 'RoundStarted':
       return { type: 'round_started', roomId, payload: { round: Number(args.round) }, timestamp }
-    case 'PhaseChanged':
-      return { type: 'phase_changed', roomId, payload: { phase: Number(args.phase) }, timestamp }
+    case 'PhaseChanged': {
+      const phase = Number(args.phase)
+      // Emit phase_changed for all clients
+      const events: GameEvent[] = [
+        { type: 'phase_changed', roomId, payload: { phase }, timestamp },
+      ]
+      // Emit companion events so clients can show/hide proof window reactively
+      if (phase === 1) {
+        // RoundPhase.Discussion
+        events.push({ type: 'proof_window_open', roomId, payload: {}, timestamp })
+      } else if (phase === 2) {
+        // RoundPhase.Voting
+        events.push({ type: 'proof_window_closed', roomId, payload: {}, timestamp })
+      }
+      return events
+    }
     case 'VoteCast':
       return {
         type: 'vote_cast',
@@ -361,4 +408,107 @@ function mapChainEventToGameEvent(
  */
 export function broadcastEvent(io: Server, roomId: string, event: GameEvent) {
   io.to(roomId).emit('game_event', event)
+}
+
+/**
+ * Role-commitment monitor — polls for rooms in Starting status and triggers
+ * beginActivePhase once all players have submitted their role commitments.
+ *
+ * There is no on-chain event for submitRoleCommitment, so we must poll.
+ * Default interval: 5 seconds.
+ */
+export function startRoleCommitmentMonitor(_io: Server, intervalMs = 5_000): NodeJS.Timeout {
+  return setInterval(async () => {
+    try {
+      const count = await chainAdapter.getRoomCount()
+      for (let id = 1n; id <= count; id++) {
+        const rawRoom: any = await chainAdapter.getRoom(id)
+        // RoomStatus.Starting = 1
+        if (Number(rawRoom.status) !== 1) continue
+
+        const playerAddrs: string[] = rawRoom.players ?? []
+        if (playerAddrs.length === 0) continue
+
+        const playerStates = await Promise.all(
+          playerAddrs.map(addr => chainAdapter.getPlayer(id, addr as `0x${string}`))
+        )
+
+        const allCommitted = (playerStates as any[]).every(p => p.roleCommitted === true)
+        if (!allCommitted) continue
+
+        try {
+          await chainAdapter.beginActivePhase(id)
+          logger.info(`[role-commitment-monitor] beginActivePhase called for room ${id}`)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          // Ignore "WrongPhase" — another process may have already advanced it
+          if (!message.includes('WrongPhase')) {
+            logger.warn(`[role-commitment-monitor] failed for room ${id}: ${message}`)
+          }
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.error(`[role-commitment-monitor] tick error: ${message}`)
+    }
+  }, intervalMs)
+}
+
+/**
+ * Phase-advance monitor — server-side replacement for the client-initiated
+ * request_phase_advance socket event. Polls Active rooms and advances
+ * Discussion → Voting and Voting → Reveal when their timers expire.
+ *
+ * Default interval: 5 seconds.
+ */
+export function startPhaseAdvanceMonitor(_io: Server, intervalMs = 5_000): NodeJS.Timeout {
+  return setInterval(async () => {
+    try {
+      const count = await chainAdapter.getRoomCount()
+      const now = Date.now()
+
+      for (let id = 1n; id <= count; id++) {
+        const rawRoom: any = await chainAdapter.getRoom(id)
+        // RoomStatus.Active = 2
+        if (Number(rawRoom.status) !== 2) continue
+
+        const phase = Number(rawRoom.currentPhase)
+        const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
+
+        // RoundPhase.Discussion = 1
+        if (phase === 1) {
+          const durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
+          if (now >= phaseStartedAt + durationMs) {
+            try {
+              await chainAdapter.openVoting(id)
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err)
+              if (!message.includes('WrongPhase') && !message.includes('NotActive')) {
+                logger.warn(`[phase-advance-monitor] openVoting failed for room ${id}: ${message}`)
+              }
+            }
+          }
+          continue
+        }
+
+        // RoundPhase.Voting = 2
+        if (phase === 2) {
+          const durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
+          if (now >= phaseStartedAt + durationMs) {
+            try {
+              await chainAdapter.resolveRound(id)
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err)
+              if (!message.includes('WrongPhase') && !message.includes('NotActive')) {
+                logger.warn(`[phase-advance-monitor] resolveRound failed for room ${id}: ${message}`)
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.error(`[phase-advance-monitor] tick error: ${message}`)
+    }
+  }, intervalMs)
 }
