@@ -1,6 +1,6 @@
 # Plague Protocol — Deployment Guide
 
-Complete steps to deploy to **Celo Alfajores testnet** (or mainnet).
+Complete steps to deploy to **Celo Sepolia testnet** (Chain ID 11142220) (or mainnet).
 
 ---
 
@@ -11,7 +11,7 @@ Complete steps to deploy to **Celo Alfajores testnet** (or mainnet).
 | Node 18+ | `nvm install 18` |
 | Foundry | `curl -L https://foundry.paradigm.xyz \| bash && foundryup` |
 | Noir / nargo | `curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install \| bash && noirup` |
-| Alfajores CELO | [faucet.celo.org](https://faucet.celo.org) — fund deployer + backend signer |
+| Celo Sepolia CELO | [faucet.celo.org](https://faucet.celo.org) — fund deployer + backend signer |
 
 ---
 
@@ -52,11 +52,11 @@ BACKEND_SIGNER=<backend signer address>
 PLATFORM_RECEIVER=<address that receives proof fees + 0.3% pot>
 
 # Celo RPC
-CELO_TESTNET_RPC=https://alfajores-forno.celo-testnet.org
+CELO_TESTNET_RPC=https://forno.celo-sepolia.celo-testnet.org
 # CELO_MAINNET_RPC=https://forno.celo.org
 
 # cUSD token addresses
-CUSD_TOKEN=0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1   # Alfajores
+CUSD_TOKEN=0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80  # Celo Sepolia (StableToken / cUSD)
 # CUSD_TOKEN=0x765DE816845861e75A25fCA122bb6022DB77Eaca # Mainnet
 
 # Celoscan API key (optional, only needed for --verify)
@@ -96,7 +96,7 @@ PlagueGame deployed       : <simulated>
 
 ---
 
-## 5 — Broadcast to Alfajores
+## 5 — Broadcast to Celo Sepolia
 
 ```bash
 forge script contracts/script/Deploy.s.sol \
@@ -133,7 +133,7 @@ Fill in:
 CONTRACT_ADDRESS=<PlagueGame address from step 5>
 PLATFORM_RECEIVER=<same as PLATFORM_RECEIVER above>
 BACKEND_PRIVATE_KEY=<backend signer hex private key, WITH 0x prefix>
-CELO_RPC_URL=https://alfajores-forno.celo-testnet.org
+CELO_RPC_URL=https://forno.celo-sepolia.celo-testnet.org
 NETWORK=testnet
 ```
 

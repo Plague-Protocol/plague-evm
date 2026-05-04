@@ -12,9 +12,9 @@ optimizer_runs    = 200
 # before compiling tests or scripts.
 
 [rpc_endpoints]
-celo_testnet = "${CELO_TESTNET_RPC}"   # https://alfajores-forno.celo-testnet.org
+celo_testnet = "${CELO_TESTNET_RPC}"   # https://forno.celo-sepolia.celo-testnet.org  (Chain ID 11142220)
 celo_mainnet = "${CELO_MAINNET_RPC}"   # https://forno.celo.org
 
 [etherscan]
-celo_testnet = { key = "${CELOSCAN_API_KEY}", url = "https://api-alfajores.celoscan.io/api" }
+celo_testnet = { key = "${CELOSCAN_API_KEY}", url = "https://celo-sepolia.blockscout.com/api" }
 celo_mainnet = { key = "${CELOSCAN_API_KEY}", url = "https://api.celoscan.io/api" }

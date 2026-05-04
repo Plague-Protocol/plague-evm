@@ -6,13 +6,13 @@ import {FaucetCUSD} from "../src/FaucetCUSD.sol";
 
 /**
  * @title DeployFaucetScript
- * @notice Deploys the FaucetCUSD contract for Alfajores testnet.
+ * @notice Deploys the FaucetCUSD contract for Celo Sepolia testnet.
  *
  * ── DO NOT RUN ON MAINNET ──────────────────────────────────────────────────────
  *
  * ── Required env vars ─────────────────────────────────────────────────────────
  *   PRIVATE_KEY   Deployer private key (hex, no 0x prefix)
- *   CUSD_TOKEN    cUSD address — Alfajores: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
+ *   CUSD_TOKEN    cUSD address — Celo Sepolia: verify current address on https://celo-sepolia.blockscout.com
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
  *   forge script contracts/script/DeployFaucet.s.sol \
@@ -25,7 +25,7 @@ import {FaucetCUSD} from "../src/FaucetCUSD.sol";
 contract DeployFaucetScript is Script {
     function run() external {
         require(
-            block.chainid == 44787,
+            block.chainid == 11142220,
             unicode"FaucetCUSD is testnet-only — refusing to deploy on this chain"
         );
 

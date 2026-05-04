@@ -17,7 +17,7 @@ import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
  *   BACKEND_SIGNER     Address of the off-chain game server wallet
  *   PLATFORM_RECEIVER  Address to receive proof fees + 0.3% pot fees
  *   CUSD_TOKEN         cUSD ERC-20 address for the target network
- *                       Alfajores: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
+ *                       Celo Sepolia: 0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80 (StableToken / cUSD)
  *                       Mainnet  : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
@@ -47,14 +47,14 @@ import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
  *     # then rename HonkVerifier → RoleCommitmentVerifier / InnocenceProofVerifier in both files
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
- *   # Alfajores testnet — full ZK (deploys verifiers from source)
+ *   # Celo Sepolia testnet — full ZK (deploys verifiers from source)
  *   forge script contracts/script/Deploy.s.sol \
- *     --rpc-url https://alfajores-forno.celo-testnet.org \
+ *     --rpc-url https://forno.celo-sepolia.celo-testnet.org \
  *     --broadcast
  *
- *   # Alfajores testnet — bypass ZK (dev shortcut, no real proofs)
+ *   # Celo Sepolia testnet — bypass ZK (dev shortcut, no real proofs)
  *   ZK_BYPASS_ENABLED=true forge script contracts/script/Deploy.s.sol \
- *     --rpc-url https://alfajores-forno.celo-testnet.org \
+ *     --rpc-url https://forno.celo-sepolia.celo-testnet.org \
  *     --broadcast
  *
  *   # Mainnet — full ZK
