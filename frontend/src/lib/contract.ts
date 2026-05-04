@@ -84,6 +84,32 @@ export class PlagueContractClient {
   }
 
   private async sendTx(account: `0x${string}`, request: unknown) {
+    // Ensure the wallet is on the correct chain before sending
+    if (globalThis.window?.ethereum) {
+      const chainHex = `0x${this.chain.id.toString(16)}`
+      try {
+        await globalThis.window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: chainHex }],
+        })
+      } catch (switchErr: unknown) {
+        // 4902 = chain not added yet — add it then retry
+        if (typeof switchErr === 'object' && switchErr !== null && 'code' in switchErr && (switchErr as { code: number }).code === 4902) {
+          await globalThis.window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: chainHex,
+              chainName: this.chain.name,
+              nativeCurrency: this.chain.nativeCurrency,
+              rpcUrls: this.chain.rpcUrls.default.http,
+              blockExplorerUrls: this.chain.blockExplorers ? [this.chain.blockExplorers.default.url] : [],
+            }],
+          })
+        } else {
+          throw switchErr
+        }
+      }
+    }
     const wc   = this.walletClient(account)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hash = await wc.writeContract(request as any)
@@ -321,6 +347,30 @@ export class FaucetClient {
 
   /** Claim dripAmount cUSD. Reverts if in cooldown or faucet is empty. */
   async claim(account: `0x${string}`): Promise<void> {
+    if (globalThis.window?.ethereum) {
+      const chainHex = `0x${this.chain.id.toString(16)}`
+      try {
+        await globalThis.window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: chainHex }],
+        })
+      } catch (switchErr: unknown) {
+        if (typeof switchErr === 'object' && switchErr !== null && 'code' in switchErr && (switchErr as { code: number }).code === 4902) {
+          await globalThis.window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: chainHex,
+              chainName: this.chain.name,
+              nativeCurrency: this.chain.nativeCurrency,
+              rpcUrls: this.chain.rpcUrls.default.http,
+              blockExplorerUrls: this.chain.blockExplorers ? [this.chain.blockExplorers.default.url] : [],
+            }],
+          })
+        } else {
+          throw switchErr
+        }
+      }
+    }
     const wc   = this.walletClient(account)
     const hash = await wc.writeContract({
       address:      this.address,
