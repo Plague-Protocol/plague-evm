@@ -936,11 +936,21 @@ library RelationsLib {
     Fr internal constant SUBLIMB_SHIFT = Fr.wrap(uint256(1) << 14);
 
     function accumulateRelationEvaluations(
-        Fr[NUMBER_OF_ENTITIES] memory purportedEvaluations,
-        Honk.RelationParameters memory rp,
-        Fr[NUMBER_OF_ALPHAS] memory subrelationChallenges,
+        Fr[NUMBER_OF_ENTITIES] calldata cPurportedEvaluations,
+        Honk.RelationParameters calldata cRp,
+        Fr[NUMBER_OF_ALPHAS] calldata cSubrelationChallenges,
         Fr powPartialEval
-    ) internal pure returns (Fr accumulator) {
+    ) external pure returns (Fr accumulator) {
+        // Copy calldata → memory so internal helpers (which expect memory) can be called.
+        Fr[NUMBER_OF_ENTITIES] memory purportedEvaluations;
+        for (uint256 i; i < NUMBER_OF_ENTITIES; i++) {
+            purportedEvaluations[i] = cPurportedEvaluations[i];
+        }
+        Fr[NUMBER_OF_ALPHAS] memory subrelationChallenges;
+        for (uint256 i; i < NUMBER_OF_ALPHAS; i++) {
+            subrelationChallenges[i] = cSubrelationChallenges[i];
+        }
+        Honk.RelationParameters memory rp = cRp;
         Fr[NUMBER_OF_SUBRELATIONS] memory evaluations;
 
         // Accumulate all relations in Ultra Honk - each with varying number of subrelations
