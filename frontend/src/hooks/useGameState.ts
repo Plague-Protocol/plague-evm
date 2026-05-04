@@ -131,8 +131,8 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'game_started':
-        appendFeed('Game started — roles assigned.')
-        setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'active' } } : prev)
+        appendFeed('Game started — submit your role commitment.')
+        setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'starting' } } : prev)
         break
 
       case 'round_started':
@@ -150,7 +150,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
             startedAt:         event.timestamp,
             phaseEndsAt:       event.timestamp + Number(p.durationMs ?? 0),
           }
-          return { ...prev, room: { ...prev.room, currentRound: Number(p.round) }, currentRound: round }
+          return { ...prev, room: { ...prev.room, status: 'active', currentRound: Number(p.round) }, currentRound: round }
         })
         break
 
