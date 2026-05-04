@@ -5,6 +5,8 @@ import {Script, console} from "forge-std/Script.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
 import {ZKVerifier} from "../src/ZKVerifier.sol";
 import {StubZKVerifier} from "../src/StubZKVerifier.sol";
+import {RoleCommitmentVerifier} from "../src/RoleCommitmentVerifier.sol";
+import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
 
 /**
  * @title DeployScript
@@ -19,31 +21,45 @@ import {StubZKVerifier} from "../src/StubZKVerifier.sol";
  *                       Mainnet  : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
- *   ZK_VERIFIER_ADDR              If set, uses this IZKVerifier address directly (skip deployment)
- *   ROLE_COMMITMENT_VERIFIER_ADDR Address of the Noir-generated role_commitment verifier
- *   INNOCENCE_PROOF_VERIFIER_ADDR Address of the Noir-generated innocence_proof verifier
- *   ZK_BYPASS_ENABLED             If both verifier addrs are absent, deploy StubZKVerifier
+ *   ZK_VERIFIER_ADDR              If set, uses this IZKVerifier address directly (skip all ZK deployment)
+ *   ROLE_COMMITMENT_VERIFIER_ADDR Address of an already-deployed role_commitment Honk verifier
+ *   INNOCENCE_PROOF_VERIFIER_ADDR Address of an already-deployed innocence_proof Honk verifier
+ *   ZK_BYPASS_ENABLED             Set to "true" to deploy StubZKVerifier (testnet dev only)
  *
- * ── Predeployment (required for production ZK) ───────────────────────────────
- *   1. Generate Noir Groth16 verifier contracts from circuits:
- *        cd zk/packages/role_commitment && nargo prove && nargo codegen-verifier
- *        cd ../innocence_proof       && nargo prove && nargo codegen-verifier
- *   2. Deploy both generated verifier contracts on target network.
- *   3. Export deployed addresses as ROLE_COMMITMENT_VERIFIER_ADDR and
- *      INNOCENCE_PROOF_VERIFIER_ADDR.
- *   4. Run this script: it deploys ZKVerifier (adapter) and wires PlagueGame.
+ * ── ZK deployment priority ────────────────────────────────────────────────────
+ *   1. ZK_VERIFIER_ADDR set                  → use as-is
+ *   2. Both VERIFIER_ADDR env vars set        → wrap in ZKVerifier adapter
+ *   3. Neither, ZK_BYPASS_ENABLED != "true"  → deploy RoleCommitmentVerifier +
+ *                                               InnocenceProofVerifier from source,
+ *                                               then wrap in ZKVerifier adapter
+ *   4. ZK_BYPASS_ENABLED=true                → deploy StubZKVerifier (dev only)
+ *
+ * ── Predeployment (for ZK from source) ───────────────────────────────────────
+ *   Circuits are compiled and verifier contracts are already generated at:
+ *     contracts/src/RoleCommitmentVerifier.sol
+ *     contracts/src/InnocenceProofVerifier.sol
+ *   Regenerate them any time circuits change:
+ *     cd zk && nargo compile
+ *     bb write_vk -b target/role_commitment.json -o target/role_commitment_vk --oracle_hash keccak
+ *     bb write_solidity_verifier -k target/role_commitment_vk/vk -o ../contracts/src/RoleCommitmentVerifier.sol
+ *     bb write_vk -b target/innocence_proof.json -o target/innocence_proof_vk --oracle_hash keccak
+ *     bb write_solidity_verifier -k target/innocence_proof_vk/vk -o ../contracts/src/InnocenceProofVerifier.sol
+ *     # then rename HonkVerifier → RoleCommitmentVerifier / InnocenceProofVerifier in both files
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
- *   # Alfajores testnet (bypass ZK for dev)
+ *   # Alfajores testnet — full ZK (deploys verifiers from source)
  *   forge script contracts/script/Deploy.s.sol \
- *     --rpc-url celo_testnet \
- *     --broadcast \
- *     --verify
+ *     --rpc-url https://alfajores-forno.celo-testnet.org \
+ *     --broadcast
  *
- *   # Mainnet (recommended): set ROLE_COMMITMENT_VERIFIER_ADDR and
- *   # INNOCENCE_PROOF_VERIFIER_ADDR so this script deploys ZKVerifier adapter.
+ *   # Alfajores testnet — bypass ZK (dev shortcut, no real proofs)
+ *   ZK_BYPASS_ENABLED=true forge script contracts/script/Deploy.s.sol \
+ *     --rpc-url https://alfajores-forno.celo-testnet.org \
+ *     --broadcast
+ *
+ *   # Mainnet — full ZK
  *   forge script contracts/script/Deploy.s.sol \
- *     --rpc-url celo_mainnet \
+ *     --rpc-url https://forno.celo.org \
  *     --broadcast \
  *     --verify
  */
@@ -91,7 +107,7 @@ contract DeployScript is Script {
 
             if (hasRoleVerifier && hasInnocenceVerifier) {
                 // Option 2: deploy the production adapter pointing at the two
-                // Noir-generated verifiers.
+                // Noir-generated verifiers that were already deployed.
                 ZKVerifier adapter = new ZKVerifier(
                     roleVerifier,
                     innocenceVerifier
@@ -101,10 +117,10 @@ contract DeployScript is Script {
                 console.log("  role_commitment verifier :", roleVerifier);
                 console.log("  innocence_proof verifier :", innocenceVerifier);
             } else {
-                // Option 3: fall back to the bypass stub (dev/local only).
+                // Decide: full ZK from source, or bypass stub?
                 bool bypassEnabled = false;
-                try vm.envBool("ZK_BYPASS_ENABLED") returns (bool configuredBypass) {
-                    bypassEnabled = configuredBypass;
+                try vm.envBool("ZK_BYPASS_ENABLED") returns (bool b) {
+                    bypassEnabled = b;
                 } catch {}
 
                 require(
@@ -112,10 +128,21 @@ contract DeployScript is Script {
                     "Refusing bypass-enabled verifier on Celo mainnet"
                 );
 
-                StubZKVerifier stub = new StubZKVerifier(bypassEnabled);
-                zkVerifierAddr      = address(stub);
-                console.log("StubZKVerifier deployed  :", zkVerifierAddr);
-                console.log("ZK bypass enabled         :", bypassEnabled);
+                if (bypassEnabled) {
+                    // Option 4: stub (dev/testnet only)
+                    StubZKVerifier stub = new StubZKVerifier(true);
+                    zkVerifierAddr      = address(stub);
+                    console.log("StubZKVerifier (bypass)  :", zkVerifierAddr);
+                } else {
+                    // Option 3: deploy both Honk verifiers from source, then wrap.
+                    RoleCommitmentVerifier roleV = new RoleCommitmentVerifier();
+                    InnocenceProofVerifier innocV = new InnocenceProofVerifier();
+                    ZKVerifier adapter = new ZKVerifier(address(roleV), address(innocV));
+                    zkVerifierAddr = address(adapter);
+                    console.log("RoleCommitmentVerifier   :", address(roleV));
+                    console.log("InnocenceProofVerifier   :", address(innocV));
+                    console.log("ZKVerifier adapter       :", zkVerifierAddr);
+                }
             }
         }
 
