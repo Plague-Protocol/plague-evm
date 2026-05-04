@@ -7,6 +7,20 @@ import {
 } from 'viem'
 import { celoAlfajores, celo } from 'viem/chains'
 
+// ── Chain overrides ───────────────────────────────────────────────────────────
+// The built-in celoAlfajores points to alfajores-forno.celo-testnet.org which
+// no longer resolves. Override rpcUrls so every http() call uses a live node.
+const _alfajoresRpc =
+  process.env.NEXT_PUBLIC_RPC_URL ?? 'https://celo-alfajores.drpc.org'
+
+const celoAlfajoresOverride = {
+  ...celoAlfajores,
+  rpcUrls: {
+    default: { http: [_alfajoresRpc] as const },
+    public:  { http: [_alfajoresRpc] as const },
+  },
+} as typeof celoAlfajores
+
 // ── ABI ───────────────────────────────────────────────────────────────────────
 // Mirrors PlagueGame.sol — update if the Solidity interface changes.
 
@@ -46,8 +60,8 @@ export { PLAGUE_GAME_ABI }
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const CHAINS = {
-  testnet: celoAlfajores,  // chainId 44787
-  mainnet: celo,           // chainId 42220
+  testnet: celoAlfajoresOverride,  // chainId 44787
+  mainnet: celo,                   // chainId 42220
 } as const
 
 export interface ContractConfig {
