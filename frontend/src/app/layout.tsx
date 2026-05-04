@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Creepster, Oswald, VT323 } from 'next/font/google'
+import Script from 'next/script'
 import { Providers } from '@/providers/providers'
 import './globals.css'
 
@@ -39,6 +40,15 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
       <body className="antialiased">
+        {/* Unregister any stale service workers so cached JS chunks never
+            shadow fresh Next.js assets (prevents "undefined factory" errors). */}
+        <Script id="sw-cleanup" strategy="afterInteractive">{`
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+              registrations.forEach(function(r) { r.unregister(); });
+            });
+          }
+        `}</Script>
         <Providers>{children}</Providers>
       </body>
     </html>
