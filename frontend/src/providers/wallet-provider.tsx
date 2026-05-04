@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { createWalletClient, custom, getAddress } from 'viem'
-import { celoAlfajores, celo } from 'viem/chains'
+import { celoSepolia, celo } from 'viem/chains'
 
 // ── EIP-1193 type ────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ interface WalletContextValue extends WalletState {
 
 const CELO_CHAINS = {
   mainnet: celo,
-  testnet: celoAlfajores,
+  testnet: celoSepolia,
 } as const
 
 // ── Context ──────────────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (!state.address || !window.ethereum) throw new Error('Wallet not connected.')
     const wc = createWalletClient({
       account: state.address,
-      chain: celoAlfajores,
+      chain: celoSepolia,
       transport: custom(window.ethereum as Parameters<typeof custom>[0]),
     })
     return wc.signMessage({ message })

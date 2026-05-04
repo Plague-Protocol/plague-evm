@@ -3,19 +3,19 @@
 import { useEffect, useState } from 'react'
 import { useWallet } from '@/hooks/useWallet'
 import { createPublicClient, http, parseAbi } from 'viem'
-import { celoAlfajores, celo } from 'viem/chains'
+import { celoSepolia, celo } from 'viem/chains'
 
 const CUSD_ABI = parseAbi([
   'function balanceOf(address account) external view returns (uint256)',
 ])
 
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  44787: '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1', // Alfajores
-  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca', // Mainnet
+  11142220: '0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80', // Celo Sepolia
+  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
 
 const CHAIN_NAMES: Record<number, string> = {
-  44787: 'Celo Alfajores',
+  11142220: 'Celo Sepolia',
   42220: 'Celo Mainnet',
 }
 
@@ -26,7 +26,7 @@ function useBalance(address: `0x${string}` | null, chainId: number | null) {
     const cUSDAddress = CUSD_ADDRESSES[chainId]
     if (!cUSDAddress) { setBalance(null); return }
     const client = createPublicClient({
-      chain:     chainId === 42220 ? celo : celoAlfajores,
+      chain:     chainId === 42220 ? celo : celoSepolia,
       transport: http(),
     })
     client.readContract({ address: cUSDAddress, abi: CUSD_ABI, functionName: 'balanceOf', args: [address] })

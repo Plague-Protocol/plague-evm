@@ -10,8 +10,8 @@ import { useRouter } from 'next/navigation'
 
 // ── cUSD contract addresses ───────────────────────────────────────────────────
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  44787: '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1', // Alfajores
-  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca', // Mainnet
+  11142220: '0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80', // Celo Sepolia
+  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
 
 const statusColor: Record<string, string> = {

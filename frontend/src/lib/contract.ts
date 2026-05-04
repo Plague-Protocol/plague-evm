@@ -5,21 +5,7 @@ import {
   http,
   parseAbi,
 } from 'viem'
-import { celoAlfajores, celo } from 'viem/chains'
-
-// ── Chain overrides ───────────────────────────────────────────────────────────
-// The built-in celoAlfajores points to alfajores-forno.celo-testnet.org which
-// no longer resolves. Override rpcUrls so every http() call uses a live node.
-const _alfajoresRpc =
-  process.env.NEXT_PUBLIC_RPC_URL ?? 'https://celo-alfajores.drpc.org'
-
-const celoAlfajoresOverride = {
-  ...celoAlfajores,
-  rpcUrls: {
-    default: { http: [_alfajoresRpc] as const },
-    public:  { http: [_alfajoresRpc] as const },
-  },
-} as typeof celoAlfajores
+import { celoSepolia, celo } from 'viem/chains'
 
 // ── ABI ───────────────────────────────────────────────────────────────────────
 // Mirrors PlagueGame.sol — update if the Solidity interface changes.
@@ -60,8 +46,8 @@ export { PLAGUE_GAME_ABI }
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const CHAINS = {
-  testnet: celoAlfajoresOverride,  // chainId 44787
-  mainnet: celo,                   // chainId 42220
+  testnet: celoSepolia,  // chainId 11142220
+  mainnet: celo,         // chainId 42220
 } as const
 
 export interface ContractConfig {
@@ -75,7 +61,7 @@ export interface ContractConfig {
 
 export class PlagueContractClient {
   private readonly address: `0x${string}`
-  private readonly chain: typeof celo | typeof celoAlfajores
+  private readonly chain: typeof celo | typeof celoSepolia
   private readonly rpcUrl: string | undefined
 
   constructor(config: ContractConfig) {
@@ -285,7 +271,7 @@ export function createContractClient(config: ContractConfig): PlagueContractClie
 
 // ── Shared wallet helper ──────────────────────────────────────────────────────
 
-function makeWalletClient(account: `0x${string}`, chain: typeof celo | typeof celoAlfajores) {
+function makeWalletClient(account: `0x${string}`, chain: typeof celo | typeof celoSepolia) {
   if (!globalThis.window?.ethereum) {
     throw new Error('No EIP-1193 wallet provider found. Install MetaMask or Valora.')
   }
@@ -318,7 +304,7 @@ export interface FaucetConfig {
 
 export class FaucetClient {
   private readonly address: `0x${string}`
-  private readonly chain: typeof celo | typeof celoAlfajores
+  private readonly chain: typeof celo | typeof celoSepolia
 
   constructor(config: FaucetConfig) {
     this.address = config.faucetAddress
