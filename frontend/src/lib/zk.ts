@@ -9,13 +9,39 @@
 
 import { Noir } from '@noir-lang/noir_js'
 import { UltraHonkBackend } from '@noir-lang/backend_barretenberg'
-import { poseidon2, poseidon3 } from 'poseidon-lite'
+import { Barretenberg, Fr } from '@aztec/bb.js'
 import type { ZKProof, RoleCommitment } from '@/types/game'
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const ROLE_CLEAN = 0n
 const ROLE_PATIENT_ZERO = 1n
+
+// ─── Barretenberg Poseidon2 helpers ─────────────────────────────────────────
+// These functions use the exact same Poseidon2 permutation as the Noir circuits.
+// The circuits call:  std::hash::poseidon2_permutation([a, b, 0, 0])[0]
+// Here we call:       bb.poseidon2Permutation([Fr(a), Fr(b), Fr.ZERO, Fr.ZERO])[0]
+
+let _bbPromise: Promise<Barretenberg> | null = null
+
+function getBB(): Promise<Barretenberg> {
+  _bbPromise ??= Barretenberg.new()
+  return _bbPromise
+}
+
+/** hash2(a, b) = poseidon2_permutation([a, b, 0, 0])[0] */
+async function hash2(a: bigint, b: bigint): Promise<bigint> {
+  const bb = await getBB()
+  const res = await bb.poseidon2Permutation([new Fr(a), new Fr(b), Fr.ZERO, Fr.ZERO])
+  return BigInt(res[0].toString())
+}
+
+/** hash3(a, b, c) = poseidon2_permutation([a, b, c, 0])[0] */
+async function hash3(a: bigint, b: bigint, c: bigint): Promise<bigint> {
+  const bb = await getBB()
+  const res = await bb.poseidon2Permutation([new Fr(a), new Fr(b), new Fr(c), Fr.ZERO])
+  return BigInt(res[0].toString())
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -64,18 +90,18 @@ async function loadCircuit(name: string): Promise<any> {
 // ─── Role commitment ────────────────────────────────────────────────────────
 
 /**
- * Generates Poseidon(role, secret) on the client.
+ * Generates Poseidon2(role, secret) on the client.
  * This value is submitted on-chain at game start and later used to anchor
  * ZK proofs without revealing the role.
  *
- * Uses poseidon2 (BN254) — matches the Noir circuit's poseidon::bn254::hash_2.
+ * Uses Barretenberg poseidon2_permutation — matches the Noir circuit exactly.
  */
 export async function generateRoleCommitment(
   role: 'patient_zero' | 'clean',
   secret: bigint
 ): Promise<RoleCommitment> {
   const roleNum = role === 'patient_zero' ? ROLE_PATIENT_ZERO : ROLE_CLEAN
-  const commitment = poseidon2([roleNum, secret])
+  const commitment = await hash2(roleNum, secret)
   return {
     commitment: toField(commitment),
     role,
@@ -113,8 +139,8 @@ export async function proveInnocence(params: {
   const roomField = typeof roomId === 'bigint' ? roomId : BigInt(roomId)
   const roundField = BigInt(roundNumber)
 
-  // Nullifier = Poseidon(secret, room_id, round_number)
-  const nullifier = poseidon3([secret, roomField, roundField])
+  // Nullifier = poseidon2_permutation([secret, room_id, round_number, 0])[0]
+  const nullifier = await hash3(secret, roomField, roundField)
 
   const circuit = await loadCircuit('innocence_proof')
   const backend = new UltraHonkBackend(circuit)
@@ -170,8 +196,8 @@ export async function proveInfection(params: {
   // targetAddress as a Field: take lower 31 bytes to stay inside BN254 scalar field
   const targetField = BigInt(targetAddress) & ((1n << 248n) - 1n)
 
-  // Nullifier = Poseidon(secret, target_address, round_number)
-  const nullifier = poseidon3([secret, targetField, roundField])
+  // Nullifier = poseidon2_permutation([secret, target_address, round_number, 0])[0]
+  const nullifier = await hash3(secret, targetField, roundField)
 
   const circuit = await loadCircuit('infection_proof')
   const backend = new UltraHonkBackend(circuit)
@@ -263,22 +289,22 @@ export async function verifyProofLocally(
  * Useful for checking whether a player has already submitted this round
  * before generating a full proof.
  */
-export function computeInnocenceNullifier(
+export async function computeInnocenceNullifier(
   secret: bigint,
   roomId: bigint,
   roundNumber: bigint
-): bigint {
-  return poseidon3([secret, roomId, roundNumber])
+): Promise<bigint> {
+  return hash3(secret, roomId, roundNumber)
 }
 
 /**
  * Computes the infection nullifier deterministically.
  */
-export function computeInfectionNullifier(
+export async function computeInfectionNullifier(
   secret: bigint,
   targetAddress: string,
   roundNumber: bigint
-): bigint {
+): Promise<bigint> {
   const targetField = BigInt(targetAddress) & ((1n << 248n) - 1n)
-  return poseidon3([secret, targetField, roundNumber])
+  return hash3(secret, targetField, roundNumber)
 }

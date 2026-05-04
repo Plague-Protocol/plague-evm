@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { createContractClient } from '@/lib/contract'
-import type { GameState, GameEvent, Room, Player, Round, RoundPhase } from '@/types/game'
+import type { GameState, GameEvent, GameOutcome, Room, Player, Round, RoundPhase } from '@/types/game'
 
 // ── Contract client (read-only, no wallet needed) ─────────────────────────────
 
@@ -93,6 +93,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
   const socketRef    = useRef<Socket | null>(null)
   const feedRef      = useRef<string[]>([])
+  const pendingOutcomeRef = useRef<GameOutcome | null>(null)
   const [feed, setFeed] = useState<string[]>([])
 
   // ── Append to live event feed ───────────────────────────────────────────────
@@ -218,10 +219,75 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         appendFeed('The patient zero mantle has passed to a new host.')
         break
 
-      case 'game_ended':
-        appendFeed(`Game over — outcome: ${String(p.outcome)}`)
-        setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'ended' } } : prev)
+      case 'game_ended': {
+        const OUTCOME_MAP: Record<number, GameOutcome> = {
+          0: 'clean_win',
+          1: 'infected_win',
+          2: 'max_rounds_draw',
+        }
+        const outcome: GameOutcome = OUTCOME_MAP[Number(p.outcome)] ?? 'max_rounds_draw'
+        pendingOutcomeRef.current = outcome
+        appendFeed(`Game over — ${outcome.replaceAll('_', ' ')}`)
+        setState(prev => {
+          if (!prev.room) return prev
+          const alivePlayers = prev.room.players.filter(pl => !pl.isEliminated)
+          const cleanAlive = alivePlayers.filter(pl => pl.status === 'clean')
+          const infectedAlive = alivePlayers.filter(pl => pl.status === 'infected')
+          let winners: string[] = []
+          let losers: string[] = []
+          if (outcome === 'clean_win') {
+            winners = cleanAlive.map(pl => pl.walletAddress)
+            losers  = infectedAlive.map(pl => pl.walletAddress)
+          } else if (outcome === 'infected_win') {
+            winners = infectedAlive.map(pl => pl.walletAddress)
+            losers  = cleanAlive.map(pl => pl.walletAddress)
+          }
+          return {
+            ...prev,
+            room: { ...prev.room, status: 'ended' },
+            result: {
+              outcome,
+              winners,
+              losers,
+              potPerWinner: 0n,
+              totalPot: prev.room.stakeAmount * BigInt(prev.room.players.length),
+              rounds: prev.currentRound?.number ?? 0,
+            },
+          }
+        })
         break
+      }
+
+      case 'pot_drained': {
+        const winner = String(p.winner)
+        const amount = BigInt(typeof p.amount === 'string' || typeof p.amount === 'number' ? String(p.amount) : '0')
+        appendFeed(`Pot distributed: ${winner.slice(0, 8)}… +${(Number(amount) / 1e18).toFixed(4)} cUSD`)
+        setState(prev => {
+          const outcome = pendingOutcomeRef.current ?? 'max_rounds_draw'
+          if (!prev.result) {
+            // pot_drained arrived before game_ended — build a partial result
+            return {
+              ...prev,
+              result: {
+                outcome,
+                winners: [winner],
+                losers: [],
+                potPerWinner: amount,
+                totalPot: amount,
+                rounds: prev.currentRound?.number ?? 0,
+              },
+            }
+          }
+          const updatedWinners = prev.result.winners.includes(winner)
+            ? prev.result.winners
+            : [...prev.result.winners, winner]
+          return {
+            ...prev,
+            result: { ...prev.result, winners: updatedWinners, potPerWinner: amount },
+          }
+        })
+        break
+      }
 
       case 'room_expired':
         appendFeed('Room expired — all stakes refunded.')

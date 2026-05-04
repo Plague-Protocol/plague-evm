@@ -4,8 +4,6 @@ import { isAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
 import { createRoomRecord, listWaitingRooms } from '../repositories/rooms'
 
-// TODO: Issue #19 - Implement full rooms API (wire up DB/Redis persistence)
-
 export const roomRouter = Router()
 
 // EVM address: 0x followed by 40 hex chars
@@ -22,7 +20,6 @@ const CreateRoomSchema = z.object({
 /**
  * GET /api/rooms
  * List open (Waiting) rooms.
- * TODO: Issue #19 — fetch from Redis/DB cache, fallback to on-chain events
  */
 roomRouter.get('/', async (_req, res) => {
   try {
@@ -55,8 +52,6 @@ roomRouter.get('/:id', async (req, res) => {
  *
  * The backend server wallet covers gas for room creation. Players sign their
  * own transactions (joinRoom, castVote, etc.) directly from the frontend.
- *
- * TODO: Issue #19 — validate hostAddress is connected (optional), store in DB
  */
 roomRouter.post('/', async (req, res) => {
   const parsed = CreateRoomSchema.safeParse(req.body)

@@ -56,7 +56,7 @@ function GamePageInner() {
   const roomId = params.get('room')
 
   const { isConnected, address, chainId } = useWallet()
-  const { room, localPlayer, currentRound, result, isConnected: socketOn, isLoading, error, feed } = useGameState(roomId, address)
+  const { room, localPlayer, currentRound, result, isConnected: socketOn, isLoading, error, feed, socket } = useGameState(roomId, address)
 
   // ── Phase timer ──────────────────────────────────────────────────────────
   const [now, setNow] = useState(() => Date.now())
@@ -83,6 +83,10 @@ function GamePageInner() {
   const [commitError, setCommitError]       = useState<string | null>(null)
   const [secretPhrase, setSecretPhrase]     = useState('')
 
+  // ── Start game state (host only, Waiting phase) ──────────────────────────
+  const [starting, setStarting]         = useState(false)
+  const [startError, setStartError]     = useState<string | null>(null)
+
   // ── Derived ──────────────────────────────────────────────────────────────
   const phase       = currentRound?.phase ?? 'ended'
   const round       = currentRound?.number ?? 0
@@ -93,6 +97,7 @@ function GamePageInner() {
   const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !voting
   const canProve      = phase === 'discussion' && isConnected && !localPlayer?.isEliminated && !proofDone
   const canCommit     = room?.status === 'starting' && isConnected && !committing
+  const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
 
   // ── Soundscape ───────────────────────────────────────────────────────────
   const { muted } = useSound()
@@ -149,7 +154,7 @@ function GamePageInner() {
 
       const { proveInnocence, computeInnocenceNullifier, deriveSecret } = await import('@/lib/zk')
       const secretBigInt = await deriveSecret(secretPhrase)
-      const nullifier = computeInnocenceNullifier(secretBigInt, BigInt(roomId), BigInt(round))
+      const nullifier = await computeInnocenceNullifier(secretBigInt, BigInt(roomId), BigInt(round))
       const proof = await proveInnocence({
         role:        'clean',
         secret:      secretBigInt,
@@ -160,6 +165,29 @@ function GamePageInner() {
 
       const nullifierHex = `0x${nullifier.toString(16).padStart(64, '0')}` as `0x${string}`
       const proofBytes   = ('0x' + proof.proof.map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
+
+      // Notify backend before writing on-chain — backend validates and may send proof_error
+      if (socket) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 3000) // fall through if no ack within 3s
+          socket.once('proof_error', (data: { message?: string }) => {
+            clearTimeout(timer)
+            reject(new Error(data.message ?? 'Backend rejected proof.'))
+          })
+          socket.once('proof_ack', () => {
+            clearTimeout(timer)
+            resolve()
+          })
+          socket.emit('submit_proof', {
+            roomId,
+            playerAddress: address,
+            commitment,
+            nullifier: nullifierHex,
+            zkProof: proofBytes,
+            isFreeProof: !localPlayer?.freeProofUsed,
+          })
+        })
+      }
 
       // Approve exact proof fee (not stakeAmount) for paid proofs
       if (localPlayer?.freeProofUsed && chainId && CUSD_ADDRESSES[chainId]) {
@@ -176,7 +204,7 @@ function GamePageInner() {
     } finally {
       setProving(false)
     }
-  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId])
+  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket])
 
   const handleCommitRole = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -202,7 +230,22 @@ function GamePageInner() {
     }
   }, [address, roomId, secretPhrase])
 
-  // ── No roomId guard ───────────────────────────────────────────────────────
+  const handleStartGame = useCallback(async () => {
+    if (!address || !roomId) return
+    const client = getContractClient()
+    if (!client) return
+    setStarting(true)
+    setStartError(null)
+    try {
+      await client.startGame(address, BigInt(roomId))
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : 'Failed to start game.')
+    } finally {
+      setStarting(false)
+    }
+  }, [address, roomId])
+
+  // ── No roomId guard ─────────────────────────────────────────────────────
   if (!roomId) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
@@ -386,6 +429,33 @@ function GamePageInner() {
                     </p>
                   </div>
                 </div>
+
+                {/* Start Game panel (host only, Waiting phase) */}
+                {room?.status === 'waiting' && isHost && (
+                  <div
+                    className="mt-5 rounded-lg border p-5"
+                    style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}
+                  >
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
+                      Host Controls
+                    </p>
+                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                      {`${totalPlayers} player${totalPlayers !== 1 ? 's' : ''} in room. Start when ready.`}
+                    </p>
+                    {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
+                    <button
+                      onClick={handleStartGame}
+                      disabled={starting || totalPlayers < 2}
+                      className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                      style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
+                    >
+                      {starting ? 'Starting…' : 'Start Game'}
+                    </button>
+                    {totalPlayers < 2 && (
+                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least 2 players to start.</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Role Commitment panel (Starting phase) */}
                 {room?.status === 'starting' && (

@@ -103,11 +103,11 @@ async function writeAndWait(functionName: string, args: readonly unknown[]) {
   const { request } = await publicClient.simulateContract({
     address,
     abi:          PLAGUE_ABI,
-    functionName: functionName as any,
-    args:         args as any,
+    functionName: functionName as never,
+    args:         args as never,
     account:      walletClient.account,
   })
-  const hash = await walletClient.writeContract(request as any)
+  const hash = await walletClient.writeContract(request as never)
   return publicClient.waitForTransactionReceipt({ hash })
 }
 
@@ -224,8 +224,8 @@ export const chainAdapter = {
       publicClient.watchContractEvent({
         address,
         abi:       PLAGUE_ABI,
-        eventName: eventName as any,
-        onLogs(logs: any[]) {
+        eventName: eventName as never,
+        onLogs(logs: { args?: Record<string, unknown> }[]) {
           for (const log of logs) {
             logger.debug(`[chain] ${eventName}`, log.args)
             onLog({ eventName, args: log.args ?? {} })
