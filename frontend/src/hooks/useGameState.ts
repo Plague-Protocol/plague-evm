@@ -218,6 +218,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
       case 'patient_zero_updated':
         appendFeed('The patient zero mantle has passed to a new host.')
+        setState(prev => {
+          if (!prev.localPlayer) return prev
+          const isLocalPatientZero =
+            String(p.patientZero).toLowerCase() === prev.localPlayer.walletAddress.toLowerCase()
+          if (!isLocalPatientZero) return prev
+          return { ...prev, localPlayer: { ...prev.localPlayer, role: 'patient_zero' } }
+        })
         break
 
       case 'game_ended': {
@@ -250,8 +257,10 @@ export function useGameState(roomId: string | null, playerAddress: string | null
               outcome,
               winners,
               losers,
-              potPerWinner: 0n,
               totalPot: prev.room.stakeAmount * BigInt(prev.room.players.length),
+              potPerWinner: winners.length > 0
+                ? (prev.room.stakeAmount * BigInt(prev.room.players.length)) / BigInt(winners.length)
+                : 0n,
               rounds: prev.currentRound?.number ?? 0,
             },
           }
@@ -389,12 +398,29 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       setState(prev => ({ ...prev, isConnected: false }))
     })
 
+    socket.on('reconnect', () => {
+      socket.emit('join_room', { roomId, playerAddress })
+    })
+
     return () => {
       socket.disconnect()
       socketRef.current = null
     }
   }, [roomId, playerAddress, handleEvent, loadRoomFromChain])
 
-  return { ...state, feed, socket: socketRef.current }
+  // ── Polling fallback: re-sync from chain every 15 s ────────────────────────
+  useEffect(() => {
+    if (!roomId) return
+    const id = setInterval(() => {
+      loadRoomFromChain(roomId, playerAddress ?? undefined)
+    }, 15_000)
+    return () => clearInterval(id)
+  }, [roomId, playerAddress, loadRoomFromChain])
+
+  const refresh = useCallback(() => {
+    if (roomId) loadRoomFromChain(roomId, playerAddress ?? undefined)
+  }, [roomId, playerAddress, loadRoomFromChain])
+
+  return { ...state, feed, socket: socketRef.current, refresh }
 }
 

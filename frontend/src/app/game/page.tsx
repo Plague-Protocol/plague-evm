@@ -58,6 +58,30 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
   42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
 
+// ── Contract error → user message ─────────────────────────────────────────────
+
+const CONTRACT_ERROR_MAP: Record<string, string> = {
+  NotAlive:              'You are no longer alive in this game and cannot take this action.',
+  WrongPhase:            'This action is not available in the current phase.',
+  AlreadyVoted:          'You have already voted this round.',
+  AlreadyProvedThisRound:'You have already submitted an innocence proof this round.',
+  NullifierUsed:         'This proof nullifier has already been used. Try a different secret.',
+  InvalidProof:          'ZK proof verification failed. Check your secret phrase and try again.',
+  NotParticipant:        'You are not a participant in this room.',
+  AlreadyCommitted:      'You have already committed your role.',
+  NotActive:             'The game is not currently active.',
+  NotEnoughPlayers:      'Not enough players to perform this action.',
+  InvalidInfectionTarget:'Invalid infection target.',
+}
+
+function parseContractError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  for (const [name, friendly] of Object.entries(CONTRACT_ERROR_MAP)) {
+    if (msg.includes(name)) return friendly
+  }
+  return msg.split('\n')[0]
+}
+
 // ── Inner component (uses hooks that need Suspense) ───────────────────────────
 
 function GamePageInner() {
@@ -66,7 +90,7 @@ function GamePageInner() {
   const roomId = params.get('room')
 
   const { isConnected, address, chainId } = useWallet()
-  const { room, localPlayer, currentRound, result, isConnected: socketOn, isLoading, error, feed, socket } = useGameState(roomId, address)
+  const { room, localPlayer, currentRound, result, isConnected: socketOn, isLoading, error, feed, socket, refresh } = useGameState(roomId, address)
 
   // ── Phase timer ──────────────────────────────────────────────────────────
   const [now, setNow] = useState(() => Date.now())
@@ -108,7 +132,8 @@ function GamePageInner() {
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
   const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
-  const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !voting
+  const hasVoted      = !!address && (currentRound?.votes.some(v => v.voterAddress.toLowerCase() === address.toLowerCase()) ?? false)
+  const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !hasVoted && !voting
   const canProve      = phase === 'discussion' && isConnected && !localPlayer?.isEliminated && !proofDone
   const canCommit     = room?.status === 'starting' && isConnected && !committing && !commitDone
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
@@ -144,8 +169,11 @@ function GamePageInner() {
     setVoteError(null)
     try {
       await client.castVote(address, BigInt(roomId), selectedVote as `0x${string}`)
+      setSelectedVote(null)
     } catch (err) {
-      setVoteError(err instanceof Error ? err.message : 'Vote failed.')
+      const msg = parseContractError(err)
+      setVoteError(msg)
+      toast.error(msg)
     } finally {
       setVoting(false)
     }
@@ -214,7 +242,9 @@ function GamePageInner() {
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
       setProofDone(true)
     } catch (err) {
-      setProofError(err instanceof Error ? err.message : 'Proof generation or submission failed.')
+      const msg = parseContractError(err)
+      setProofError(msg)
+      toast.error(msg)
     } finally {
       setProving(false)
     }
@@ -273,6 +303,22 @@ function GamePageInner() {
       setStarting(false)
     }
   }, [address, roomId])
+
+  // ── Phase advance ticker ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket || !roomId || room?.status !== 'active') return
+    const id = setInterval(() => {
+      socket.emit('request_phase_advance', { roomId })
+    }, 10_000)
+    return () => clearInterval(id)
+  }, [socket, roomId, room?.status])
+
+  // ── Periodic full refresh (30 s fallback) ────────────────────────────────
+  useEffect(() => {
+    if (!roomId) return
+    const id = setInterval(() => { refresh() }, 30_000)
+    return () => clearInterval(id)
+  }, [roomId, refresh])
 
   // ── No roomId guard ─────────────────────────────────────────────────────
   if (!roomId) {
@@ -423,6 +469,26 @@ function GamePageInner() {
                   )}
                 </div>
 
+                {/* Role awareness banners — private, only shown to the local player */}
+                {localPlayer?.isEliminated && (
+                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(74,94,68,0.5)', backgroundColor: 'rgba(74,94,68,0.1)' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>⊘ YOU HAVE BEEN ELIMINATED</p>
+                    <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>You can observe but can no longer vote or submit proofs.</p>
+                  </div>
+                )}
+                {!localPlayer?.isEliminated && localPlayer?.role === 'patient_zero' && (
+                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.5)', backgroundColor: 'rgba(245,197,24,0.1)' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>☣ YOU ARE PATIENT ZERO</p>
+                    <p className="mt-2 font-mono text-xs" style={{ color: '#f5a918' }}>The plague started with you. Survive until the infected take over.</p>
+                  </div>
+                )}
+                {!localPlayer?.isEliminated && localPlayer?.role === 'infected' && (
+                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.6)', backgroundColor: 'rgba(230,51,41,0.12)' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>⚠ YOU ARE INFECTED</p>
+                    <p className="mt-2 font-mono text-xs" style={{ color: '#ff6b6b' }}>Spread the plague. Avoid suspicion. Do not submit an innocence proof.</p>
+                  </div>
+                )}
+
                 {/* Phase + Proof panel */}
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div
@@ -451,9 +517,17 @@ function GamePageInner() {
                     <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                       {phase === 'infection'  && 'Infection spreading — new carrier assigned.'}
                       {phase === 'discussion' && 'Submit innocence proofs now before voting opens.'}
-                      {phase === 'voting'     && 'Cast your vote to eliminate the suspected carrier.'}
+                      {phase === 'voting'     && (hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Cast your vote to eliminate the suspected carrier.')}
                       {phase === 'reveal'     && 'Vote resolution in progress.'}
-                      {phase === 'ended'      && (result ? `Game over: ${result.outcome}` : 'Game ended.')}
+                      {phase === 'ended' && (
+                        result
+                          ? `Game over: ${result.outcome.replaceAll('_', ' ')}`
+                          : (
+                              room?.status === 'waiting'  ? 'Waiting for players to join.' :
+                              room?.status === 'starting' ? 'Waiting for all players to commit their role.' :
+                              'Game ended.'
+                            )
+                      )}
                     </p>
                   </div>
                 </div>
@@ -576,10 +650,18 @@ function GamePageInner() {
                     {result.outcome === 'clean_win' ? 'Clean Win' : result.outcome === 'infected_win' ? 'Infected Win' : 'Draw'}
                   </p>
                   <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>
-                    Pot per winner: {(Number(result.potPerWinner) / 1e18).toFixed(4)} cUSD
+                    Pot per winner: {result.potPerWinner > 0n
+                      ? (Number(result.potPerWinner) / 1e18).toFixed(4)
+                      : result.winners.length > 0
+                        ? (Number(result.totalPot) / 1e18 / result.winners.length).toFixed(4)
+                        : '0.0000'
+                    } cUSD
                   </p>
                   <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                    Winners: {result.winners.map(w => `${w.slice(0, 6)}…`).join(', ') || '—'}
+                    Winners: {result.winners.map(w => {
+                      const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())
+                      return p?.displayName ?? `${w.slice(0, 6)}…`
+                    }).join(', ') || '—'}
                   </p>
                 </article>
               )}
@@ -595,10 +677,14 @@ function GamePageInner() {
               >
                 <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
                 <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>
-                  {phase === 'voting' ? 'Select suspected carrier' : 'Voting not open'}
+                  {phase === 'voting' ? (hasVoted ? 'Vote submitted' : 'Select suspected carrier') : 'Voting not open'}
                 </p>
 
-                {phase === 'voting' && (
+                {phase === 'voting' && hasVoted && (
+                  <p className="mt-4 font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
+                )}
+
+                {phase === 'voting' && !hasVoted && (
                   <div className="mt-4 space-y-2">
                     {activePlayers
                       .filter(p => p.walletAddress !== address)
@@ -626,7 +712,7 @@ function GamePageInner() {
 
                     <button
                       onClick={handleCastVote}
-                      disabled={!selectedVote || voting}
+                      disabled={!selectedVote || voting || !canVote}
                       className="mt-2 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                       style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#d4c9b2' }}
                     >

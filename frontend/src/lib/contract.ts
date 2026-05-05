@@ -61,6 +61,8 @@ const PLAGUE_GAME_ABI = parseAbi([
   'error NullifierUsed()',
   'error TooManyActiveRooms()',
   'error NotParticipant()',
+  'error NotAlive()',
+  'error InvalidInfectionTarget()',
   'error InvalidProof()',
   'error Reentrancy()',
 ] as const)

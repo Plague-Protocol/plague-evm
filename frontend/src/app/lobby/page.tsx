@@ -1,7 +1,7 @@
 'use client'
 
 import { SiteNav } from '@/components/ui/site-nav'
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
@@ -634,25 +634,6 @@ export default function LobbyPage() {
       setEndingRoomId(null)
     }
   }, [address, loadRooms])
-
-  // ── Auto-start ref guard (prevents double-firing) ─────────────────────────
-  const autoStartedRef = useRef(new Set<string>())
-
-  // ── Auto-start when host's waiting room reaches max players ───────────────
-  useEffect(() => {
-    if (!myActiveRoom || !address) return
-    if (myActiveRoom.status !== 'waiting') return
-    if (myActiveRoom.players < myActiveRoom.maxPlayers) return
-    if (myActiveRoom.host.toLowerCase() !== address.toLowerCase()) return
-    const rid = myActiveRoom.id.toString()
-    if (autoStartedRef.current.has(rid)) return
-    autoStartedRef.current.add(rid)
-    const client = getContractClient()
-    if (!client) return
-    client.startGame(address, myActiveRoom.id)
-      .then(() => loadRooms())
-      .catch(() => { autoStartedRef.current.delete(rid) })
-  }, [myActiveRoom, address, loadRooms])
 
   // ── Periodic room refresh (10 s) to catch state changes from other players ─
   useEffect(() => {
