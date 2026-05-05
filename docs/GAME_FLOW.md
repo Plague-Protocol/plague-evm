@@ -9,7 +9,8 @@
 ## 1. Lobby — Room Creation & Staking
 
 - A player creates a room setting `min_players`, `max_players`, `stake_amount`, `proof_fee`, and `expiry_secs`
-- All players stake the same amount in XLM/cUSD — held in the **`PlagueGame` Soroban escrow contract**
+- **The host is automatically joined as the first player** at creation time — their `stake_amount` cUSD is transferred in the same transaction (they must approve the contract for at least `stake_amount` before calling `createRoom`)
+- All players stake the same amount in cUSD — held in the **`PlagueGame` escrow contract**
 - Once `min_players` is reached, the host starts the game → `RoomStatus: Waiting → Starting`
 
 **Join window: `RoomStatus == Waiting` only.**  

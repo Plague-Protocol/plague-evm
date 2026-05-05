@@ -158,6 +158,7 @@ contract PlagueGame {
     event PotDrained(uint256 indexed roomId, address winner, uint256 amount);
     event RoomExpired(uint256 indexed roomId);
     event MaxActiveRoomsSet(uint256 newMax);
+    event RoomCreated(uint256 indexed roomId, address indexed host);
 
     // ─── Custom Errors ────────────────────────────────────────────────────────────
 
@@ -302,6 +303,31 @@ contract PlagueGame {
         cfg.votingDurationSecs    = 60;
         cfg.expirySecs            = expirySecs;
         cfg.proofFee              = proofFee;
+
+        // Auto-join: host is always the first player.
+        // Caller must have approved this contract for at least stakeAmount cUSD.
+        _safeTransferFrom(msg.sender, address(this), stakeAmount);
+
+        r.players.push(msg.sender);
+        r.pot += stakeAmount;
+
+        players[roomId][msg.sender] = PlayerState({
+            addr:                      msg.sender,
+            status:                    PlayerStatus.Clean,
+            roleCommitment:            bytes32(0),
+            staked:                    stakeAmount,
+            voteTarget:                address(0),
+            joinedAt:                  ts,
+            freeProofUsed:             false,
+            proofsSubmittedTotal:      0,
+            pendingInfectionNextRound: false,
+            hasProofThisRound:         false,
+            hasVotedThisRound:         false,
+            roleCommitted:             false
+        });
+
+        emit RoomCreated(roomId, msg.sender);
+        emit PlayerJoined(roomId, msg.sender);
     }
 
     /**
