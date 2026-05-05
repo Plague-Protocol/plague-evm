@@ -3,7 +3,9 @@ import {
   createWalletClient,
   custom,
   http,
+  maxUint256,
   parseAbi,
+  parseEventLogs,
 } from 'viem'
 import { celoSepolia, celo } from 'viem/chains'
 
@@ -39,6 +41,28 @@ const PLAGUE_GAME_ABI = parseAbi([
   'event GameEnded(uint256 indexed roomId, uint8 outcome)',
   'event PotDrained(uint256 indexed roomId, address winner, uint256 amount)',
   'event RoomExpired(uint256 indexed roomId)',
+  'event RoomCreated(uint256 indexed roomId, address indexed host)',
+  // Custom errors (required for viem to decode revert reasons by name)
+  'error Unauthorized()',
+  'error AlreadyInitialized()',
+  'error InvalidRoom()',
+  'error RoomNotWaiting()',
+  'error RoomFull()',
+  'error RoomExpiredError()',
+  'error AlreadyJoined()',
+  'error WrongStakeAmount()',
+  'error NotHost()',
+  'error NotEnoughPlayers()',
+  'error NotActive()',
+  'error WrongPhase()',
+  'error AlreadyVoted()',
+  'error AlreadyCommitted()',
+  'error AlreadyProvedThisRound()',
+  'error NullifierUsed()',
+  'error TooManyActiveRooms()',
+  'error NotParticipant()',
+  'error InvalidProof()',
+  'error Reentrancy()',
 ] as const)
 
 export { PLAGUE_GAME_ABI }
@@ -83,33 +107,35 @@ export class PlagueContractClient {
     return makeWalletClient(account, this.chain)
   }
 
-  private async sendTx(account: `0x${string}`, request: unknown) {
-    // Ensure the wallet is on the correct chain before sending
-    if (globalThis.window?.ethereum) {
-      const chainHex = `0x${this.chain.id.toString(16)}`
-      try {
+  private async ensureChain(): Promise<void> {
+    if (!globalThis.window?.ethereum) return
+    const chainHex = `0x${this.chain.id.toString(16)}`
+    try {
+      await globalThis.window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: chainHex }],
+      })
+    } catch (switchErr: unknown) {
+      if (typeof switchErr === 'object' && switchErr !== null && 'code' in switchErr && (switchErr as { code: number }).code === 4902) {
         await globalThis.window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: chainHex }],
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: chainHex,
+            chainName: this.chain.name,
+            nativeCurrency: this.chain.nativeCurrency,
+            rpcUrls: this.chain.rpcUrls.default.http,
+            blockExplorerUrls: this.chain.blockExplorers ? [this.chain.blockExplorers.default.url] : [],
+          }],
         })
-      } catch (switchErr: unknown) {
-        // 4902 = chain not added yet — add it then retry
-        if (typeof switchErr === 'object' && switchErr !== null && 'code' in switchErr && (switchErr as { code: number }).code === 4902) {
-          await globalThis.window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: chainHex,
-              chainName: this.chain.name,
-              nativeCurrency: this.chain.nativeCurrency,
-              rpcUrls: this.chain.rpcUrls.default.http,
-              blockExplorerUrls: this.chain.blockExplorers ? [this.chain.blockExplorers.default.url] : [],
-            }],
-          })
-        } else {
-          throw switchErr
-        }
+      } else {
+        throw switchErr
       }
     }
+  }
+
+  private async sendTx(account: `0x${string}`, request: unknown) {
+    // Ensure the wallet is on the correct chain before sending
+    await this.ensureChain()
     const wc   = this.walletClient(account)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hash = await wc.writeContract(request as any)
@@ -128,17 +154,51 @@ export class PlagueContractClient {
     proofFee: bigint,
     expirySecs = 600,
   ): Promise<bigint> {
-    // Use simulateContract to get the returned roomId from the call — avoids
-    // the roomCount() race when two rooms are created near-simultaneously.
-    const { request, result: roomId } = await this.publicClient.simulateContract({
+    // Skip simulateContract — the public RPC may return stale allowance state
+    // immediately after approveCUSD, causing a false revert in simulation.
+    // writeContract sends the tx directly; the receipt contains the RoomCreated
+    // event which gives us the real on-chain roomId.
+    // Estimate gas via our publicClient (which has confirmed the approval is
+    // indexed — see approveCUSD). Passing an explicit gas to writeContract
+    // prevents MetaMask from calling eth_estimateGas on its own (potentially
+    // lagging) RPC and showing "Unavailable" for the network fee.
+    const gasEstimate = await this.publicClient.estimateContractGas({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'createRoom',
       args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
       account,
     })
-    await this.sendTx(account, request)
-    return roomId
+    await this.ensureChain()
+    const wc   = this.walletClient(account)
+    const hash = await wc.writeContract({
+      address:      this.address,
+      abi:          PLAGUE_GAME_ABI,
+      functionName: 'createRoom',
+      args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
+      account,
+      gas:          gasEstimate * 130n / 100n, // 30 % buffer
+    })
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
+    if (receipt.status === 'reverted') {
+      // Re-simulate at latest state to extract the typed revert reason.
+      // (Forno does not support historical eth_call at a specific blockNumber.)
+      await this.publicClient.simulateContract({
+        address:      this.address,
+        abi:          PLAGUE_GAME_ABI,
+        functionName: 'createRoom',
+        args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
+        account,
+      })
+      throw new Error('createRoom transaction reverted')
+    }
+    const logs = parseEventLogs({
+      abi:       PLAGUE_GAME_ABI,
+      logs:      receipt.logs,
+      eventName: 'RoomCreated',
+    })
+    if (logs.length > 0) return logs[0].args.roomId
+    throw new Error('RoomCreated event not found in transaction receipt')
   }
 
   /**
@@ -147,19 +207,47 @@ export class PlagueContractClient {
    * Use `approveStake` to send the ERC-20 approval transaction first.
    */
   async joinRoom(account: `0x${string}`, roomId: bigint): Promise<void> {
-    const { request } = await this.publicClient.simulateContract({
+    // Skip simulateContract for the same stale-allowance reason as createRoom.
+    const gasEstimate = await this.publicClient.estimateContractGas({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'joinRoom',
       args:         [roomId],
       account,
     })
-    await this.sendTx(account, request)
+    await this.ensureChain()
+    const wc   = this.walletClient(account)
+    const hash = await wc.writeContract({
+      address:      this.address,
+      abi:          PLAGUE_GAME_ABI,
+      functionName: 'joinRoom',
+      args:         [roomId],
+      account,
+      gas:          gasEstimate * 130n / 100n,
+    })
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
+    if (receipt.status === 'reverted') {
+      // Re-simulate at latest state to extract the typed revert reason.
+      await this.publicClient.simulateContract({
+        address:      this.address,
+        abi:          PLAGUE_GAME_ABI,
+        functionName: 'joinRoom',
+        args:         [roomId],
+        account,
+      })
+      throw new Error('joinRoom transaction reverted')
+    }
   }
 
   /**
-   * Approve the game contract to spend `amount` cUSD on behalf of the caller.
-   * Must be called before `joinRoom` and before each paid `submitInnocenceProof`.
+   * Approve the game contract to spend cUSD on behalf of the caller.
+   * - Checks the current on-chain allowance first; skips the approve tx entirely
+   *   if the allowance is already sufficient (common on repeat calls).
+   * - When an approval IS needed, approves MaxUint256 so the user never has to
+   *   approve again, regardless of how many rooms they join.
+   * - After the approval is mined, polls the allowance on our RPC node until
+   *   the new value is visible, so the subsequent writeContract call is never
+   *   submitted to a node with stale state.
    */
   async approveCUSD(
     account: `0x${string}`,
@@ -168,16 +256,38 @@ export class PlagueContractClient {
   ): Promise<void> {
     const erc20Abi = parseAbi([
       'function approve(address spender, uint256 amount) external returns (bool)',
+      'function allowance(address owner, address spender) external view returns (uint256)',
     ])
+    // Skip approve if allowance is already sufficient.
+    const current = await this.publicClient.readContract({
+      address:      cUSDAddress,
+      abi:          erc20Abi,
+      functionName: 'allowance',
+      args:         [account, this.address],
+    })
+    if (current >= amount) return
+    // Approve MaxUint256 — set-and-forget; never needs re-approval.
     const wc = this.walletClient(account)
     const hash = await wc.writeContract({
       address:      cUSDAddress,
       abi:          erc20Abi,
       functionName: 'approve',
-      args:         [this.address, amount],
+      args:         [this.address, maxUint256],
       account,
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
+    // Poll until our RPC node reflects the updated allowance.
+    for (let i = 0; i < 12; i++) {
+      const updated = await this.publicClient.readContract({
+        address:      cUSDAddress,
+        abi:          erc20Abi,
+        functionName: 'allowance',
+        args:         [account, this.address],
+      })
+      if (updated >= amount) return
+      await new Promise<void>(res => { setTimeout(res, 1500) })
+    }
+    throw new Error('Allowance not visible on RPC after approval mined — please try again in a moment.')
   }
 
   /** Host closes the join window and starts the game. */
