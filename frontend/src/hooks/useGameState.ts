@@ -91,9 +91,10 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     error:       null,
   })
 
-  const socketRef    = useRef<Socket | null>(null)
-  const feedRef      = useRef<string[]>([])
+  const socketRef         = useRef<Socket | null>(null)
+  const feedRef           = useRef<string[]>([])
   const pendingOutcomeRef = useRef<GameOutcome | null>(null)
+  const socketConnectedRef = useRef(false)
   const [feed, setFeed] = useState<string[]>([])
 
   // ── Append to live event feed ───────────────────────────────────────────────
@@ -360,6 +361,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     socketRef.current = socket
 
     socket.on('connect', () => {
+      socketConnectedRef.current = true
       setState(prev => ({ ...prev, isConnected: true }))
       socket.emit('join_room', {
         roomId,
@@ -393,11 +395,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
     socket.on('connect_error', (err) => {
       // Socket unavailable — fall back to chain read
+      socketConnectedRef.current = false
       loadRoomFromChain(roomId, playerAddress ?? undefined)
       setState(prev => ({ ...prev, isConnected: false, error: `Backend offline: ${err.message}. Showing on-chain data.` }))
     })
 
     socket.on('disconnect', () => {
+      socketConnectedRef.current = false
       setState(prev => ({ ...prev, isConnected: false }))
     })
 
@@ -411,10 +415,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     }
   }, [roomId, playerAddress, handleEvent, loadRoomFromChain])
 
-  // ── Polling fallback: re-sync from chain every 5 s ─────────────────────────
+  // ── Polling fallback: re-sync from chain when socket is offline ──────────────
+  // Only fires while the socket is disconnected; once reconnected the server
+  // pushes all state updates so polling is redundant and wasteful.
   useEffect(() => {
     if (!roomId) return
     const id = setInterval(() => {
+      if (socketConnectedRef.current) return
       loadRoomFromChain(roomId, playerAddress ?? undefined)
     }, 5_000)
     return () => clearInterval(id)

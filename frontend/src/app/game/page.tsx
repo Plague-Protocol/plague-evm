@@ -208,8 +208,6 @@ function GamePageInner() {
       setOptimisticVotedFor(selectedVote)
       setSelectedVote(null)
       toast.success('Vote submitted!')
-      // Refresh chain state so tally and player list are up-to-date.
-      refresh()
     } catch (err) {
       const msg = parseContractError(err)
       setVoteError(msg)
@@ -217,7 +215,7 @@ function GamePageInner() {
     } finally {
       setVoting(false)
     }
-  }, [selectedVote, address, roomId, refresh])
+  }, [selectedVote, address, roomId])
 
   const handleSubmitProof = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -282,7 +280,6 @@ function GamePageInner() {
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
       setProofDone(true)
       toast.success('Innocence proof submitted!')
-      refresh()
     } catch (err) {
       const msg = parseContractError(err)
       setProofError(msg)
@@ -290,7 +287,7 @@ function GamePageInner() {
     } finally {
       setProving(false)
     }
-  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket, refresh])
+  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket])
 
   const handleCommitRole = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -313,7 +310,6 @@ function GamePageInner() {
       setCommitDone(true)
       setSecretPhrase('')
       toast.success('Role committed!')
-      refresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Role commitment failed.'
       // AlreadyCommitted means a previous submission went through — treat as success
@@ -321,14 +317,13 @@ function GamePageInner() {
         localStorage.setItem(`committed:${roomId}:${address}`, '1')
         setCommitDone(true)
         setSecretPhrase('')
-        refresh()
       } else {
         setCommitError(msg.split('\n')[0])
       }
     } finally {
       setCommitting(false)
     }
-  }, [address, roomId, secretPhrase, refresh])
+  }, [address, roomId, secretPhrase])
 
   const handleStartGame = useCallback(async () => {
     if (!address || !roomId) return
@@ -358,12 +353,12 @@ function GamePageInner() {
     return () => clearInterval(id)
   }, [socket, roomId, room?.status])
 
-  // ── Periodic full refresh (5 s fallback) ────────────────────────────────
+  // ── Periodic full refresh — only when socket is offline ─────────────────
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId || socketOn) return
     const id = setInterval(() => { refresh() }, 5_000)
     return () => clearInterval(id)
-  }, [roomId, refresh])
+  }, [roomId, socketOn, refresh])
 
   // ── No roomId guard ─────────────────────────────────────────────────────
   if (!roomId) {
