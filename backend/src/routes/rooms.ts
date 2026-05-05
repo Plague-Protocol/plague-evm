@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { isAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
-import { createRoomRecord, listWaitingRooms } from '../repositories/rooms'
+import { createRoomRecord, getActiveRoomByHost, listWaitingRooms } from '../repositories/rooms'
 
 export const roomRouter = Router()
 
@@ -61,6 +61,13 @@ roomRouter.post('/', async (req, res) => {
 
   const { hostAddress, maxPlayers, stakeAmount, proofFee, expirySecs } = parsed.data
   try {
+    const existingRoom = await getActiveRoomByHost(hostAddress)
+    if (existingRoom) {
+      return res.status(409).json({
+        error: `Address ${hostAddress} already has an active room (${existingRoom.roomId}). Wait for it to end before creating a new one.`,
+      })
+    }
+
     const roomId = await chainAdapter.createRoom(
       maxPlayers,
       BigInt(stakeAmount),

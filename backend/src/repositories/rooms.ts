@@ -94,6 +94,15 @@ export async function setRoomStatus(roomId: string, status: RoomStatus): Promise
   return room
 }
 
+export async function getActiveRoomByHost(address: string): Promise<Room | null> {
+  return prisma.room.findFirst({
+    where: {
+      hostAddress: { equals: address.toLowerCase(), mode: 'insensitive' },
+      status: { in: ['waiting', 'starting', 'active'] },
+    },
+  })
+}
+
 export async function deleteRoomRecord(roomId: string): Promise<void> {
   await prisma.room.delete({ where: { roomId } })
   await redis.del(roomKey(roomId))
