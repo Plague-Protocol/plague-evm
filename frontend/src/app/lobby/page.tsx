@@ -1,7 +1,8 @@
 'use client'
 
 import { SiteNav } from '@/components/ui/site-nav'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
@@ -10,7 +11,7 @@ import { useRouter } from 'next/navigation'
 
 // ── cUSD contract addresses ───────────────────────────────────────────────────
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  11142220: '0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80', // Celo Sepolia
+  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD)
   42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
 
@@ -69,6 +70,7 @@ interface RoomRow {
   id: bigint
   status: 'waiting' | 'starting' | 'active' | 'ended'
   players: number
+  playerAddresses: string[]
   maxPlayers: number
   stakeAmount: bigint
   proofFee: bigint
@@ -84,6 +86,21 @@ function getContractClient() {
   return createContractClient({ contractAddress: addr, network })
 }
 
+/** Reads the caller's cUSD balance and throws a user-friendly error if it is below `required`. */
+async function assertSufficientCUSD(
+  address: `0x${string}`,
+  cUSDAddr: `0x${string}`,
+  required: bigint,
+  network: 'testnet' | 'mainnet',
+): Promise<void> {
+  const balance = await readCUSDBalance(address, cUSDAddr, network)
+  if (balance < required) {
+    const have = (Number(balance) / 1e18).toFixed(2)
+    const need = (Number(required) / 1e18).toFixed(2)
+    throw new Error(`Insufficient cUSD balance. You need ${need} cUSD but your wallet only holds ${have} cUSD. Use the faucet to claim test tokens.`)
+  }
+}
+
 interface CreateRoomActionArgs {
   isConnected: boolean
   address: `0x${string}` | null
@@ -93,7 +110,6 @@ interface CreateRoomActionArgs {
   stakeInput: string
   proofFeeInput: string
   setCreating: (value: boolean) => void
-  setCreateError: (value: string | null) => void
   loadRooms: () => Promise<void>
   pushToGame: (roomId: bigint) => void
 }
@@ -108,7 +124,6 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     stakeInput,
     proofFeeInput,
     setCreating,
-    setCreateError,
     loadRooms,
     pushToGame,
   } = args
@@ -124,18 +139,20 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
   const stakeWei = BigInt(Math.round(Number.parseFloat(stakeInput) * 1e18))
   const feeWei   = BigInt(Math.round(Number.parseFloat(proofFeeInput) * 1e18))
   setCreating(true)
-  setCreateError(null)
 
   try {
+    const network  = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
     const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
     if (cUSDAddr) {
-      await client.approveCUSD(address, cUSDAddr, stakeWei * BigInt(maxPlayers) + feeWei * 10n)
+      await assertSufficientCUSD(address, cUSDAddr, stakeWei, network)
+      // Only the host's stake is needed upfront — createRoom auto-joins them.
+      await client.approveCUSD(address, cUSDAddr, stakeWei)
     }
     const newId = await client.createRoom(address, maxPlayers, stakeWei, feeWei, 600)
     await loadRooms()
     pushToGame(newId)
   } catch (err) {
-    setCreateError(err instanceof Error ? err.message : 'Room creation failed.')
+    toast.error(getFriendlyError(err))
   } finally {
     setCreating(false)
   }
@@ -148,7 +165,6 @@ interface JoinRoomActionArgs {
   chainId: number | null
   connect: () => Promise<void>
   setJoiningId: (value: bigint | null) => void
-  setJoinError: (value: string | null) => void
   pushToGame: (roomId: bigint) => void
 }
 
@@ -160,12 +176,17 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
     chainId,
     connect,
     setJoiningId,
-    setJoinError,
     pushToGame,
   } = args
 
   if (room.status !== 'waiting') {
     pushToGame(room.id)
+    return
+  }
+
+  // Block join if the room timer has already elapsed
+  if (Date.now() >= room.expiresAt) {
+    toast.error('This room has expired and is no longer accepting players.')
     return
   }
 
@@ -178,20 +199,239 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
   if (!client) return
 
   setJoiningId(room.id)
-  setJoinError(null)
 
   try {
+    const network  = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
     const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
     if (cUSDAddr) {
+      await assertSufficientCUSD(address, cUSDAddr, room.stakeAmount, network)
       await client.approveCUSD(address, cUSDAddr, room.stakeAmount)
     }
     await client.joinRoom(address, room.id)
+
+    // Auto-start: if the room is now full AND the caller is the host, start the game
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updated: any = await client.getRoom(room.id)
+    const nowFull = (updated.players?.length ?? 0) >= Number(updated.config.maxPlayers)
+    if (nowFull && address.toLowerCase() === (updated.host as string).toLowerCase()) {
+      await client.startGame(address, room.id)
+    }
+
     pushToGame(room.id)
   } catch (err) {
-    setJoinError(err instanceof Error ? err.message : 'Failed to join room.')
+    toast.error(getFriendlyError(err))
   } finally {
     setJoiningId(null)
   }
+}
+
+// ── RoomCard ──────────────────────────────────────────────────────────────────
+
+interface RoomCardProps {
+  readonly room: RoomRow
+  readonly index: number
+  readonly now: number
+  readonly address: `0x${string}` | null
+  readonly myActiveRoom: RoomRow | null
+  readonly joiningId: bigint | null
+  readonly endingRoomId: bigint | null
+  readonly onJoin: (room: RoomRow) => void
+  readonly onEnd: (room: RoomRow) => void
+}
+
+interface JoinButtonState {
+  bg: string
+  border: string
+  color: string
+  label: string
+  disabled: boolean
+}
+
+const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
+  InvalidRoom:             'Room not found. It may have been created by a concurrent transaction — please try again.',
+  AlreadyJoined:           'You have already joined this room.',
+  RoomNotWaiting:          'This room is no longer accepting players.',
+  RoomExpiredError:        'This room has expired.',
+  RoomFull:                'This room is full.',
+  WrongStakeAmount:        'Stake amount mismatch. Please refresh and try again.',
+  NotHost:                 'Only the host can perform this action.',
+  NotEnoughPlayers:        'Not enough players to start the game.',
+  TooManyActiveRooms:      'The contract has reached its room limit. Please wait for a room to finish.',
+  Unauthorized:            'You are not authorised to perform this action.',
+  // require() string reasons from the contract
+  'cUSD transferFrom failed': 'cUSD transfer failed. Check your balance and that the contract is approved.',
+  'cUSD transfer failed':     'cUSD transfer failed. Check your balance and try again.',
+  'maxPlayers must be 4-20':  'Max players must be between 4 and 20.',
+  'stakeAmount must be > 0':  'Stake amount must be greater than zero.',
+}
+
+function getFriendlyError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (/user (rejected|denied)/i.test(msg)) return 'Transaction cancelled.'
+  if (/Insufficient cUSD balance/i.test(msg)) return msg   // our own pre-check — pass through verbatim
+  if (/insufficient funds/i.test(msg)) return 'Insufficient CELO to pay gas. Add CELO to your wallet first.'
+  // Named custom errors decoded by viem (error names appear as-is in the message)
+  for (const [name, friendly] of Object.entries(CONTRACT_ERROR_MESSAGES)) {
+    if (msg.includes(name)) return friendly
+  }
+  if (/execution reverted/i.test(msg)) {
+    // viem 2.x formats the reason as: "Details: execution reverted: {reason}"
+    const detailsMatch = /execution reverted:\s*([^\n]+)/i.exec(msg)
+    const reason = detailsMatch?.[1]?.trim()
+    if (reason) return `Transaction reverted: ${reason}`
+    return 'Transaction reverted by the contract.'
+  }
+  return 'Transaction failed. Please try again.'
+}
+
+function getJoinButtonState(
+  room: RoomRow,
+  isMyRoom: boolean,
+  isFull: boolean,
+  isExpired: boolean,
+  lockedOut: boolean,
+  isJoining: boolean,
+): JoinButtonState {
+  const expired = isExpired && room.status === 'waiting'
+  const disabled = room.status === 'ended' || isJoining || lockedOut
+    || expired
+    || (room.status === 'waiting' && isFull)
+
+  if (isJoining) return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: 'Joining\u2026', disabled }
+
+  if (isMyRoom && isFull && room.status === 'waiting') {
+    return { bg: 'transparent', border: 'rgba(57,255,20,0.3)', color: '#4a5e44', label: 'Starting\u2026', disabled }
+  }
+  if (isMyRoom && isExpired) {
+    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Expired', disabled }
+  }
+  if (isMyRoom) {
+    return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: 'Rejoin', disabled }
+  }
+  if (lockedOut || (isExpired && room.status === 'waiting')) {
+    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
+  }
+  if (room.status === 'waiting') {
+    return { bg: '#e63329', border: '#e63329', color: '#d4c9b2', label: statusLabel[room.status], disabled }
+  }
+  return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: statusLabel[room.status], disabled }
+}
+
+function RoomCard({
+  room, index, now, address, myActiveRoom,
+  joiningId, endingRoomId,
+  onJoin, onEnd,
+}: Readonly<RoomCardProps>) {
+  const secsLeft    = room.status === 'waiting'
+    ? Math.max(0, Math.floor((room.expiresAt - now) / 1000))
+    : 0
+  const isExpired   = room.status === 'waiting' && Date.now() >= room.expiresAt
+  const isExpiring  = room.status === 'waiting' && !isExpired && secsLeft <= 180
+  const isFull      = room.players >= room.maxPlayers
+  const isJoining   = joiningId === room.id
+  const isEnding    = endingRoomId === room.id
+  const isMyRoom    = myActiveRoom?.id === room.id
+  const isMyHost    = isMyRoom && !!address && room.host.toLowerCase() === address.toLowerCase()
+  const lockedOut   = !!myActiveRoom && !isMyRoom
+  const stakeCUSD   = (Number(room.stakeAmount) / 1e18).toFixed(2)
+  const feeCUSD     = (Number(room.proofFee) / 1e18).toFixed(2)
+  const potCUSD     = (Number(room.pot) / 1e18).toFixed(2)
+
+  const showEndRoom  = isMyHost && room.status === 'waiting' && isExpired && !isFull
+  const joinBtn      = getJoinButtonState(room, isMyRoom, isFull, isExpired, lockedOut, isJoining)
+
+  let cardBorderColor = 'rgba(57,255,20,0.2)'
+  if (isExpired && room.status === 'waiting') cardBorderColor = 'rgba(143,168,130,0.15)'
+  else if (isExpiring) cardBorderColor = 'rgba(245,197,24,0.35)'
+
+  return (
+    <li
+      className="rise-in rounded-lg border p-5 transition-all duration-200 hover:scale-[1.01]"
+      style={{ backgroundColor: '#0e180d', borderColor: cardBorderColor, animationDelay: `${160 + index * 80}ms` }}
+    >
+      {/* Top row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: statusColor[room.status], boxShadow: `0 0 6px ${statusColor[room.status]}` }} />
+        <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>Room #{room.id.toString()}</span>
+        {room.status === 'active' && (
+          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(245,197,24,0.15)', color: '#f5c518', border: '1px solid rgba(245,197,24,0.3)' }}>
+            In Progress
+          </span>
+        )}
+        {isExpired && room.status === 'waiting' && (
+          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(143,168,130,0.08)', color: '#4a5e44', border: '1px solid rgba(143,168,130,0.2)' }}>
+            Expired
+          </span>
+        )}
+        {isExpiring && (
+          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(230,51,41,0.12)', color: '#e63329', border: '1px solid rgba(230,51,41,0.3)' }}>
+            Closing Soon
+          </span>
+        )}
+        {isFull && room.status === 'waiting' && (
+          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(57,255,20,0.1)', color: '#39ff14', border: '1px solid rgba(57,255,20,0.3)' }}>
+            Full
+          </span>
+        )}
+      </div>
+
+      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}</p>
+
+      {/* Stats + action row */}
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap gap-4">
+          <div className="text-center">
+            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
+            <p className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>{room.players}/{room.maxPlayers}</p>
+          </div>
+          <div className="text-center">
+            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
+            <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>{stakeCUSD} cUSD</p>
+          </div>
+          <div className="text-center">
+            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
+            <p className="font-display text-lg leading-none" style={{ color: '#8fa882' }}>{feeCUSD} cUSD</p>
+          </div>
+          {room.status === 'active' && (
+            <div className="text-center">
+              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
+              <p className="font-display text-lg leading-none" style={{ color: '#f5c518' }}>{potCUSD} cUSD</p>
+            </div>
+          )}
+          {room.status === 'waiting' && room.expiresAt > 0 && (
+            <div className="text-center">
+              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Expires</p>
+              <p className="font-mono text-lg leading-none tabular-nums" style={{ color: isExpired ? '#4a5e44' : countdownColor(secsLeft) }}>
+                {isExpired ? '00:00' : formatCountdown(secsLeft)}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col items-end gap-2">
+          {showEndRoom && (
+            <button
+              onClick={() => onEnd(room)}
+              disabled={isEnding}
+              className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+              style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.08)' }}
+            >
+              {isEnding ? 'Ending\u2026' : 'End Room'}
+            </button>
+          )}
+          <button
+            onClick={() => onJoin(room)}
+            disabled={joinBtn.disabled}
+            className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+            style={{ backgroundColor: joinBtn.bg, borderColor: joinBtn.border, color: joinBtn.color }}
+          >
+            {joinBtn.label}
+          </button>
+        </div>
+      </div>
+
+    </li>
+  )
 }
 
 export default function LobbyPage() {
@@ -210,18 +450,28 @@ export default function LobbyPage() {
   const [stakeInput, setStakeInput]   = useState('10')
   const [proofFeeInput, setProofFeeInput] = useState('2')
   const [creating, setCreating]       = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
 
   // ── Join state ─────────────────────────────────────────────────────────────
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
-  const [joinError, setJoinError] = useState<string | null>(null)
+
+  // ── End Room state ─────────────────────────────────────────────────────────
+  const [endingRoomId, setEndingRoomId] = useState<bigint | null>(null)
+
+  // ── Detect if connected player is already in an active room ───────────────
+  const myActiveRoom = useMemo<RoomRow | null>(() => {
+    if (!address) return null
+    const addrLower = address.toLowerCase()
+    return rooms.find(
+      r => r.status !== 'ended' &&
+        (r.host.toLowerCase() === addrLower ||
+         r.playerAddresses.some(p => p.toLowerCase() === addrLower))
+    ) ?? null
+  }, [rooms, address])
 
   // ── Faucet / balance state ─────────────────────────────────────────────────
   const [cusdBalance, setCusdBalance]           = useState<string | null>(null)
   const [nextClaimTimestamp, setNextClaimTimestamp] = useState<number>(0)
   const [claiming, setClaiming]                 = useState(false)
-  const [claimError, setClaimError]             = useState<string | null>(null)
-  const [claimSuccess, setClaimSuccess]         = useState(false)
 
   // ── Derived faucet values ──────────────────────────────────────────────────
   const network     = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
@@ -263,14 +513,12 @@ export default function LobbyPage() {
     if (!isConnected || !address || !faucetAddr) return
     const fc = createFaucetClient({ faucetAddress: faucetAddr, network: 'testnet' })
     setClaiming(true)
-    setClaimError(null)
-    setClaimSuccess(false)
     try {
       await fc.claim(address)
-      setClaimSuccess(true)
+      toast.success(claimSuccessMessage(true))
       await loadFaucetInfo()
     } catch (err) {
-      setClaimError(err instanceof Error ? err.message : 'Claim failed.')
+      toast.error(getFriendlyError(err))
     } finally {
       setClaiming(false)
     }
@@ -295,9 +543,10 @@ export default function LobbyPage() {
           const raw: any = await client.getRoom(id)
           rows.push({
             id,
-            status:     ROOM_STATUS_MAP[Number(raw.status)] ?? 'ended',
-            players:    raw.players?.length ?? 0,
-            maxPlayers: Number(raw.config.maxPlayers),
+            status:          ROOM_STATUS_MAP[Number(raw.status)] ?? 'ended',
+            players:         raw.players?.length ?? 0,
+            playerAddresses: (raw.players ?? []) as string[],
+            maxPlayers:      Number(raw.config.maxPlayers),
             stakeAmount: raw.config.stakeAmount,
             proofFee:   raw.config.proofFee,
             expiresAt:  Number(raw.expiresAt) * 1000,
@@ -326,6 +575,10 @@ export default function LobbyPage() {
   }, [router])
 
   const handleCreateRoom = useCallback(async () => {
+    if (myActiveRoom) {
+      toast.error(`You are already in Room #${myActiveRoom.id.toString()}. Leave or wait for it to end before creating a new one.`)
+      return
+    }
     await runCreateRoomAction({
       isConnected,
       address,
@@ -335,13 +588,26 @@ export default function LobbyPage() {
       stakeInput,
       proofFeeInput,
       setCreating,
-      setCreateError,
       loadRooms,
       pushToGame,
     })
-  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, proofFeeInput, loadRooms, pushToGame])
+  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, proofFeeInput, loadRooms, pushToGame, myActiveRoom])
 
   const handleJoin = useCallback(async (room: RoomRow) => {
+    // Already in this room — navigate back only if room hasn't expired
+    if (myActiveRoom?.id === room.id) {
+      if (myActiveRoom.status === 'waiting' && Date.now() >= myActiveRoom.expiresAt) {
+        toast.error('This room has expired. End it before navigating to the game.')
+        return
+      }
+      pushToGame(room.id)
+      return
+    }
+    // In a different active room — block
+    if (myActiveRoom) {
+      toast.error(`You are already in Room #${myActiveRoom.id.toString()}. You cannot join another room until that one ends.`)
+      return
+    }
     await runJoinRoomAction({
       room,
       isConnected,
@@ -349,10 +615,50 @@ export default function LobbyPage() {
       chainId,
       connect,
       setJoiningId,
-      setJoinError,
       pushToGame,
     })
-  }, [isConnected, address, chainId, connect, pushToGame])
+  }, [isConnected, address, chainId, connect, pushToGame, myActiveRoom])
+
+  // ── End Room (host expires a timed-out waiting room) ───────────────────────
+  const handleEndRoom = useCallback(async (room: RoomRow) => {
+    if (!address) return
+    const client = getContractClient()
+    if (!client) return
+    setEndingRoomId(room.id)
+    try {
+      await client.expireRoom(address, room.id)
+      await loadRooms()
+    } catch (err) {
+      toast.error(getFriendlyError(err))
+    } finally {
+      setEndingRoomId(null)
+    }
+  }, [address, loadRooms])
+
+  // ── Auto-start ref guard (prevents double-firing) ─────────────────────────
+  const autoStartedRef = useRef(new Set<string>())
+
+  // ── Auto-start when host's waiting room reaches max players ───────────────
+  useEffect(() => {
+    if (!myActiveRoom || !address) return
+    if (myActiveRoom.status !== 'waiting') return
+    if (myActiveRoom.players < myActiveRoom.maxPlayers) return
+    if (myActiveRoom.host.toLowerCase() !== address.toLowerCase()) return
+    const rid = myActiveRoom.id.toString()
+    if (autoStartedRef.current.has(rid)) return
+    autoStartedRef.current.add(rid)
+    const client = getContractClient()
+    if (!client) return
+    client.startGame(address, myActiveRoom.id)
+      .then(() => loadRooms())
+      .catch(() => { autoStartedRef.current.delete(rid) })
+  }, [myActiveRoom, address, loadRooms])
+
+  // ── Periodic room refresh (10 s) to catch state changes from other players ─
+  useEffect(() => {
+    const id = setInterval(() => { loadRooms() }, 10_000)
+    return () => clearInterval(id)
+  }, [loadRooms])
 
   const createBtnLabel = getCreateButtonLabel(isConnected, creating)
 
@@ -452,13 +758,21 @@ export default function LobbyPage() {
                     />
                   </div>
 
-                  {createError && (
-                    <p className="font-mono text-xs" style={{ color: '#e63329' }}>{createError}</p>
+                  {myActiveRoom && myActiveRoom.players >= myActiveRoom.maxPlayers && (
+                    <p className="font-mono text-xs" style={{ color: '#39ff14' }}>
+                      Room #{myActiveRoom.id.toString()} is full — auto-starting now.
+                    </p>
+                  )}
+
+                  {myActiveRoom && myActiveRoom.players < myActiveRoom.maxPlayers && (
+                    <p className="font-mono text-xs" style={{ color: '#f5c518' }}>
+                      You are in Room #{myActiveRoom.id.toString()}. End that game before creating a new one.
+                    </p>
                   )}
 
                   <button
                     onClick={handleCreateRoom}
-                    disabled={creating}
+                    disabled={creating || !!myActiveRoom}
                     className="w-full rounded-lg border py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
                     style={{ backgroundColor: '#cc1414', borderColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px #39ff14' }}
                   >
@@ -544,12 +858,6 @@ export default function LobbyPage() {
                             </a>
                           </div>
                         </div>
-                        {claimSuccess && (
-                          <p className="font-mono text-xs" style={{ color: '#39ff14' }}>{claimSuccessMessage(claimSuccess)}</p>
-                        )}
-                        {claimError && (
-                          <p className="font-mono text-xs" style={{ color: '#e63329' }}>{claimError}</p>
-                        )}
                         {cooldownSecs > 0 ? (
                           <div className="flex items-center justify-between rounded border px-3 py-2" style={{ borderColor: 'rgba(143,168,130,0.2)', backgroundColor: '#0e180d' }}>
                             <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>Next claim in</p>
@@ -611,10 +919,6 @@ export default function LobbyPage() {
                 <p className="mt-4 font-mono text-xs" style={{ color: '#e63329' }}>{roomsError}</p>
               )}
 
-              {joinError && (
-                <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{joinError}</p>
-              )}
-
               {loadingRooms && (
                 <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
                   Loading rooms from chain…
@@ -628,116 +932,20 @@ export default function LobbyPage() {
               )}
 
               <ul className="mt-6 space-y-4">
-                {rooms.map((room, i) => {
-                  const secsLeft = room.status === 'waiting'
-                    ? Math.max(0, Math.floor((room.expiresAt - now) / 1000))
-                    : 0
-                  const isExpiring  = room.status === 'waiting' && secsLeft > 0 && secsLeft <= 180
-                  const isJoining   = joiningId === room.id
-                  const stakeCUSD   = (Number(room.stakeAmount) / 1e18).toFixed(2)
-                  const feeCUSD     = (Number(room.proofFee) / 1e18).toFixed(2)
-                  const potCUSD     = (Number(room.pot) / 1e18).toFixed(2)
-                  const isDisabled  = room.status === 'ended' || isJoining
-
-                  return (
-                    <li
-                      key={room.id.toString()}
-                      className="rise-in rounded-lg border p-5 transition-all duration-200 hover:scale-[1.01]"
-                      style={{
-                        backgroundColor:  '#0e180d',
-                        borderColor: isExpiring ? 'rgba(245,197,24,0.35)' : 'rgba(57,255,20,0.2)',
-                        animationDelay:   `${160 + i * 80}ms`,
-                      }}
-                    >
-                      {/* Top row */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className="h-2 w-2 flex-shrink-0 rounded-full"
-                          style={{ backgroundColor: statusColor[room.status], boxShadow: `0 0 6px ${statusColor[room.status]}` }}
-                        />
-                        <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
-                          Room #{room.id.toString()}
-                        </span>
-                        {room.status === 'active' && (
-                          <span
-                            className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
-                            style={{ backgroundColor: 'rgba(245,197,24,0.15)', color: '#f5c518', border: '1px solid rgba(245,197,24,0.3)' }}
-                          >
-                            In Progress
-                          </span>
-                        )}
-                        {isExpiring && (
-                          <span
-                            className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
-                            style={{ backgroundColor: 'rgba(230,51,41,0.12)', color: '#e63329', border: '1px solid rgba(230,51,41,0.3)' }}
-                          >
-                            Closing Soon
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                        Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}
-                      </p>
-
-                      {/* Stats + action row */}
-                      <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-                        <div className="flex flex-wrap gap-4">
-                          <div className="text-center">
-                            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
-                            <p className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
-                              {room.players}/{room.maxPlayers}
-                            </p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
-                            <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>
-                              {stakeCUSD} cUSD
-                            </p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
-                            <p className="font-display text-lg leading-none" style={{ color: '#8fa882' }}>
-                              {feeCUSD} cUSD
-                            </p>
-                          </div>
-                          {room.status === 'active' && (
-                            <div className="text-center">
-                              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
-                              <p className="font-display text-lg leading-none" style={{ color: '#f5c518' }}>
-                                {potCUSD} cUSD
-                              </p>
-                            </div>
-                          )}
-                          {room.status === 'waiting' && room.expiresAt > 0 && (
-                            <div className="text-center">
-                              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Expires</p>
-                              <p
-                                className="font-mono text-lg leading-none tabular-nums"
-                                style={{ color: countdownColor(secsLeft) }}
-                              >
-                                {formatCountdown(secsLeft)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        <button
-                          onClick={() => handleJoin(room)}
-                          disabled={isDisabled}
-                          className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{
-                            backgroundColor: room.status === 'waiting' ? '#e63329' : 'transparent',
-                            borderColor:     room.status === 'waiting' ? '#e63329' : 'rgba(57,255,20,0.5)',
-                            color:           room.status === 'waiting' ? '#d4c9b2' : '#39ff14',
-                          }}
-                        >
-                          {isJoining ? 'Joining…' : statusLabel[room.status]}
-                        </button>
-                      </div>
-                    </li>
-                  )
-                })}
+                {rooms.map((room, i) => (
+                  <RoomCard
+                    key={room.id.toString()}
+                    room={room}
+                    index={i}
+                    now={now}
+                    address={address}
+                    myActiveRoom={myActiveRoom}
+                    joiningId={joiningId}
+                    endingRoomId={endingRoomId}
+                    onJoin={handleJoin}
+                    onEnd={handleEndRoom}
+                  />
+                ))}
               </ul>
             </article>
           </div>

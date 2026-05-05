@@ -44,7 +44,7 @@ function formatCountdown(ms: number): string {
 }
 
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  11142220: '0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80', // Celo Sepolia
+  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD)
   42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
 
