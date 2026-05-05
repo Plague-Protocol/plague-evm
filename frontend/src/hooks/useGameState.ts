@@ -378,8 +378,11 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           : null
         setState(prev => ({ ...prev, room, localPlayer, isLoading: false }))
       } else if (initialState?.error === 'room_not_found') {
-        // Room does not exist on-chain — no point re-reading the chain
-        setState(prev => ({ ...prev, isLoading: false, error: 'Room not found.' }))
+        // Backend couldn't read the room (may be a brand-new room the RPC hasn't indexed
+        // yet).  Try a direct chain read; only set the error if that also fails.
+        loadRoomFromChain(roomId, playerAddress ?? undefined).catch(() => {
+          setState(prev => ({ ...prev, isLoading: false, error: 'Room not found.' }))
+        })
       } else {
         // Fallback: read from chain
         loadRoomFromChain(roomId, playerAddress ?? undefined)
@@ -408,12 +411,12 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     }
   }, [roomId, playerAddress, handleEvent, loadRoomFromChain])
 
-  // ── Polling fallback: re-sync from chain every 15 s ────────────────────────
+  // ── Polling fallback: re-sync from chain every 5 s ─────────────────────────
   useEffect(() => {
     if (!roomId) return
     const id = setInterval(() => {
       loadRoomFromChain(roomId, playerAddress ?? undefined)
-    }, 15_000)
+    }, 5_000)
     return () => clearInterval(id)
   }, [roomId, playerAddress, loadRoomFromChain])
 

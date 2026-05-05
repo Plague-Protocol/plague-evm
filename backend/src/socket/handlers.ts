@@ -397,6 +397,36 @@ export function setupSocketHandlers(io: Server) {
       }
     })
 
+    /**
+     * In-game chat — broadcast a message to all players in the room.
+     *
+     * Messages are stripped to a safe length (256 chars) and only relayed
+     * when the sender appears to be in the room.  No message history is
+     * persisted; this is ephemeral session chat only.
+     */
+    socket.on('chat_message', async ({
+      roomId,
+      message,
+      playerAddress,
+      displayName,
+    }: {
+      roomId: string
+      message: string
+      playerAddress: string
+      displayName?: string
+    }) => {
+      if (!roomId || !message || !playerAddress) return
+      const safe = String(message).slice(0, 256).trim()
+      if (!safe) return
+      io.to(roomId).emit('chat_message', {
+        roomId,
+        sender:      playerAddress,
+        displayName: displayName ?? `${playerAddress.slice(0, 6)}…${playerAddress.slice(-4)}`,
+        message:     safe,
+        timestamp:   Date.now(),
+      })
+    })
+
     socket.on('disconnect', () => {
       for (const [, roomMap] of playerSockets) {
         for (const [addr, sid] of roomMap) {

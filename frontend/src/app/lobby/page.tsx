@@ -906,27 +906,29 @@ export default function LobbyPage() {
                 </p>
               )}
 
-              {!loadingRooms && rooms.length === 0 && !roomsError && (
+              {!loadingRooms && rooms.filter(r => r.status !== 'ended').length === 0 && !roomsError && (
                 <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
-                  No rooms found. Create the first one.
+                  No open rooms. Create the first one.
                 </p>
               )}
 
-              <ul className="mt-6 space-y-4">
-                {rooms.map((room, i) => (
-                  <RoomCard
-                    key={room.id.toString()}
-                    room={room}
-                    index={i}
-                    now={now}
-                    address={address}
-                    myActiveRoom={myActiveRoom}
-                    joiningId={joiningId}
-                    endingRoomId={endingRoomId}
-                    onJoin={handleJoin}
-                    onEnd={handleEndRoom}
-                  />
-                ))}
+              <ul className="mt-6 space-y-4 max-h-[480px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+                {rooms
+                  .filter(r => r.status !== 'ended')
+                  .map((room, i) => (
+                    <RoomCard
+                      key={room.id.toString()}
+                      room={room}
+                      index={i}
+                      now={now}
+                      address={address}
+                      myActiveRoom={myActiveRoom}
+                      joiningId={joiningId}
+                      endingRoomId={endingRoomId}
+                      onJoin={handleJoin}
+                      onEnd={handleEndRoom}
+                    />
+                  ))}
               </ul>
             </article>
           </div>

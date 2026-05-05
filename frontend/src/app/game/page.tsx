@@ -3,7 +3,7 @@
 import { SiteNav } from '@/components/ui/site-nav'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Suspense, useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useGameState } from '@/hooks/useGameState'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscape'
@@ -103,9 +103,10 @@ function GamePageInner() {
   const msLeft = phaseEndsAt > now ? phaseEndsAt - now : 0
 
   // ── Vote state ───────────────────────────────────────────────────────────
-  const [selectedVote, setSelectedVote] = useState<string | null>(null)
-  const [voting, setVoting]             = useState(false)
-  const [voteError, setVoteError]       = useState<string | null>(null)
+  const [selectedVote, setSelectedVote]           = useState<string | null>(null)
+  const [voting, setVoting]                       = useState(false)
+  const [voteError, setVoteError]                 = useState<string | null>(null)
+  const [optimisticVotedFor, setOptimisticVotedFor] = useState<string | null>(null)
 
   // ── Proof submission state ───────────────────────────────────────────────
   const [proving, setProving]       = useState(false)
@@ -125,6 +126,12 @@ function GamePageInner() {
   const [starting, setStarting]         = useState(false)
   const [startError, setStartError]     = useState<string | null>(null)
 
+  // ── Chat state ───────────────────────────────────────────────────────────
+  type ChatMsg = { sender: string; displayName: string; message: string; timestamp: number }
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
+  const [chatInput, setChatInput]       = useState('')
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
   // ── Derived ──────────────────────────────────────────────────────────────
   const phase       = currentRound?.phase ?? 'ended'
   const round       = currentRound?.number ?? 0
@@ -132,7 +139,8 @@ function GamePageInner() {
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
   const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
-  const hasVoted      = !!address && (currentRound?.votes.some(v => v.voterAddress.toLowerCase() === address.toLowerCase()) ?? false)
+  const hasVoted      = !!optimisticVotedFor || (!!address && (currentRound?.votes.some(v => v.voterAddress.toLowerCase() === address.toLowerCase()) ?? false))
+  const myVotedTarget = optimisticVotedFor ?? (address ? currentRound?.votes.find(v => v.voterAddress.toLowerCase() === address.toLowerCase())?.targetAddress : undefined)
   const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !hasVoted && !voting
   const canProve      = phase === 'discussion' && isConnected && !localPlayer?.isEliminated && !proofDone
   const canCommit     = room?.status === 'starting' && isConnected && !committing && !commitDone
@@ -143,6 +151,10 @@ function GamePageInner() {
   const soundScene = room?.status === 'ended' ? 'ended' : (phase as RoundPhase)
   useSoundscape(soundScene, muted)
 
+  // Reset optimistic vote when round changes
+  const roundNumber = currentRound?.number ?? 0
+  useEffect(() => { setOptimisticVotedFor(null) }, [roundNumber])
+
   // Play game-over sting once when result arrives
   useEffect(() => {
     if (!result) return
@@ -152,6 +164,29 @@ function GamePageInner() {
     playSting(src, muted, 0.55)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result?.outcome])
+
+  // ── Chat socket listener ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+    const handler = (msg: { sender: string; displayName: string; message: string; timestamp: number }) => {
+      setChatMessages(prev => [...prev.slice(-199), msg])
+    }
+    socket.on('chat_message', handler)
+    return () => { socket.off('chat_message', handler) }
+  }, [socket])
+
+  // Auto-scroll chat to bottom on new messages
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  const handleSendChat = useCallback(() => {
+    if (!chatInput.trim() || !socket || !address || !roomId) return
+    const displayName = room?.players?.find(p => p.walletAddress.toLowerCase() === address.toLowerCase())?.displayName
+      ?? `${address.slice(0, 6)}…${address.slice(-4)}`
+    socket.emit('chat_message', { roomId, message: chatInput.trim(), playerAddress: address, displayName })
+    setChatInput('')
+  }, [chatInput, socket, address, roomId, room])
 
   // ── Vote tally ────────────────────────────────────────────────────────────
   const voteTally: Record<string, number> = {}
@@ -169,7 +204,12 @@ function GamePageInner() {
     setVoteError(null)
     try {
       await client.castVote(address, BigInt(roomId), selectedVote as `0x${string}`)
+      // Optimistic update — flip the UI immediately without waiting for the socket broadcast.
+      setOptimisticVotedFor(selectedVote)
       setSelectedVote(null)
+      toast.success('Vote submitted!')
+      // Refresh chain state so tally and player list are up-to-date.
+      refresh()
     } catch (err) {
       const msg = parseContractError(err)
       setVoteError(msg)
@@ -177,7 +217,7 @@ function GamePageInner() {
     } finally {
       setVoting(false)
     }
-  }, [selectedVote, address, roomId])
+  }, [selectedVote, address, roomId, refresh])
 
   const handleSubmitProof = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -241,6 +281,8 @@ function GamePageInner() {
 
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
       setProofDone(true)
+      toast.success('Innocence proof submitted!')
+      refresh()
     } catch (err) {
       const msg = parseContractError(err)
       setProofError(msg)
@@ -248,7 +290,7 @@ function GamePageInner() {
     } finally {
       setProving(false)
     }
-  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket])
+  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket, refresh])
 
   const handleCommitRole = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -270,6 +312,8 @@ function GamePageInner() {
       localStorage.setItem(`committed:${roomId}:${address}`, '1')
       setCommitDone(true)
       setSecretPhrase('')
+      toast.success('Role committed!')
+      refresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Role commitment failed.'
       // AlreadyCommitted means a previous submission went through — treat as success
@@ -277,13 +321,14 @@ function GamePageInner() {
         localStorage.setItem(`committed:${roomId}:${address}`, '1')
         setCommitDone(true)
         setSecretPhrase('')
+        refresh()
       } else {
         setCommitError(msg.split('\n')[0])
       }
     } finally {
       setCommitting(false)
     }
-  }, [address, roomId, secretPhrase])
+  }, [address, roomId, secretPhrase, refresh])
 
   const handleStartGame = useCallback(async () => {
     if (!address || !roomId) return
@@ -313,10 +358,10 @@ function GamePageInner() {
     return () => clearInterval(id)
   }, [socket, roomId, room?.status])
 
-  // ── Periodic full refresh (30 s fallback) ────────────────────────────────
+  // ── Periodic full refresh (5 s fallback) ────────────────────────────────
   useEffect(() => {
     if (!roomId) return
-    const id = setInterval(() => { refresh() }, 30_000)
+    const id = setInterval(() => { refresh() }, 5_000)
     return () => clearInterval(id)
   }, [roomId, refresh])
 
@@ -328,6 +373,33 @@ function GamePageInner() {
         <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#39ff14', color: '#39ff14' }}>
           ← Back to Lobby
         </button>
+      </main>
+    )
+  }
+
+  // ── Room not found / initializing guard ─────────────────────────────────
+  if (!isLoading && !room && error === 'Room not found.') {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+        <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)' }} />
+        <div className="relative flex flex-col items-center gap-4 text-center px-8">
+          <p className="font-display text-4xl" style={{ color: '#e63329' }}>Room Not Found</p>
+          <p className="font-mono text-sm max-w-sm" style={{ color: '#8fa882' }}>
+            The room may still be initializing on-chain, or the link may be incorrect. You can return to the lobby and join from there.
+          </p>
+          <div className="flex gap-3 mt-2">
+            <button
+              onClick={() => refresh()}
+              className="rounded border px-5 py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80"
+              style={{ borderColor: '#39ff14', color: '#39ff14' }}
+            >
+              Retry
+            </button>
+            <button onClick={() => router.push('/lobby')} className="rounded border px-5 py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80" style={{ borderColor: 'rgba(212,201,178,0.4)', color: '#d4c9b2' }}>
+              ← Back to Lobby
+            </button>
+          </div>
+        </div>
       </main>
     )
   }
@@ -625,7 +697,7 @@ function GamePageInner() {
                       onClick={handleSubmitProof}
                       disabled={!canProve || !secretPhrase}
                       className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#d4c9b2' }}
+                      style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
                     >
                       {proving ? 'Generating ZK Proof…' : 'Submit Innocence Proof'}
                     </button>
@@ -681,7 +753,17 @@ function GamePageInner() {
                 </p>
 
                 {phase === 'voting' && hasVoted && (
-                  <p className="mt-4 font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
+                  <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(57,255,20,0.3)', backgroundColor: 'rgba(57,255,20,0.06)' }}>
+                    <p className="font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
+                    {myVotedTarget && (
+                      <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
+                        You voted for{' '}
+                        <span style={{ color: '#f5c518' }}>
+                          {room?.players?.find(p => p.walletAddress.toLowerCase() === myVotedTarget.toLowerCase())?.displayName ?? `${myVotedTarget.slice(0, 6)}…`}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {phase === 'voting' && !hasVoted && (
@@ -764,6 +846,53 @@ function GamePageInner() {
                     {localPlayer.role !== 'unknown' && ` · ${localPlayer.role}`}
                   </p>
                 )}
+              </div>
+
+              {/* Chat Panel */}
+              <div
+                className="rise-in rounded-lg border p-4"
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.15)', animationDelay: '220ms' }}
+              >
+                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Room Chat</p>
+                <div
+                  className="mt-3 h-44 overflow-y-auto space-y-2 pr-1"
+                  style={{ scrollbarWidth: 'thin' }}
+                >
+                  {chatMessages.length === 0 ? (
+                    <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
+                  ) : (
+                    chatMessages.map((m, i) => (
+                      <div key={`${m.timestamp}-${m.sender}-${i}`} className="font-mono text-[11px] leading-snug break-words">
+                        <span style={{ color: m.sender.toLowerCase() === address?.toLowerCase() ? '#39ff14' : '#f5c518' }}>
+                          {m.displayName}
+                        </span>
+                        <span style={{ color: '#4a5e44' }}>: </span>
+                        <span style={{ color: '#d4c9b2' }}>{m.message}</span>
+                      </div>
+                    ))
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Say something…"
+                    value={chatInput}
+                    maxLength={256}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSendChat() }}
+                    className="flex-1 rounded border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
+                    style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#d4c9b2' }}
+                  />
+                  <button
+                    onClick={handleSendChat}
+                    disabled={!chatInput.trim() || !socketOn}
+                    className="rounded border px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                    style={{ borderColor: '#39ff14', color: '#39ff14' }}
+                  >
+                    Send
+                  </button>
+                </div>
               </div>
 
               {/* Back to Lobby */}
