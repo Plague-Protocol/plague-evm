@@ -10,6 +10,42 @@
 import { Noir } from '@noir-lang/noir_js'
 import { UltraHonkBackend } from '@noir-lang/backend_barretenberg'
 import { Barretenberg, Fr } from '@aztec/bb.js'
+
+// ─── Backend prove helper ───────────────────────────────────────────────────
+// @aztec/bb.js (all npm versions) only contains BincodeDeserializer in its
+// WASM, but Nargo ≥ 1.0.0-beta.20 produces MsgPackCompact ACIR bytecode.
+// Proof generation is therefore delegated to the backend where the native
+// `bb` CLI (installed by Nargo) handles MsgPack correctly.
+
+async function backendProve(
+  circuitId: 'role_commitment' | 'innocence_proof' | 'infection_proof',
+  witness: Uint8Array
+): Promise<Uint8Array> {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'
+
+  // Encode gzip-compressed witness bytes as base64 for transport
+  let binary = ''
+  for (const byte of witness) binary += String.fromCodePoint(byte)
+  const witnessBase64 = btoa(binary)
+
+  const resp = await fetch(`${backendUrl}/api/prove`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ circuitId, witnessBase64 }),
+  })
+
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}))
+    const b = body as { error?: string; detail?: string }
+    throw new Error(b.detail || b.error || `Proof generation failed (${resp.status})`)
+  }
+
+  const { proofHex } = (await resp.json()) as { proofHex: string }
+  const hex = proofHex.startsWith('0x') ? proofHex.slice(2) : proofHex
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < bytes.length; i++) bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  return bytes
+}
 import type { ZKProof, RoleCommitment } from '@/types/game'
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -143,7 +179,6 @@ export async function proveInnocence(params: {
   const nullifier = await hash3(secret, roomField, roundField)
 
   const circuit = await loadCircuit('innocence_proof')
-  const backend = new UltraHonkBackend(circuit)
   const noir = new Noir(circuit)
 
   const { witness } = await noir.execute({
@@ -155,11 +190,11 @@ export async function proveInnocence(params: {
     round_number: toField(roundField),
   })
 
-  const { proof, publicInputs } = await backend.generateProof(witness)
+  const proof = await backendProve('innocence_proof', witness)
 
   return {
     proof: Array.from(proof),
-    publicInputs,
+    publicInputs: [],
     circuitType: 'innocence',
     nullifier: toField(nullifier),
   } as unknown as ZKProof
@@ -200,7 +235,6 @@ export async function proveInfection(params: {
   const nullifier = await hash3(secret, targetField, roundField)
 
   const circuit = await loadCircuit('infection_proof')
-  const backend = new UltraHonkBackend(circuit)
   const noir = new Noir(circuit)
 
   const { witness } = await noir.execute({
@@ -213,11 +247,11 @@ export async function proveInfection(params: {
     round_number: toField(roundField),
   })
 
-  const { proof, publicInputs } = await backend.generateProof(witness)
+  const proof = await backendProve('infection_proof', witness)
 
   return {
     proof: Array.from(proof),
-    publicInputs,
+    publicInputs: [],
     circuitType: 'infection',
     nullifier: toField(nullifier),
   } as unknown as ZKProof
@@ -238,7 +272,6 @@ export async function proveRoleCommitment(params: {
   const roleNum = role === 'patient_zero' ? ROLE_PATIENT_ZERO : ROLE_CLEAN
 
   const circuit = await loadCircuit('role_commitment')
-  const backend = new UltraHonkBackend(circuit)
   const noir = new Noir(circuit)
 
   const { witness } = await noir.execute({
@@ -247,11 +280,11 @@ export async function proveRoleCommitment(params: {
     secret: toField(secret),
   })
 
-  const { proof, publicInputs } = await backend.generateProof(witness)
+  const proof = await backendProve('role_commitment', witness)
 
   return {
     proof: Array.from(proof),
-    publicInputs,
+    publicInputs: [],
     circuitType: 'role',
   } as unknown as ZKProof
 }

@@ -9,10 +9,30 @@ const nextConfig = {
     NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK,
     NEXT_PUBLIC_CONTRACT_ADDRESS: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
   },
-  webpack: (config) => {
-    // @aztec/bb.js (and other ZK libs) use top-level await inside WASM loading code.
-    // Without this flag webpack emits a warning and may produce broken output.
-    config.experiments = { ...config.experiments, topLevelAwait: true }
+  webpack: (config, { isServer }) => {
+    // @aztec/bb.js uses top-level await inside its WASM loading code.
+    // asyncWebAssembly: true handles WASM modules; topLevelAwait: true
+    // handles modules that use the top-level await syntax.
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+      topLevelAwait: true,
+    }
+
+    // Tell webpack the client output environment supports async functions
+    // (modern browsers all do). Without this webpack emits the noisy
+    // "target environment does not appear to support async/await" warning
+    // when it encounters @aztec/bb.js which relies on top-level await.
+    if (!isServer) {
+      config.output = {
+        ...config.output,
+        environment: {
+          ...config.output?.environment,
+          asyncFunction: true,
+        },
+      }
+    }
+
     return config
   },
 }

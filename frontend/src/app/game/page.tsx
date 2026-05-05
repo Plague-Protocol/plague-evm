@@ -2,6 +2,7 @@
 
 import { SiteNav } from '@/components/ui/site-nav'
 import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useGameState } from '@/hooks/useGameState'
 import { useWallet } from '@/hooks/useWallet'
@@ -9,6 +10,7 @@ import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscap
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import type { RoundPhase } from '@/types/game'
+import { toast } from 'sonner'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +36,14 @@ function playerStyle(status: string): { border: string; backgroundColor: string;
   if (status === 'infected')   return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.15)', color: '#ff6b6b' }
   if (status === 'eliminated') return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
   return { border: '2px solid #39ff14', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14' }
+}
+
+/** Only reveal 'infected' styling to the player themselves — hide it from others. */
+function visibleStatus(p: { walletAddress: string; status: string }, localAddress: string | undefined): string {
+  if (p.status === 'infected' && p.walletAddress.toLowerCase() !== (localAddress ?? '').toLowerCase()) {
+    return 'clean'
+  }
+  return p.status
 }
 
 function formatCountdown(ms: number): string {
@@ -80,6 +90,10 @@ function GamePageInner() {
 
   // ── Role commitment state (during Starting phase) ────────────────────────
   const [committing, setCommitting]         = useState(false)
+  const [commitDone, setCommitDone]         = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(`committed:${roomId}:${address ?? ''}`) === '1'
+  })
   const [commitError, setCommitError]       = useState<string | null>(null)
   const [secretPhrase, setSecretPhrase]     = useState('')
 
@@ -96,7 +110,7 @@ function GamePageInner() {
   const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
   const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !voting
   const canProve      = phase === 'discussion' && isConnected && !localPlayer?.isEliminated && !proofDone
-  const canCommit     = room?.status === 'starting' && isConnected && !committing
+  const canCommit     = room?.status === 'starting' && isConnected && !committing && !commitDone
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
 
   // ── Soundscape ───────────────────────────────────────────────────────────
@@ -223,8 +237,19 @@ function GamePageInner() {
       const proofBytes    = ('0x' + proofResult.proof.map((b: number) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
       const client = getContractClient()!
       await client.submitRoleCommitment(address, BigInt(roomId), commitmentHex, proofBytes)
+      localStorage.setItem(`committed:${roomId}:${address}`, '1')
+      setCommitDone(true)
+      setSecretPhrase('')
     } catch (err) {
-      setCommitError(err instanceof Error ? err.message : 'Role commitment failed.')
+      const msg = err instanceof Error ? err.message : 'Role commitment failed.'
+      // AlreadyCommitted means a previous submission went through — treat as success
+      if (msg.includes('AlreadyCommitted')) {
+        localStorage.setItem(`committed:${roomId}:${address}`, '1')
+        setCommitDone(true)
+        setSecretPhrase('')
+      } else {
+        setCommitError(msg.split('\n')[0])
+      }
     } finally {
       setCommitting(false)
     }
@@ -239,7 +264,11 @@ function GamePageInner() {
     try {
       await client.startGame(address, BigInt(roomId))
     } catch (err) {
-      setStartError(err instanceof Error ? err.message : 'Failed to start game.')
+      const msg = err instanceof Error ? err.message : 'Failed to start game.'
+      // Extract the human-readable revert reason if present (e.g. NotEnoughPlayers)
+      const revert = (/Error:\s*(\w+\(\))/).exec(msg)?.[1] ?? msg.split('\n')[0]
+      toast.error(`Start failed: ${revert}`)
+      setStartError(revert)
     } finally {
       setStarting(false)
     }
@@ -296,7 +325,7 @@ function GamePageInner() {
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-6">
             <h1 className="font-display text-7xl font-bold leading-none sm:text-8xl" style={{ color: '#d4c9b2' }}>
-              {isLoading ? 'LOADING…' : round > 0 ? `ROUND ${round}` : room?.status === 'waiting' ? 'WAITING' : 'STARTING'}
+              {isLoading ? 'LOADING…' : round > 0 ? `ROUND ${round}` : room?.status === 'waiting' ? 'WAITING' : room?.status === 'ended' ? 'ENDED' : 'STARTING'}
             </h1>
             {phaseEndsAt > 0 && (
               <div
@@ -377,11 +406,10 @@ function GamePageInner() {
                       {room.players.map((p) => (
                         <button
                           key={p.walletAddress}
-                          title={p.walletAddress}
                           onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
                           className="rounded-lg py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
                           style={{
-                            ...playerStyle(p.status),
+                            ...playerStyle(visibleStatus(p, address)),
                             boxShadow: selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
                             cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
                           }}
@@ -445,14 +473,14 @@ function GamePageInner() {
                     {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
                     <button
                       onClick={handleStartGame}
-                      disabled={starting || totalPlayers < 2}
+                      disabled={starting || totalPlayers < (room?.minPlayers ?? 3)}
                       className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                       style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
                     >
                       {starting ? 'Starting…' : 'Start Game'}
                     </button>
-                    {totalPlayers < 2 && (
-                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least 2 players to start.</p>
+                    {totalPlayers < (room?.minPlayers ?? 3) && (
+                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
                     )}
                   </div>
                 )}
@@ -466,26 +494,34 @@ function GamePageInner() {
                     <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>
                       Submit Role Commitment
                     </p>
-                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
-                    </p>
-                    <input
-                      type="password"
-                      placeholder="My secret phrase…"
-                      value={secretPhrase}
-                      onChange={e => setSecretPhrase(e.target.value)}
-                      className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
-                    />
-                    {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
-                    <button
-                      onClick={handleCommitRole}
-                      disabled={!canCommit || !secretPhrase}
-                      className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#d4c9b2' }}
-                    >
-                      {committing ? 'Generating ZK Proof…' : 'Commit Role'}
-                    </button>
+                    {commitDone ? (
+                      <p className="mt-3 font-mono text-xs" style={{ color: '#39ff14' }}>
+                        ✓ Commitment submitted. Waiting for all players…
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                          Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
+                        </p>
+                        <input
+                          type="password"
+                          placeholder="My secret phrase…"
+                          value={secretPhrase}
+                          onChange={e => setSecretPhrase(e.target.value)}
+                          className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
+                          style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                        />
+                        {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
+                        <button
+                          onClick={handleCommitRole}
+                          disabled={!canCommit || !secretPhrase}
+                          className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
+                        >
+                          {committing ? 'Generating ZK Proof…' : 'Commit Role'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -603,12 +639,15 @@ function GamePageInner() {
                   <div className="mt-4 space-y-1">
                     {Object.entries(voteTally)
                       .sort(([, a], [, b]) => b - a)
-                      .map(([addr, cnt]) => (
-                        <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
-                          <span>{addr.slice(0, 8)}…</span>
-                          <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt !== 1 ? 's' : ''}</span>
-                        </div>
-                      ))}
+                      .map(([addr, cnt]) => {
+                        const name = room?.players?.find(p => p.walletAddress.toLowerCase() === addr.toLowerCase())?.displayName ?? `${addr.slice(0, 8)}…`
+                        return (
+                          <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
+                            <span>{name}</span>
+                            <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt !== 1 ? 's' : ''}</span>
+                          </div>
+                        )
+                      })}
                   </div>
                 ) : null}
               </div>
@@ -620,16 +659,18 @@ function GamePageInner() {
               >
                 <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>Roster</p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {room?.players?.map((p) => (
-                    <div
-                      key={p.walletAddress}
-                      title={p.walletAddress}
-                      className="flex h-10 w-10 items-center justify-center rounded-full font-mono text-[10px] font-bold uppercase"
-                      style={playerStyle(p.status)}
-                    >
-                      {p.displayName.slice(0, 4)}
-                    </div>
-                  )) ?? null}
+                  {room?.players?.map((p) => {
+                    const num = /^Player (\d+)$/.exec(p.displayName)?.[1]
+                    return (
+                      <div
+                        key={p.walletAddress}
+                        className="flex h-10 w-10 items-center justify-center rounded-full font-mono text-[10px] font-bold uppercase"
+                        style={playerStyle(visibleStatus(p, address))}
+                      >
+                        {num ? `P${num}` : p.displayName.slice(0, 4)}
+                      </div>
+                    )
+                  }) ?? null}
                 </div>
                 {localPlayer && (
                   <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
@@ -640,13 +681,13 @@ function GamePageInner() {
               </div>
 
               {/* Back to Lobby */}
-              <a
+              <Link
                 href="/lobby"
                 className="rise-in rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
                 style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14', display: 'block', animationDelay: '300ms' }}
               >
                 ← Back to Lobby
-              </a>
+              </Link>
             </aside>
           </div>
         </div>

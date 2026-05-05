@@ -46,8 +46,8 @@ function mapRoom(raw: any): Room {
     players:       [],
     maxPlayers:    Number(raw.config.maxPlayers),
     minPlayers:    Number(raw.config.minPlayers),
-    stakeAmount:   raw.config.stakeAmount,
-    proofFee:      raw.config.proofFee,
+    stakeAmount:   BigInt(raw.config.stakeAmount ?? '0'),
+    proofFee:      BigInt(raw.config.proofFee ?? '0'),
     status:        statusMap[Number(raw.status)] ?? 'ended',
     currentRound:  Number(raw.currentRound),
     maxRounds:     Number(raw.config.maxRounds),
@@ -59,15 +59,15 @@ function mapRoom(raw: any): Room {
 
 // ── Map raw on-chain player data to Player type ───────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapPlayer(raw: any, address: string): Player {
+function mapPlayer(raw: any, address: string, playerNum?: number): Player {
   return {
     id:                   address,
     walletAddress:        address,
-    displayName:          `${address.slice(0, 6)}…${address.slice(-4)}`,
+    displayName:          playerNum ? `Player ${playerNum}` : `${address.slice(0, 6)}…${address.slice(-4)}`,
     status:               PLAYER_STATUS_MAP[Number(raw.status)] ?? 'clean',
     role:                 'unknown',
     isEliminated:         Number(raw.status) === 2,
-    stakedAmount:         raw.staked,
+    stakedAmount:         BigInt(raw.staked ?? '0'),
     joinedAt:             Number(raw.joinedAt) * 1000,
     freeProofUsed:        raw.freeProofUsed,
     proofsSubmittedTotal: Number(raw.proofsSubmittedTotal),
@@ -108,15 +108,16 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
     switch (event.type) {
       case 'player_joined':
-        appendFeed(`Player ${String(p.address).slice(0, 8)} joined the room.`)
+        appendFeed(`A new player joined the room.`)
         setState(prev => {
           if (!prev.room) return prev
           const already = prev.room.players.some(pl => pl.walletAddress === p.address)
           if (already) return prev
+          const playerNum = prev.room.players.length + 1
           const newPlayer: Player = {
             id:                   String(p.address),
             walletAddress:        String(p.address),
-            displayName:          `${String(p.address).slice(0, 6)}…${String(p.address).slice(-4)}`,
+            displayName:          `Player ${playerNum}`,
             status:               'clean',
             role:                 'unknown',
             isEliminated:         false,
@@ -167,7 +168,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       }
 
       case 'vote_cast':
-        appendFeed(`Vote cast by ${String(p.voter).slice(0, 8)}…`)
+        appendFeed(`A vote was cast this round.`)
         setState(prev => {
           if (!prev.currentRound) return prev
           const vote = { voterAddress: String(p.voter), targetAddress: String(p.target), timestamp: event.timestamp }
@@ -176,11 +177,11 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'proof_submitted':
-        appendFeed(`Innocence proof submitted by ${String(p.player).slice(0, 8)}…`)
+        appendFeed(`An innocence proof was submitted.`)
         break
 
       case 'player_eliminated':
-        appendFeed(`Player ${String(p.player).slice(0, 8)}… ELIMINATED.`)
+        appendFeed(`A player has been ELIMINATED.`)
         setState(prev => ({
           ...prev,
           room: prev.room ? {
@@ -199,7 +200,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'player_saved_by_proof':
-        appendFeed(`Player ${String(p.player).slice(0, 8)}… SAVED by innocence proof.`)
+        appendFeed(`A player was SAVED by their innocence proof.`)
         break
 
       case 'vote_resolved':
@@ -261,7 +262,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       case 'pot_drained': {
         const winner = String(p.winner)
         const amount = BigInt(typeof p.amount === 'string' || typeof p.amount === 'number' ? String(p.amount) : '0')
-        appendFeed(`Pot distributed: ${winner.slice(0, 8)}… +${(Number(amount) / 1e18).toFixed(4)} cUSD`)
+        appendFeed(`Pot distributed — winner received ${(Number(amount) / 1e18).toFixed(4)} cUSD.`)
         setState(prev => {
           const outcome = pendingOutcomeRef.current ?? 'max_rounds_draw'
           if (!prev.result) {
@@ -318,9 +319,9 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
       // Load each player's data from chain
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const players: Player[] = await Promise.all((raw as any).players.map(async (addr: string) => {
+      const players: Player[] = await Promise.all((raw as any).players.map(async (addr: string, idx: number) => {
         const pRaw = await client.getPlayer(BigInt(rid), addr as `0x${string}`)
-        return mapPlayer(pRaw, addr)
+        return mapPlayer(pRaw, addr, idx + 1)
       }))
       room.players = players
 
@@ -362,7 +363,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       if (initialState?.room) {
         const room = mapRoom(initialState.room)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        room.players = (initialState.players ?? []).map((p: any) => mapPlayer(p, p.addr ?? p.address))
+        room.players = (initialState.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
         const localPlayer = playerAddress
           ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
           : null

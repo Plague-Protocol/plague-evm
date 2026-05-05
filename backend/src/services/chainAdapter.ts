@@ -26,7 +26,7 @@ import {
   parseAbi,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { celoAlfajores, celo } from 'viem/chains'
+import { celoSepolia, celo } from 'viem/chains'
 import { logger } from '../lib/logger'
 
 // ── ABI (subset used by the backend) ─────────────────────────────────────────
@@ -58,13 +58,38 @@ const PLAGUE_ABI = parseAbi([
   'event GameEnded(uint256 indexed roomId, uint8 outcome)',
   'event PotDrained(uint256 indexed roomId, address winner, uint256 amount)',
   'event RoomExpired(uint256 indexed roomId)',
+  // Custom errors — included so viem can decode revert reasons by name
+  'error Unauthorized()',
+  'error InvalidRoom()',
+  'error RoomNotWaiting()',
+  'error RoomFull()',
+  'error RoomExpiredError()',
+  'error AlreadyJoined()',
+  'error WrongStakeAmount()',
+  'error NotHost()',
+  'error NotEnoughPlayers()',
+  'error NotActive()',
+  'error WrongPhase()',
+  'error AlreadyVoted()',
+  'error AlreadyCommitted()',
+  'error AlreadyProvedThisRound()',
+  'error NullifierUsed()',
+  'error InvalidProof()',
+  'error NotParticipant()',
+  'error NotAlive()',
+  'error InvalidInfectionTarget()',
+  'error TooManyActiveRooms()',
+  'error CommitmentsIncomplete()',
+  'error NotStarting()',
+  'error RoundNotEnded()',
+  'error GameEnded()',
 ] as const)
 
 // ── Client setup ──────────────────────────────────────────────────────────────
 
 function buildClients() {
   const network    = (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
-  const chain      = network === 'mainnet' ? celo : celoAlfajores
+  const chain      = network === 'mainnet' ? celo : celoSepolia
   const rpcUrl     = process.env.CELO_RPC_URL
   const address    = process.env.CONTRACT_ADDRESS as `0x${string}` | undefined
   const privateKey = process.env.BACKEND_PRIVATE_KEY as `0x${string}` | undefined
@@ -150,6 +175,36 @@ export const chainAdapter = {
     const blockNumber = await publicClient.getBlockNumber()
     const block = await publicClient.getBlock({ blockNumber })
     return block.hash ?? '0x0'
+  },
+
+  /**
+   * Query recent GameEnded event logs for a specific room.
+   * Used when a client connects to an already-ended game so the backend
+   * can replay the outcome without relying on the live event stream.
+   * Returns the outcome (0=CleanWin, 1=InfectedWin, 2=Draw) or null if not found.
+   */
+  async getGameEndedLogs(roomId: bigint): Promise<{ outcome: number } | null> {
+    const { publicClient, address } = clients()
+    try {
+      const currentBlock = await publicClient.getBlockNumber()
+      // Celo ~5s/block → 10000 blocks ≈ 13.9 hours, covers most recent games
+      const fromBlock = currentBlock > 10000n ? currentBlock - 10000n : 0n
+      const logs = await publicClient.getContractEvents({
+        address,
+        abi:       PLAGUE_ABI,
+        eventName: 'GameEnded',
+        args:      { roomId },
+        fromBlock,
+        toBlock:   currentBlock,
+      })
+      if (logs.length === 0) return null
+      const last = logs.at(-1)!
+      return { outcome: Number((last.args as { outcome?: unknown }).outcome ?? 0) }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.debug(`[chain] getGameEndedLogs failed for room ${roomId}: ${message}`)
+      return null
+    }
   },
 
   // ── Writes (signed by BACKEND_SIGNER) ─────────────────────────────────────

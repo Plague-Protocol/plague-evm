@@ -294,7 +294,7 @@ contract PlagueGame {
         r.expiresAt    = ts + expirySecs;
 
         RoomConfig storage cfg = r.config;
-        cfg.minPlayers            = 4;
+        cfg.minPlayers            = 3;
         cfg.maxPlayers            = maxPlayers;
         cfg.stakeAmount           = stakeAmount;
         cfg.maxRounds             = 10;

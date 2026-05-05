@@ -8,6 +8,22 @@ import { keccak256, toBytes } from 'viem'
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
 
 /**
+ * Recursively convert BigInt values to their decimal string representation so
+ * the payload can safely pass through socket.io's JSON serialisation layer.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function serializeBigInts(value: any): any {
+  if (typeof value === 'bigint') return value.toString()
+  if (Array.isArray(value)) return value.map(serializeBigInts)
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value)) out[k] = serializeBigInts(v)
+    return out
+  }
+  return value
+}
+
+/**
  * Room expiry monitor — runs on a fixed interval server-side.
  *
  * Checks all rooms with status === 'waiting' whose expires_at has passed.
@@ -171,7 +187,23 @@ export function setupSocketHandlers(io: Server) {
             chainAdapter.getPlayer(BigInt(roomId), addr)
           )
         )
-        socket.emit('room_state', { room: rawRoom, players: rawPlayers })
+        socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
+
+        // Replay phase state for reconnecting clients so they rebuild currentRound.
+        for (const ev of buildActiveSyncEvents(rawRoom, roomId)) socket.emit('game_event', ev)
+
+        // RoomStatus.Ended = 3 — replay outcome so reconnecting clients get the result.
+        if (rawRoom.status === 3) {
+          const ended = await chainAdapter.getGameEndedLogs(BigInt(roomId))
+          // Fallback: if the log is outside the lookback window, infer outcome from player states.
+          const outcome = ended?.outcome ?? inferOutcome(rawPlayers)
+          socket.emit('game_event', {
+            type:      'game_ended',
+            roomId,
+            payload:   { outcome },
+            timestamp: Date.now(),
+          } as GameEvent)
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         // InvalidRoom() selector 0x353cbf17 — room ID does not exist on-chain
@@ -378,6 +410,64 @@ export function setupSocketHandlers(io: Server) {
   io.engine.on('close', () => {
     unwatch()
   })
+}
+
+/**
+ * Infer game outcome from final player states when the GameEnded log is
+ * outside the RPC lookback window.
+ *  0 = CleanWin, 1 = InfectedWin, 2 = Draw
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function inferOutcome(players: any[]): number {
+  const cleanAlive    = players.filter(p => Number(p.status) === 0).length
+  const infectedAlive = players.filter(p => Number(p.status) === 1).length
+  if (cleanAlive > 0 && infectedAlive === 0) return 0   // CleanWin
+  if (infectedAlive > 0 && cleanAlive === 0) return 1   // InfectedWin
+  return 2                                               // Draw
+}
+
+function buildActiveSyncEvents(rawRoom: RawRoom, roomId: string): GameEvent[] {
+  const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
+  const currentPhase   = Number(rawRoom.currentPhase)
+  const currentRound   = Number(rawRoom.currentRound)
+  const status         = Number(rawRoom.status)
+
+  // Only handle Active (2) and Ended (3) rooms with at least 1 round
+  if ((status !== 2 && status !== 3) || currentRound < 1) return []
+
+  // round_started initialises currentRound with phase='infection';
+  // timestamp anchors phaseEndsAt for the infection phase (no fixed duration).
+  const events: GameEvent[] = [{
+    type:      'round_started',
+    roomId,
+    payload:   { round: currentRound, durationMs: 0 },
+    timestamp: phaseStartedAt,
+  }]
+
+  if (status === 2 && currentPhase > 0) {
+    // Active room past Infection — emit current phase so the timer is accurate.
+    let durSecs = 0
+    if (currentPhase === 1) durSecs = Number(rawRoom.config.discussionDurationSecs)
+    else if (currentPhase === 2) durSecs = Number(rawRoom.config.votingDurationSecs)
+    events.push({
+      type:      'phase_changed',
+      roomId,
+      payload:   { phase: currentPhase, durationMs: durSecs * 1000 },
+      timestamp: phaseStartedAt,
+    })
+  }
+
+  if (status === 3) {
+    // Ended room — set phase to Ended (4) so the phase box shows the ended message.
+    events.push({
+      type:      'phase_changed',
+      roomId,
+      payload:   { phase: 4, durationMs: 0 },
+      timestamp: phaseStartedAt,
+    })
+  }
+
+  return events
 }
 
 function mapChainEventToGameEvent(
