@@ -339,6 +339,58 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         ? players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
         : null
 
+      // When the room has ended, infer the outcome from on-chain player states so the
+      // game-over overlay is shown even when live socket events were missed.
+      if (room.status === 'ended') {
+        const cleanAlive    = players.filter(p => !p.isEliminated && p.status === 'clean')
+        const infectedAlive = players.filter(p => !p.isEliminated && p.status === 'infected')
+        let outcome: GameOutcome
+        let winners: Player[]
+        let losers: Player[]
+        if (infectedAlive.length === 0) {
+          outcome = 'clean_win'
+          winners = cleanAlive
+          losers  = infectedAlive
+        } else if (infectedAlive.length >= cleanAlive.length) {
+          outcome = 'infected_win'
+          winners = infectedAlive
+          losers  = cleanAlive
+        } else {
+          outcome = 'max_rounds_draw'
+          winners = [...cleanAlive, ...infectedAlive]
+          losers  = []
+        }
+        const totalPot     = room.stakeAmount * BigInt(room.players.length)
+        const potPerWinner = winners.length > 0 ? totalPot / BigInt(winners.length) : 0n
+        setState(prev => ({
+          ...prev,
+          room,
+          localPlayer,
+          result: {
+            outcome,
+            winners:      winners.map(p => p.walletAddress),
+            losers:       losers.map(p => p.walletAddress),
+            totalPot,
+            potPerWinner,
+            rounds:       room.currentRound,
+          },
+          currentRound: prev.currentRound ?? {
+            number:              room.currentRound,
+            phase:               'ended' as RoundPhase,
+            infectedThisRound:   [],
+            eliminatedThisRound: [],
+            votes:               [],
+            proofSubmissions:    [],
+            drainAmount:         0n,
+            startedAt:           0,
+            phaseEndsAt:         0,
+          },
+          isLoading: false,
+          error:     null,
+        }))
+        return
+      }
+
       setState(prev => ({ ...prev, room, localPlayer, isLoading: false, error: null }))
     } catch (err) {
       setState(prev => ({

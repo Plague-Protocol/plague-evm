@@ -652,13 +652,13 @@ export function startRoleCommitmentMonitor(_io: Server, intervalMs = 5_000): Nod
  *
  * Default interval: 5 seconds.
  */
-// Suppress expected reverts — WrongPhase (0xe2586bcc), NotActive (0xa0d7dbbf)
+// Suppress expected reverts — WrongPhase (0xe2586bcc), NotActive (0x80cb55e2)
 function isExpectedPhaseRevert(message: string): boolean {
   return (
     message.includes('WrongPhase') ||
     message.includes('0xe2586bcc') ||
     message.includes('NotActive') ||
-    message.includes('0xa0d7dbbf') ||
+    message.includes('0x80cb55e2') ||
     message.includes('nonce too low') ||
     message.includes('already known')
   )
@@ -682,7 +682,7 @@ async function handleInfectionPhase(id: bigint, rawRoom: RawRoom): Promise<void>
     const h = BigInt(keccak256(toBytes(`${id}:${round}:${blockHash}`)))
     const target = cleanAlive[Number(h % BigInt(cleanAlive.length))]
     await chainAdapter.assignInfection(id, target)
-    logger.info(`[phase-advance-monitor] assignInfection called for room ${id} round ${round} target ${target}`)
+    logger.info(`[phase-advance-monitor] assignInfection succeeded for room ${id} round ${round} target ${target}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message) && !message.includes('InvalidInfectionTarget')) {
@@ -701,6 +701,7 @@ async function handleDiscussionPhase(id: bigint, rawRoom: RawRoom, now: number):
   roomPhaseInProgress.add(id)
   try {
     await chainAdapter.openVoting(id)
+    logger.info(`[phase-advance-monitor] openVoting succeeded for room ${id}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message)) {
@@ -719,6 +720,7 @@ async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Pro
   roomPhaseInProgress.add(id)
   try {
     await chainAdapter.resolveRound(id)
+    logger.info(`[phase-advance-monitor] resolveRound succeeded for room ${id}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message)) {

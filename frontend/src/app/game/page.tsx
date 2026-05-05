@@ -155,6 +155,13 @@ function GamePageInner() {
   const roundNumber = currentRound?.number ?? 0
   useEffect(() => { setOptimisticVotedFor(null) }, [roundNumber])
 
+  // If the room ended but live socket events were missed (result is still null),
+  // do a chain read so the game-over overlay is populated correctly.
+  useEffect(() => {
+    if (room?.status === 'ended' && !result) refresh()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.status])
+
   // Play game-over sting once when result arrives
   useEffect(() => {
     if (!result) return
