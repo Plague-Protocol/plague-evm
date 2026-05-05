@@ -357,7 +357,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       })
     })
 
-    socket.on('room_state', (initialState: { room: unknown; players: unknown[] }) => {
+    socket.on('room_state', (initialState: { room: unknown; players: unknown[]; error?: string }) => {
       // Server sends full room snapshot on join
       if (initialState?.room) {
         const room = mapRoom(initialState.room)
@@ -367,6 +367,9 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
           : null
         setState(prev => ({ ...prev, room, localPlayer, isLoading: false }))
+      } else if (initialState?.error === 'room_not_found') {
+        // Room does not exist on-chain — no point re-reading the chain
+        setState(prev => ({ ...prev, isLoading: false, error: 'Room not found.' }))
       } else {
         // Fallback: read from chain
         loadRoomFromChain(roomId, playerAddress ?? undefined)

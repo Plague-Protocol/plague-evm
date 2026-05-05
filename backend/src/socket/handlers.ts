@@ -174,8 +174,14 @@ export function setupSocketHandlers(io: Server) {
         socket.emit('room_state', { room: rawRoom, players: rawPlayers })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        logger.warn(`[socket] failed to load room_state for ${roomId}: ${message}`)
-        socket.emit('room_state', { room: null, players: [] })
+        // InvalidRoom() selector 0x353cbf17 — room ID does not exist on-chain
+        if (message.includes('0x353cbf17') || message.includes('InvalidRoom')) {
+          logger.debug(`[socket] room ${roomId} not found on-chain`)
+          socket.emit('room_state', { room: null, players: [], error: 'room_not_found' })
+        } else {
+          logger.warn(`[socket] failed to load room_state for ${roomId}: ${message}`)
+          socket.emit('room_state', { room: null, players: [] })
+        }
       }
       logger.info(`${socket.id} subscribed to room ${roomId}`)
     })

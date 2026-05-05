@@ -325,7 +325,7 @@ function RoomCard({
   const secsLeft    = room.status === 'waiting'
     ? Math.max(0, Math.floor((room.expiresAt - now) / 1000))
     : 0
-  const isExpired   = room.status === 'waiting' && Date.now() >= room.expiresAt
+  const isExpired   = room.status === 'waiting' && now >= room.expiresAt
   const isExpiring  = room.status === 'waiting' && !isExpired && secsLeft <= 180
   const isFull      = room.players >= room.maxPlayers
   const isJoining   = joiningId === room.id
