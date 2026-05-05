@@ -8,6 +8,13 @@ import { keccak256, toBytes } from 'viem'
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
 
 /**
+ * Per-room in-progress lock for phase transitions.
+ * Prevents the commitment monitor, phase-advance monitor, and socket handler
+ * from firing duplicate transactions for the same room concurrently.
+ */
+const roomPhaseInProgress = new Set<bigint>()
+
+/**
  * Recursively convert BigInt values to their decimal string representation so
  * the payload can safely pass through socket.io's JSON serialisation layer.
  */
@@ -232,8 +239,11 @@ export function setupSocketHandlers(io: Server) {
      * Phase timer tick — backend manages phase transitions
      */
     socket.on('request_phase_advance', async ({ roomId }: { roomId: string }) => {
+      const id = BigInt(roomId)
+      // Skip if the server-side monitor is already processing this room
+      if (roomPhaseInProgress.has(id)) return
       try {
-        const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
+        const rawRoom = await chainAdapter.getRoom(id)
         const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
 
         // RoomStatus.Active = 2
@@ -245,7 +255,12 @@ export function setupSocketHandlers(io: Server) {
         if (rawRoom.currentPhase === 1) {
           const durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
           if (now < phaseStartedAt + durationMs) return
-          await chainAdapter.openVoting(BigInt(roomId))
+          roomPhaseInProgress.add(id)
+          try {
+            await chainAdapter.openVoting(id)
+          } finally {
+            roomPhaseInProgress.delete(id)
+          }
           return
         }
 
@@ -253,12 +268,19 @@ export function setupSocketHandlers(io: Server) {
         if (rawRoom.currentPhase === 2) {
           const durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
           if (now < phaseStartedAt + durationMs) return
-          await chainAdapter.resolveRound(BigInt(roomId))
+          roomPhaseInProgress.add(id)
+          try {
+            await chainAdapter.resolveRound(id)
+          } finally {
+            roomPhaseInProgress.delete(id)
+          }
           return
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        logger.warn(`[socket] request_phase_advance failed for ${roomId}: ${message}`)
+        if (!isExpectedPhaseRevert(message)) {
+          logger.warn(`[socket] request_phase_advance failed for ${roomId}: ${message}`)
+        }
       }
     })
 
@@ -592,15 +614,20 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
   )
   const allCommitted = playerStates.every(p => p.roleCommitted === true)
   if (!allCommitted) return
+  // Skip if another tick is already processing this room
+  if (roomPhaseInProgress.has(id)) return
+  roomPhaseInProgress.add(id)
   try {
     await chainAdapter.beginActivePhase(id)
     logger.info(`[role-commitment-monitor] beginActivePhase called for room ${id}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    // Ignore "WrongPhase" — another process may have already advanced it
-    if (!message.includes('WrongPhase')) {
+    // Ignore "WrongPhase" (selector 0xe2586bcc) — room was already advanced
+    if (!message.includes('WrongPhase') && !message.includes('0xe2586bcc')) {
       logger.warn(`[role-commitment-monitor] failed for room ${id}: ${message}`)
     }
+  } finally {
+    roomPhaseInProgress.delete(id)
   }
 }
 
@@ -625,7 +652,21 @@ export function startRoleCommitmentMonitor(_io: Server, intervalMs = 5_000): Nod
  *
  * Default interval: 5 seconds.
  */
+// Suppress expected reverts — WrongPhase (0xe2586bcc), NotActive (0xa0d7dbbf)
+function isExpectedPhaseRevert(message: string): boolean {
+  return (
+    message.includes('WrongPhase') ||
+    message.includes('0xe2586bcc') ||
+    message.includes('NotActive') ||
+    message.includes('0xa0d7dbbf') ||
+    message.includes('nonce too low') ||
+    message.includes('already known')
+  )
+}
+
 async function handleInfectionPhase(id: bigint, rawRoom: RawRoom): Promise<void> {
+  if (roomPhaseInProgress.has(id)) return
+  roomPhaseInProgress.add(id)
   try {
     const playerAddrs = rawRoom.players
     const playerStates = await Promise.all(
@@ -644,9 +685,11 @@ async function handleInfectionPhase(id: bigint, rawRoom: RawRoom): Promise<void>
     logger.info(`[phase-advance-monitor] assignInfection called for room ${id} round ${round} target ${target}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (!message.includes('WrongPhase') && !message.includes('NotActive') && !message.includes('InvalidInfectionTarget')) {
+    if (!isExpectedPhaseRevert(message) && !message.includes('InvalidInfectionTarget')) {
       logger.warn(`[phase-advance-monitor] assignInfection failed for room ${id}: ${message}`)
     }
+  } finally {
+    roomPhaseInProgress.delete(id)
   }
 }
 
@@ -654,13 +697,17 @@ async function handleDiscussionPhase(id: bigint, rawRoom: RawRoom, now: number):
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   const durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
   if (now < phaseStartedAt + durationMs) return
+  if (roomPhaseInProgress.has(id)) return
+  roomPhaseInProgress.add(id)
   try {
     await chainAdapter.openVoting(id)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (!message.includes('WrongPhase') && !message.includes('NotActive')) {
+    if (!isExpectedPhaseRevert(message)) {
       logger.warn(`[phase-advance-monitor] openVoting failed for room ${id}: ${message}`)
     }
+  } finally {
+    roomPhaseInProgress.delete(id)
   }
 }
 
@@ -668,13 +715,17 @@ async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Pro
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   const durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
   if (now < phaseStartedAt + durationMs) return
+  if (roomPhaseInProgress.has(id)) return
+  roomPhaseInProgress.add(id)
   try {
     await chainAdapter.resolveRound(id)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (!message.includes('WrongPhase') && !message.includes('NotActive')) {
+    if (!isExpectedPhaseRevert(message)) {
       logger.warn(`[phase-advance-monitor] resolveRound failed for room ${id}: ${message}`)
     }
+  } finally {
+    roomPhaseInProgress.delete(id)
   }
 }
 

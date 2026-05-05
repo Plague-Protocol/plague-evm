@@ -79,10 +79,7 @@ const PLAGUE_ABI = parseAbi([
   'error NotAlive()',
   'error InvalidInfectionTarget()',
   'error TooManyActiveRooms()',
-  'error CommitmentsIncomplete()',
-  'error NotStarting()',
-  'error RoundNotEnded()',
-  'error GameEnded()',
+  'error Reentrancy()',
 ] as const)
 
 // ── Client setup ──────────────────────────────────────────────────────────────

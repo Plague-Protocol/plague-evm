@@ -454,11 +454,20 @@ function GamePageInner() {
           </div>
 
           {/* Connection status */}
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-3">
             <span className={`inline-block h-2 w-2 rounded-full ${socketOn ? 'bg-green-400' : 'bg-yellow-400'}`} />
             <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
               {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
             </span>
+            <button
+              onClick={() => refresh()}
+              disabled={isLoading}
+              title="Fetch latest state from chain"
+              className="ml-1 rounded border px-3 py-1 font-mono text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-40 hover:brightness-125 active:scale-95"
+              style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.08)', boxShadow: '0 0 6px rgba(57,255,20,0.35)' }}
+            >
+              {isLoading ? '…' : '↺ Sync'}
+            </button>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
           </div>
         </div>
