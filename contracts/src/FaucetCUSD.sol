@@ -32,7 +32,6 @@ contract FaucetCUSD {
     // ── Errors ────────────────────────────────────────────────────────────────
     error NotOwner();
     error CooldownActive(uint256 availableAt);
-    error InsufficientFaucetBalance();
     error ZeroAddress();
     error ZeroDripAmount();
 
@@ -63,13 +62,12 @@ contract FaucetCUSD {
             uint256 availableAt = last + cooldown;
             if (block.timestamp < availableAt) revert CooldownActive(availableAt);
         }
-        if (cUsd.balanceOf(address(this)) < dripAmount) revert InsufficientFaucetBalance();
 
-        // Update state before transfer (checks-effects-interactions)
+        // Update state before mint (checks-effects-interactions)
         lastClaimed[msg.sender] = block.timestamp;
 
-        bool ok = cUsd.transfer(msg.sender, dripAmount);
-        require(ok, "cUSD transfer failed");
+        // Mint tokens directly to the caller — no pre-funding required
+        cUsd.mint(msg.sender, dripAmount);
 
         emit Claimed(msg.sender, dripAmount);
     }
@@ -86,7 +84,7 @@ contract FaucetCUSD {
         return last + cooldown;
     }
 
-    /** @notice cUSD balance currently held by this faucet. */
+    /** @notice Total cUSD minted so far by this faucet. */
     function faucetBalance() external view returns (uint256) {
         return cUsd.balanceOf(address(this));
     }

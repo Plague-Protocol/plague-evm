@@ -53,7 +53,7 @@ contract FaucetCUSDTest is Test {
         token = new MockERC20();
         vm.prank(faucetOwner);
         faucet = new FaucetCUSD(address(token));
-        token.mint(address(faucet), 1000 ether);
+        // No pre-funding: FaucetCUSD mints tokens on demand rather than holding a balance
     }
 
     // ── constructor ───────────────────────────────────────────────────────────
@@ -83,13 +83,6 @@ contract FaucetCUSDTest is Test {
         vm.prank(user1);
         faucet.claim();
         assertEq(token.balanceOf(user1), before + DRIP);
-    }
-
-    function test_Claim_ReducesFaucetBalance() public {
-        uint256 before = faucet.faucetBalance();
-        vm.prank(user1);
-        faucet.claim();
-        assertEq(faucet.faucetBalance(), before - DRIP);
     }
 
     function test_Claim_SetsLastClaimed() public {
@@ -125,16 +118,6 @@ contract FaucetCUSDTest is Test {
         assertEq(token.balanceOf(user2), DRIP);
     }
 
-    function test_Claim_InsufficientFaucetBalance_Reverts() public {
-        // Drain the faucet
-        vm.prank(faucetOwner);
-        faucet.withdraw(faucetOwner, 1000 ether);
-
-        vm.prank(user1);
-        vm.expectRevert(FaucetCUSD.InsufficientFaucetBalance.selector);
-        faucet.claim();
-    }
-
     // ── nextClaimAt ───────────────────────────────────────────────────────────
 
     function test_NextClaimAt_ZeroBeforeFirstClaim() public view {
@@ -149,8 +132,9 @@ contract FaucetCUSDTest is Test {
 
     // ── faucetBalance ─────────────────────────────────────────────────────────
 
-    function test_FaucetBalance_ReturnsCorrectBalance() public view {
-        assertEq(faucet.faucetBalance(), 1000 ether);
+    // FaucetCUSD no longer holds tokens — it mints on demand, so faucetBalance() is always 0
+    function test_FaucetBalance_ReturnsZeroWhenUnfunded() public view {
+        assertEq(faucet.faucetBalance(), 0);
     }
 
     // ── setDripAmount ─────────────────────────────────────────────────────────
@@ -209,6 +193,8 @@ contract FaucetCUSDTest is Test {
     // ── withdraw ──────────────────────────────────────────────────────────────
 
     function test_Withdraw_TransfersAmount() public {
+        // Seed the faucet with some tokens (simulates edge case, e.g. accidental transfer)
+        token.mint(address(faucet), 100 ether);
         uint256 before = token.balanceOf(faucetOwner);
         vm.prank(faucetOwner);
         faucet.withdraw(faucetOwner, 100 ether);
