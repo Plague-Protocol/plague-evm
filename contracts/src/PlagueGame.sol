@@ -298,9 +298,9 @@ contract PlagueGame {
         cfg.maxPlayers            = maxPlayers;
         cfg.stakeAmount           = stakeAmount;
         cfg.maxRounds             = 10;
-        cfg.roundDurationSecs     = 120;
-        cfg.discussionDurationSecs = 60;
-        cfg.votingDurationSecs    = 60;
+        cfg.roundDurationSecs     = 180;
+        cfg.discussionDurationSecs = 180;
+        cfg.votingDurationSecs    = 180;
         cfg.expirySecs            = expirySecs;
         cfg.proofFee              = proofFee;
 
