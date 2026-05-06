@@ -8,6 +8,7 @@ import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib/contract'
 import { useRouter } from 'next/navigation'
+import { io } from 'socket.io-client'
 
 // ── cUSD contract addresses ───────────────────────────────────────────────────
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
@@ -85,6 +86,23 @@ function getContractClient() {
   const addr    = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}` | undefined
   if (!addr) return null
   return createContractClient({ contractAddress: addr, network })
+}
+
+async function requestRoomRefresh(roomId: string): Promise<void> {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+  await new Promise<void>((resolve) => {
+    const socket = io(backendUrl, { transports: ['websocket'], forceNew: true })
+    const done = () => {
+      socket.disconnect()
+      resolve()
+    }
+    socket.on('connect', () => {
+      socket.emit('request_room_refresh', { roomId })
+      setTimeout(done, 80)
+    })
+    socket.on('connect_error', done)
+    setTimeout(done, 1200)
+  })
 }
 
 /** Reads the caller's cUSD balance and throws a user-friendly error if it is below `required`. */
@@ -227,6 +245,8 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
     if (nowFull && address.toLowerCase() === (updated.host as string).toLowerCase()) {
       await client.startGame(address, room.id)
     }
+
+    await requestRoomRefresh(room.id.toString())
 
     pushToGame(room.id)
   } catch (err) {

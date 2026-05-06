@@ -220,6 +220,7 @@ function GamePageInner() {
       // Optimistic update — flip the UI immediately without waiting for the socket broadcast.
       setOptimisticVotedFor(selectedVote)
       setSelectedVote(null)
+      socket?.emit('request_room_refresh', { roomId })
       toast.success('Vote submitted!')
       refresh()
     } catch (err) {
@@ -229,7 +230,7 @@ function GamePageInner() {
     } finally {
       setVoting(false)
     }
-  }, [selectedVote, address, roomId, refresh])
+  }, [selectedVote, address, roomId, refresh, socket])
 
   const handleSubmitProof = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -321,6 +322,7 @@ function GamePageInner() {
       const client = getContractClient()!
       await client.submitRoleCommitment(address, BigInt(roomId), commitmentHex, proofBytes)
       setSecretPhrase('')
+      socket?.emit('request_room_refresh', { roomId })
       toast.success('Role committed!')
       refresh()
     } catch (err) {
@@ -328,6 +330,7 @@ function GamePageInner() {
       // AlreadyCommitted means a previous submission went through — treat as success
       if (msg.includes('AlreadyCommitted')) {
         setSecretPhrase('')
+        socket?.emit('request_room_refresh', { roomId })
         refresh()
       } else {
         setCommitError(msg.split('\n')[0])
@@ -335,7 +338,7 @@ function GamePageInner() {
     } finally {
       setCommitting(false)
     }
-  }, [address, roomId, secretPhrase, refresh])
+  }, [address, roomId, secretPhrase, refresh, socket])
 
   const handleStartGame = useCallback(async () => {
     if (!address || !roomId) return

@@ -296,6 +296,15 @@ export function setupSocketHandlers(io: Server) {
     })
 
     /**
+     * Manual refresh fan-out.
+     * Clients call this after impactful successful actions (join, commit, vote)
+     * to nudge all room subscribers to immediately re-read chain state.
+     */
+    socket.on('request_room_refresh', ({ roomId }: { roomId: string }) => {
+      io.to(roomId).emit('room_refresh_requested', { roomId, timestamp: Date.now() })
+    })
+
+    /**
      * Infection assignment — system assigns each round, NOT player-chosen.
      *
      * Normal case:

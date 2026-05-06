@@ -88,6 +88,35 @@ function mapPlayer(raw: any, address: string, playerNum?: number): Player {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildRoundFromRaw(rawRoom: any, players: Player[]): Round | null {
+  const roomStatus = Number(rawRoom.status)
+  const roundNumber = Number(rawRoom.currentRound ?? 0)
+  if (roundNumber < 1 || (roomStatus !== 2 && roomStatus !== 3)) return null
+
+  const phase = PHASE_MAP[Number(rawRoom.currentPhase)] ?? 'ended'
+  const startedAt = Number(rawRoom.phaseStartedAt ?? 0) * 1000
+  let phaseDurationMs = 0
+  if (phase === 'discussion') phaseDurationMs = Number(rawRoom.config?.discussionDurationSecs ?? 0) * 1000
+  if (phase === 'voting') phaseDurationMs = Number(rawRoom.config?.votingDurationSecs ?? 0) * 1000
+
+  const votes = players
+    .filter(p => p.hasVotedThisRound && !!p.voteTarget)
+    .map(p => ({ voterAddress: p.walletAddress, targetAddress: p.voteTarget as string, timestamp: startedAt }))
+
+  return {
+    number: roundNumber,
+    phase,
+    infectedThisRound: [],
+    eliminatedThisRound: [],
+    votes,
+    proofSubmissions: [],
+    drainAmount: 0n,
+    startedAt,
+    phaseEndsAt: phaseDurationMs > 0 ? startedAt + phaseDurationMs : startedAt,
+  }
+}
+
 async function enrichLocalRole(
   client: ReturnType<typeof getContractClient>,
   roomId: bigint,
@@ -362,6 +391,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         return mapPlayer(pRaw, addr, idx + 1)
       }))
       room.players = players
+      const chainRound = buildRoundFromRaw(raw, players)
 
       let localPlayer = playerAddress
         ? players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
@@ -403,7 +433,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
             potPerWinner,
             rounds:       room.currentRound,
           },
-          currentRound: prev.currentRound ?? {
+          currentRound: chainRound ?? {
             number:              room.currentRound,
             phase:               'ended' as RoundPhase,
             infectedThisRound:   [],
@@ -420,7 +450,14 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         return
       }
 
-      setState(prev => ({ ...prev, room, localPlayer, isLoading: false, error: null }))
+      setState(prev => ({
+        ...prev,
+        room,
+        localPlayer,
+        currentRound: chainRound,
+        isLoading: false,
+        error: null,
+      }))
     } catch (err) {
       setState(prev => ({
         ...prev,
@@ -456,11 +493,12 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         const room = mapRoom(initialState.room)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         room.players = (initialState.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
+        const chainRound = buildRoundFromRaw(initialState.room, room.players)
         let localPlayer = playerAddress
           ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
           : null
         localPlayer = await enrichLocalRole(getContractClient(), BigInt(roomId), localPlayer)
-        setState(prev => ({ ...prev, room, localPlayer, isLoading: false }))
+        setState(prev => ({ ...prev, room, localPlayer, currentRound: chainRound, isLoading: false }))
       } else if (initialState?.error === 'room_not_found') {
         // Backend couldn't read the room (may be a brand-new room the RPC hasn't indexed
         // yet).  Try a direct chain read; only set the error if that also fails.
@@ -476,6 +514,9 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     })
 
     socket.on('game_event', handleEvent)
+    socket.on('room_refresh_requested', () => {
+      loadRoomFromChain(roomId, playerAddress ?? undefined)
+    })
 
     socket.on('connect_error', (err) => {
       // Socket unavailable — fall back to chain read
@@ -494,6 +535,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     })
 
     return () => {
+      socket.off('room_refresh_requested')
       socket.disconnect()
       socketRef.current = null
     }
