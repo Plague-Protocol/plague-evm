@@ -141,10 +141,12 @@ function GamePageInner() {
   const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
   const hasVoted      = !!optimisticVotedFor || (!!address && (currentRound?.votes.some(v => v.voterAddress.toLowerCase() === address.toLowerCase()) ?? false))
   const myVotedTarget = optimisticVotedFor ?? (address ? currentRound?.votes.find(v => v.voterAddress.toLowerCase() === address.toLowerCase())?.targetAddress : undefined)
-  const canVote       = phase === 'voting' && isConnected && !localPlayer?.isEliminated && !hasVoted && !voting
-  const canProve      = phase === 'discussion' && isConnected && !localPlayer?.isEliminated && !proofDone
+  const canVote       = phase === 'voting' && isConnected && !!localPlayer && !localPlayer.isEliminated && !hasVoted && !voting
+  const canProve      = phase === 'discussion' && isConnected && !!localPlayer && !localPlayer.isEliminated && !proofDone
   const canCommit     = room?.status === 'starting' && isConnected && !committing && !commitDone
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
+  // Spectator: wallet connected but address not in players list (late viewer)
+  const isSpectator   = !!address && !!room && room.status === 'active' && !room.players.some(p => p.walletAddress.toLowerCase() === address.toLowerCase())
 
   // ── Soundscape ───────────────────────────────────────────────────────────
   const { muted } = useSound()
@@ -172,14 +174,21 @@ function GamePageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result?.outcome])
 
-  // ── Chat socket listener ─────────────────────────────────────────────────
+  // ── Chat socket listeners ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return
-    const handler = (msg: { sender: string; displayName: string; message: string; timestamp: number }) => {
+    const msgHandler = (msg: { sender: string; displayName: string; message: string; timestamp: number }) => {
       setChatMessages(prev => [...prev.slice(-199), msg])
     }
-    socket.on('chat_message', handler)
-    return () => { socket.off('chat_message', handler) }
+    const historyHandler = (history: { sender: string; displayName: string; message: string; timestamp: number }[]) => {
+      setChatMessages(history.slice(-200))
+    }
+    socket.on('chat_message', msgHandler)
+    socket.on('chat_history', historyHandler)
+    return () => {
+      socket.off('chat_message', msgHandler)
+      socket.off('chat_history', historyHandler)
+    }
   }, [socket])
 
   // Auto-scroll chat to bottom on new messages
@@ -215,6 +224,7 @@ function GamePageInner() {
       setOptimisticVotedFor(selectedVote)
       setSelectedVote(null)
       toast.success('Vote submitted!')
+      refresh()
     } catch (err) {
       const msg = parseContractError(err)
       setVoteError(msg)
@@ -222,7 +232,7 @@ function GamePageInner() {
     } finally {
       setVoting(false)
     }
-  }, [selectedVote, address, roomId])
+  }, [selectedVote, address, roomId, refresh])
 
   const handleSubmitProof = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -287,6 +297,7 @@ function GamePageInner() {
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
       setProofDone(true)
       toast.success('Innocence proof submitted!')
+      refresh()
     } catch (err) {
       const msg = parseContractError(err)
       setProofError(msg)
@@ -294,7 +305,7 @@ function GamePageInner() {
     } finally {
       setProving(false)
     }
-  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket])
+  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket, refresh])
 
   const handleCommitRole = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -317,6 +328,7 @@ function GamePageInner() {
       setCommitDone(true)
       setSecretPhrase('')
       toast.success('Role committed!')
+      refresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Role commitment failed.'
       // AlreadyCommitted means a previous submission went through — treat as success
@@ -324,13 +336,14 @@ function GamePageInner() {
         localStorage.setItem(`committed:${roomId}:${address}`, '1')
         setCommitDone(true)
         setSecretPhrase('')
+        refresh()
       } else {
         setCommitError(msg.split('\n')[0])
       }
     } finally {
       setCommitting(false)
     }
-  }, [address, roomId, secretPhrase])
+  }, [address, roomId, secretPhrase, refresh])
 
   const handleStartGame = useCallback(async () => {
     if (!address || !roomId) return
@@ -340,6 +353,7 @@ function GamePageInner() {
     setStartError(null)
     try {
       await client.startGame(address, BigInt(roomId))
+      refresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start game.'
       // Extract the human-readable revert reason if present (e.g. NotEnoughPlayers)
@@ -349,7 +363,7 @@ function GamePageInner() {
     } finally {
       setStarting(false)
     }
-  }, [address, roomId])
+  }, [address, roomId, refresh])
 
   // ── Phase advance ticker ─────────────────────────────────────────────────
   useEffect(() => {
@@ -572,6 +586,16 @@ function GamePageInner() {
                   </div>
                 )}
 
+                {/* Spectator mode banner — shown to anyone who didn't join before the game started */}
+                {isSpectator && (
+                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.45)', backgroundColor: 'rgba(245,197,24,0.07)' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>👁 SPECTATOR MODE</p>
+                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                      This game was already in progress when you arrived. You can watch but cannot vote, prove innocence, or affect the outcome.
+                    </p>
+                  </div>
+                )}
+
                 {/* Phase + Proof panel */}
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div
@@ -682,8 +706,8 @@ function GamePageInner() {
                   </div>
                 )}
 
-                {/* Proof Submission panel (Discussion phase) */}
-                {phase === 'discussion' && !proofDone && (
+                {/* Proof Submission panel (Discussion phase) — only for active participants */}
+                {phase === 'discussion' && !!localPlayer && !proofDone && (
                   <div
                     className="mt-5 rounded-lg border p-5"
                     style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}

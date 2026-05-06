@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { io, type Socket } from 'socket.io-client'
+import { createPublicClient, webSocket } from 'viem'
+import { celoSepolia, celo } from 'viem/chains'
 import { createContractClient } from '@/lib/contract'
 import type { GameState, GameEvent, GameOutcome, Room, Player, Round, RoundPhase } from '@/types/game'
 
@@ -481,6 +483,49 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
   const refresh = useCallback(() => {
     if (roomId) loadRoomFromChain(roomId, playerAddress ?? undefined)
+  }, [roomId, playerAddress, loadRoomFromChain])
+
+  // ── Direct WebSocket chain event watcher ──────────────────────────────────
+  // Supplements the socket.io backend subscription: fires loadRoomFromChain
+  // immediately on any relevant on-chain event so the UI stays current even
+  // when the backend is offline or the socket briefly disconnects.
+  useEffect(() => {
+    if (!roomId) return
+    const wsUrl = process.env.NEXT_PUBLIC_WS_RPC_URL
+    if (!wsUrl) return
+    const network = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
+    const contractAddr = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}` | undefined
+    if (!contractAddr) return
+
+    const chain = network === 'mainnet' ? celo : celoSepolia
+    let wsClient: ReturnType<typeof createPublicClient> | null = null
+    let unwatch: (() => void) | null = null
+
+    try {
+      wsClient = createPublicClient({ chain, transport: webSocket(wsUrl) })
+      const roomBigInt = BigInt(roomId)
+      unwatch = wsClient.watchEvent({
+        address: contractAddr,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onLogs: (logs: any[]) => {
+          // All PlagueGame events have roomId as the first indexed topic.
+          const relevant = logs.some(log => {
+            if (!log.topics?.[1]) return false
+            try { return BigInt(log.topics[1]) === roomBigInt } catch { return false }
+          })
+          if (relevant) loadRoomFromChain(roomId, playerAddress ?? undefined)
+        },
+        onError: () => {
+          // WS errors are non-fatal; the polling fallback and socket.io handle it.
+        },
+      })
+    } catch {
+      // If the WS transport fails to initialise (bad URL etc.), degrade silently.
+    }
+
+    return () => {
+      try { unwatch?.() } catch { /* ignore */ }
+    }
   }, [roomId, playerAddress, loadRoomFromChain])
 
   return { ...state, feed, socket: socketRef.current, refresh }

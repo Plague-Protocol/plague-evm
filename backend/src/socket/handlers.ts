@@ -4,6 +4,7 @@ import type { GameEvent } from '../types/game'
 import { chainAdapter } from '../services/chainAdapter'
 import { listExpiredWaitingRooms, setRoomStatus } from '../repositories/rooms'
 import { keccak256, toBytes } from 'viem'
+import { redis } from '../db/redis'
 
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
 
@@ -195,6 +196,16 @@ export function setupSocketHandlers(io: Server) {
           )
         )
         socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
+
+        // Send persisted chat history so reconnecting clients see previous messages.
+        try {
+          const raw = await redis.lrange(`chat:${roomId}`, 0, -1)
+          if (raw.length > 0) {
+            socket.emit('chat_history', raw.map(m => JSON.parse(m)))
+          }
+        } catch (chatErr) {
+          logger.warn(`[socket] failed to load chat history for room ${roomId}: ${chatErr}`)
+        }
 
         // Replay phase state for reconnecting clients so they rebuild currentRound.
         for (const ev of buildActiveSyncEvents(rawRoom, roomId)) socket.emit('game_event', ev)
@@ -440,13 +451,21 @@ export function setupSocketHandlers(io: Server) {
       if (!roomId || !message || !playerAddress) return
       const safe = String(message).slice(0, 256).trim()
       if (!safe) return
-      io.to(roomId).emit('chat_message', {
+      const chatMsg = {
         roomId,
         sender:      playerAddress,
         displayName: displayName ?? `${playerAddress.slice(0, 6)}…${playerAddress.slice(-4)}`,
         message:     safe,
         timestamp:   Date.now(),
-      })
+      }
+      io.to(roomId).emit('chat_message', chatMsg)
+      // Persist to Redis so the history survives reconnects/refreshes (keep last 100).
+      try {
+        await redis.rpush(`chat:${roomId}`, JSON.stringify(chatMsg))
+        await redis.ltrim(`chat:${roomId}`, -100, -1)
+      } catch (redisErr) {
+        logger.warn(`[socket] failed to persist chat for room ${roomId}: ${redisErr}`)
+      }
     })
 
     socket.on('disconnect', () => {
