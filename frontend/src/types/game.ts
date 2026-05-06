@@ -26,6 +26,10 @@ export interface Player {
    */
   freeProofUsed: boolean
   proofsSubmittedTotal: number
+  hasProofThisRound: boolean
+  hasVotedThisRound: boolean
+  roleCommitted: boolean
+  voteTarget?: string
   /** Poseidon(role, secret) stored on-chain after submitRoleCommitment. 0x-prefixed hex. */
   roleCommitment?: string
 }

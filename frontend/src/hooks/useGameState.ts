@@ -32,6 +32,8 @@ const PLAYER_STATUS_MAP: Record<number, 'clean' | 'infected' | 'eliminated'> = {
   2: 'eliminated',
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 // ── Map raw on-chain room to Room type ────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapRoom(raw: any): Room {
@@ -62,6 +64,8 @@ function mapRoom(raw: any): Room {
 // ── Map raw on-chain player data to Player type ───────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapPlayer(raw: any, address: string, playerNum?: number): Player {
+  const voteTarget = String(raw.voteTarget ?? '').toLowerCase()
+  const hasVoteTarget = voteTarget && voteTarget !== '0x0000000000000000000000000000000000000000'
   return {
     id:                   address,
     walletAddress:        address,
@@ -73,10 +77,29 @@ function mapPlayer(raw: any, address: string, playerNum?: number): Player {
     joinedAt:             Number(raw.joinedAt) * 1000,
     freeProofUsed:        raw.freeProofUsed,
     proofsSubmittedTotal: Number(raw.proofsSubmittedTotal),
+    hasProofThisRound:    Boolean(raw.hasProofThisRound),
+    hasVotedThisRound:    Boolean(raw.hasVotedThisRound),
+    roleCommitted:        Boolean(raw.roleCommitted),
+    voteTarget:           hasVoteTarget ? String(raw.voteTarget) : undefined,
     // Keep commitment only if actually set (non-zero bytes32)
     roleCommitment: raw.roleCommitment && raw.roleCommitment !== '0x0000000000000000000000000000000000000000000000000000000000000000'
       ? String(raw.roleCommitment)
       : undefined,
+  }
+}
+
+async function enrichLocalRole(
+  client: ReturnType<typeof getContractClient>,
+  roomId: bigint,
+  localPlayer: Player | null,
+): Promise<Player | null> {
+  if (!client || !localPlayer || localPlayer.status !== 'infected') return localPlayer
+  const patientZero = await client.getCurrentPatientZero(roomId).catch(() => ZERO_ADDRESS as `0x${string}`)
+  return {
+    ...localPlayer,
+    role: patientZero.toLowerCase() === localPlayer.walletAddress.toLowerCase()
+      ? 'patient_zero'
+      : 'infected',
   }
 }
 
@@ -128,6 +151,9 @@ export function useGameState(roomId: string | null, playerAddress: string | null
             joinedAt:             event.timestamp,
             freeProofUsed:        false,
             proofsSubmittedTotal: 0,
+            hasProofThisRound:    false,
+            hasVotedThisRound:    false,
+            roleCommitted:        false,
           }
           if (!prev.room) return prev
           return { ...prev, room: { ...prev.room, players: [...prev.room.players, newPlayer] } }
@@ -337,9 +363,10 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       }))
       room.players = players
 
-      const localPlayer = playerAddress
+      let localPlayer = playerAddress
         ? players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
         : null
+      localPlayer = await enrichLocalRole(client, BigInt(rid), localPlayer)
 
       // When the room has ended, infer the outcome from on-chain player states so the
       // game-over overlay is shown even when live socket events were missed.
@@ -423,22 +450,25 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       })
     })
 
-    socket.on('room_state', (initialState: { room: unknown; players: unknown[]; error?: string }) => {
+    socket.on('room_state', async (initialState: { room: unknown; players: unknown[]; error?: string }) => {
       // Server sends full room snapshot on join
       if (initialState?.room) {
         const room = mapRoom(initialState.room)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         room.players = (initialState.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
-        const localPlayer = playerAddress
+        let localPlayer = playerAddress
           ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
           : null
+        localPlayer = await enrichLocalRole(getContractClient(), BigInt(roomId), localPlayer)
         setState(prev => ({ ...prev, room, localPlayer, isLoading: false }))
       } else if (initialState?.error === 'room_not_found') {
         // Backend couldn't read the room (may be a brand-new room the RPC hasn't indexed
         // yet).  Try a direct chain read; only set the error if that also fails.
-        loadRoomFromChain(roomId, playerAddress ?? undefined).catch(() => {
+        try {
+          await loadRoomFromChain(roomId, playerAddress ?? undefined)
+        } catch {
           setState(prev => ({ ...prev, isLoading: false, error: 'Room not found.' }))
-        })
+        }
       } else {
         // Fallback: read from chain
         loadRoomFromChain(roomId, playerAddress ?? undefined)

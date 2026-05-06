@@ -111,14 +111,9 @@ function GamePageInner() {
   // ── Proof submission state ───────────────────────────────────────────────
   const [proving, setProving]       = useState(false)
   const [proofError, setProofError] = useState<string | null>(null)
-  const [proofDone, setProofDone]   = useState(false)
 
   // ── Role commitment state (during Starting phase) ────────────────────────
   const [committing, setCommitting]         = useState(false)
-  const [commitDone, setCommitDone]         = useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem(`committed:${roomId}:${address ?? ''}`) === '1'
-  })
   const [commitError, setCommitError]       = useState<string | null>(null)
   const [secretPhrase, setSecretPhrase]     = useState('')
 
@@ -139,11 +134,13 @@ function GamePageInner() {
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
   const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
-  const hasVoted      = !!optimisticVotedFor || (!!address && (currentRound?.votes.some(v => v.voterAddress.toLowerCase() === address.toLowerCase()) ?? false))
-  const myVotedTarget = optimisticVotedFor ?? (address ? currentRound?.votes.find(v => v.voterAddress.toLowerCase() === address.toLowerCase())?.targetAddress : undefined)
+  const hasVoted      = Boolean(optimisticVotedFor || localPlayer?.hasVotedThisRound)
+  const myVotedTarget = optimisticVotedFor ?? localPlayer?.voteTarget
+  const hasProofThisRound = Boolean(localPlayer?.hasProofThisRound)
+  const commitDone = Boolean(localPlayer?.roleCommitted)
   const canVote       = phase === 'voting' && isConnected && !!localPlayer && !localPlayer.isEliminated && !hasVoted && !voting
-  const canProve      = phase === 'discussion' && isConnected && !!localPlayer && !localPlayer.isEliminated && !proofDone
-  const canCommit     = room?.status === 'starting' && isConnected && !committing && !commitDone
+  const canProve      = phase === 'discussion' && isConnected && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound
+  const canCommit     = room?.status === 'starting' && isConnected && !!localPlayer && !committing && !commitDone
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
   // Spectator: wallet connected but address not in players list (late viewer)
   const isSpectator   = !!address && !!room && room.status === 'active' && !room.players.some(p => p.walletAddress.toLowerCase() === address.toLowerCase())
@@ -295,7 +292,6 @@ function GamePageInner() {
       }
 
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
-      setProofDone(true)
       toast.success('Innocence proof submitted!')
       refresh()
     } catch (err) {
@@ -324,8 +320,6 @@ function GamePageInner() {
       const proofBytes    = ('0x' + proofResult.proof.map((b: number) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
       const client = getContractClient()!
       await client.submitRoleCommitment(address, BigInt(roomId), commitmentHex, proofBytes)
-      localStorage.setItem(`committed:${roomId}:${address}`, '1')
-      setCommitDone(true)
       setSecretPhrase('')
       toast.success('Role committed!')
       refresh()
@@ -333,8 +327,6 @@ function GamePageInner() {
       const msg = err instanceof Error ? err.message : 'Role commitment failed.'
       // AlreadyCommitted means a previous submission went through — treat as success
       if (msg.includes('AlreadyCommitted')) {
-        localStorage.setItem(`committed:${roomId}:${address}`, '1')
-        setCommitDone(true)
         setSecretPhrase('')
         refresh()
       } else {
@@ -573,16 +565,16 @@ function GamePageInner() {
                     <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>You can observe but can no longer vote or submit proofs.</p>
                   </div>
                 )}
-                {!localPlayer?.isEliminated && localPlayer?.role === 'patient_zero' && (
-                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.5)', backgroundColor: 'rgba(245,197,24,0.1)' }}>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>☣ YOU ARE PATIENT ZERO</p>
-                    <p className="mt-2 font-mono text-xs" style={{ color: '#f5a918' }}>The plague started with you. Survive until the infected take over.</p>
-                  </div>
-                )}
-                {!localPlayer?.isEliminated && localPlayer?.role === 'infected' && (
+                {!localPlayer?.isEliminated && localPlayer?.status === 'infected' && (
                   <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.6)', backgroundColor: 'rgba(230,51,41,0.12)' }}>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>⚠ YOU ARE INFECTED</p>
-                    <p className="mt-2 font-mono text-xs" style={{ color: '#ff6b6b' }}>Spread the plague. Avoid suspicion. Do not submit an innocence proof.</p>
+                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>
+                      {localPlayer.role === 'patient_zero' ? '☣ YOU ARE PATIENT ZERO' : '⚠ YOU HAVE BEEN INFECTED'}
+                    </p>
+                    <p className="mt-2 font-mono text-xs" style={{ color: '#ff6b6b' }}>
+                      {localPlayer.role === 'patient_zero'
+                        ? 'The plague started with you. Lead the infected faction to parity.'
+                        : 'Spread the plague. Avoid suspicion. Infected players cannot submit innocence proofs.'}
+                    </p>
                   </div>
                 )}
 
@@ -707,7 +699,7 @@ function GamePageInner() {
                 )}
 
                 {/* Proof Submission panel (Discussion phase) — only for active participants */}
-                {phase === 'discussion' && !!localPlayer && !proofDone && (
+                {phase === 'discussion' && !!localPlayer && localPlayer.status !== 'infected' && !hasProofThisRound && (
                   <div
                     className="mt-5 rounded-lg border p-5"
                     style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}
@@ -739,7 +731,7 @@ function GamePageInner() {
                   </div>
                 )}
 
-                {proofDone && phase === 'discussion' && (
+                {phase === 'discussion' && hasProofThisRound && (
                   <p className="mt-4 font-mono text-xs" style={{ color: '#84cc16' }}>
                     ✓ Innocence proof submitted on-chain.
                   </p>
@@ -801,7 +793,7 @@ function GamePageInner() {
                   </div>
                 )}
 
-                {phase === 'voting' && !hasVoted && (
+                {phase === 'voting' && canVote && (
                   <div className="mt-4 space-y-2">
                     {activePlayers
                       .filter(p => p.walletAddress !== address)
@@ -836,6 +828,12 @@ function GamePageInner() {
                       {voting ? 'Submitting…' : 'Cast Vote'}
                     </button>
                   </div>
+                )}
+
+                {phase === 'voting' && !canVote && !hasVoted && (
+                  <p className="mt-4 font-mono text-xs" style={{ color: '#8fa882' }}>
+                    Voting is available only to alive room participants.
+                  </p>
                 )}
 
                 {phase !== 'voting' && currentRound?.votes.length ? (

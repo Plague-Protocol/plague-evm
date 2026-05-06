@@ -25,6 +25,7 @@ const PLAGUE_GAME_ABI = parseAbi([
   // View functions
   'function getRoom(uint256 roomId) external view returns ((uint256 id, address host, uint8 status, (uint32 minPlayers, uint32 maxPlayers, uint256 stakeAmount, uint32 maxRounds, uint64 roundDurationSecs, uint64 discussionDurationSecs, uint64 votingDurationSecs, uint64 expirySecs, uint256 proofFee) config, address[] players, uint32 currentRound, uint8 currentPhase, uint256 pot, uint64 createdAt, uint64 expiresAt, uint64 startedAt, uint64 phaseStartedAt))',
   'function getPlayer(uint256 roomId, address player) external view returns ((address addr, uint8 status, bytes32 roleCommitment, uint256 staked, address voteTarget, uint64 joinedAt, bool freeProofUsed, uint32 proofsSubmittedTotal, bool pendingInfectionNextRound, bool hasProofThisRound, bool hasVotedThisRound, bool roleCommitted))',
+  'function currentPatientZero(uint256 roomId) external view returns (address)',
   'function roomCount() external view returns (uint256)',
   // Events
   'event PlayerJoined(uint256 indexed roomId, address player)',
@@ -399,6 +400,15 @@ export class PlagueContractClient {
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'roomCount',
+    })
+  }
+
+  async getCurrentPatientZero(roomId: bigint): Promise<`0x${string}`> {
+    return this.publicClient.readContract({
+      address: this.address,
+      abi: PLAGUE_GAME_ABI,
+      functionName: 'currentPatientZero',
+      args: [roomId],
     })
   }
 }
