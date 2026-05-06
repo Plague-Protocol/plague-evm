@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 
 const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
+const SCREAM_TRACK = '/sounds/infected-win.mp3'
 
 const BG_FRAMES = [
   '/images/bg-horror.jpg',
@@ -22,13 +24,18 @@ const LORE: string[] = [
   'Before the plague takes hold.',
 ]
 
-// ── Typewriter hook ───────────────────────────────────────────────────────────
-function useTypewriter(lines: string[], msPerChar = 40, msBetweenLines = 600) {
+// ── Typewriter hook — restarts when `generation` increments ──────────────────
+function useTypewriter(lines: string[], generation: number, msPerChar = 40, msBetweenLines = 600) {
   const [displayed, setDisplayed] = useState<string[]>([])
   const [activeLine, setActiveLine] = useState(0)
   const [done, setDone] = useState(false)
 
   useEffect(() => {
+    // Reset on each generation
+    setDisplayed([])
+    setActiveLine(0)
+    setDone(false)
+
     let cancelled = false
     let lineIdx = 0
     let charIdx = 0
@@ -45,14 +52,12 @@ function useTypewriter(lines: string[], msPerChar = 40, msBetweenLines = 600) {
       charIdx++
       setDisplayed(prev => {
         const next = [...prev]
-        // Clamp slice index so the final character never gets dropped.
         const end = Math.min(charIdx, current.length)
         next[lineIdx] = current.slice(0, end)
         return next
       })
 
       if (charIdx >= current.length) {
-        // Force the final full line value before moving to the next line.
         setDisplayed(prev => {
           const next = [...prev]
           next[lineIdx] = current
@@ -68,12 +73,12 @@ function useTypewriter(lines: string[], msPerChar = 40, msBetweenLines = 600) {
     setTimeout(tick, 600)
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [generation])
 
   return { displayed, activeLine, done }
 }
 
-// ── Particles — tiny biohazard dots drifting upward ───────────────────────────
+// ── Particles — tiny biohazard dots drifting upward ──────────────────────────
 interface Particle {
   id: number
   x: number
@@ -96,34 +101,74 @@ const PARTICLES = generateParticles(24)
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export function SplashScreen() {
+  const pathname = usePathname()
+  const prevPathRef = useRef<string | null>(null)
+
   const [visible, setVisible] = useState(false)
   const [exiting, setExiting] = useState(false)
   const [finaleStatic, setFinaleStatic] = useState(false)
   const [titleSlam, setTitleSlam] = useState(false)
   const [audioArmed, setAudioArmed] = useState(false)
   const [bgIndex, setBgIndex] = useState(0)
+  const [generation, setGeneration] = useState(0)
   const ambientRef = useRef<HTMLAudioElement | null>(null)
-  const { displayed, activeLine, done } = useTypewriter(LORE)
+  const { displayed, activeLine, done } = useTypewriter(LORE, generation)
 
-  // Always show intro on each fresh visit before entering the app.
+  // Show splash whenever the user navigates BACK to home (soft nav only).
+  // On initial page load / hard refresh, prevPathRef is null → skip.
   useEffect(() => {
-    setVisible(true)
-  }, [])
+    if (prevPathRef.current === null) {
+      // First render after page load — record path, never show on refresh.
+      prevPathRef.current = pathname
+      return
+    }
+    if (pathname === '/' && prevPathRef.current !== '/') {
+      // Navigated to home from another page — replay the intro.
+      setBgIndex(0)
+      setExiting(false)
+      setFinaleStatic(false)
+      setTitleSlam(false)
+      setAudioArmed(false)
+      setGeneration(g => g + 1)
+      setVisible(true)
+    }
+    prevPathRef.current = pathname
+  }, [pathname])
 
-  // Background beat progression tracks the currently typed line.
+  // Background advances on an independent timer — one frame every ~4.5 s.
   useEffect(() => {
-    setBgIndex(Math.min(BG_FRAMES.length - 1, Math.floor(activeLine / 2)))
-  }, [activeLine])
+    if (!visible) return
+    setBgIndex(0)
+    const id = setInterval(() => {
+      setBgIndex(i => Math.min(BG_FRAMES.length - 1, i + 1))
+    }, 4500)
+    return () => clearInterval(id)
+  }, [visible, generation])
 
   // Light heartbeat punctuates each story beat.
   useEffect(() => {
     if (!visible) return
     const beat = new Audio('/sounds/heartbeat.mp3')
     beat.volume = 0.18
-    beat.play().catch(() => {
-      // Ignore autoplay errors; ambient fallback prompt covers interaction.
-    })
+    beat.play().catch(() => {})
   }, [activeLine, visible])
+
+  // Scream stab after "CONTAINMENT: FAILED" (line index 3) — one per generation.
+  useEffect(() => {
+    if (!visible || activeLine !== 3) return
+    const timer = setTimeout(() => {
+      const scream = new Audio(SCREAM_TRACK)
+      scream.volume = 0.22
+      // Play only the first ~1.8 s of the track so it reads as a sting, not a song.
+      scream.currentTime = 0
+      scream.play().catch(() => {})
+      setTimeout(() => {
+        scream.pause()
+        scream.currentTime = 0
+      }, 1800)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [activeLine, visible, generation])
 
   // Intro ambient sound. If autoplay is blocked, arm and retry on first user input.
   useEffect(() => {
@@ -149,7 +194,7 @@ export function SplashScreen() {
       audio.currentTime = 0
       ambientRef.current = null
     }
-  }, [visible])
+  }, [visible, generation])
 
   useEffect(() => {
     if (!visible || !audioArmed || !ambientRef.current) return
@@ -230,20 +275,25 @@ export function SplashScreen() {
         animation: exiting ? 'splash-exit 0.8s ease-in forwards' : 'splash-enter 0.6s ease-out both',
       }}
     >
-      {/* Story background frame */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          zIndex: 0,
-          backgroundImage: `url(${BG_FRAMES[bgIndex]})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          transform: 'scale(1.04)',
-          filter: 'saturate(0.9) contrast(1.05) brightness(0.4)',
-          transition: 'background-image 1.1s ease, filter 1.1s ease',
-        }}
-      />
+      {/* Story background frames — stacked layers, crossfade via opacity */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+        {BG_FRAMES.map((src, i) => (
+          <div
+            key={src}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: `url(${src})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              transform: 'scale(1.04)',
+              filter: 'saturate(0.9) contrast(1.05) brightness(0.4)',
+              opacity: i === bgIndex ? 1 : 0,
+              transition: 'opacity 2.5s ease',
+            }}
+          />
+        ))}
+      </div>
 
       {/* Scanlines overlay */}
       <div style={{
