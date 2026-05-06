@@ -1,10 +1,11 @@
 'use client'
+'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 
 const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
-const SCREAM_TRACK = '/sounds/infected-win.mp3'
+const SCREAM_TRACK  = '/sounds/infected-win.mp3'
 
 const BG_FRAMES = [
   '/images/bg-horror.jpg',
@@ -13,117 +14,158 @@ const BG_FRAMES = [
   '/images/bg-game.jpg',
 ] as const
 
-// ── Lore lines — typewriter text sequence ─────────────────────────────────────
-const LORE: string[] = [
-  'OUTBREAK DETECTED',
-  'ORIGIN: UNKNOWN',
-  'PATHOGEN: UNTRACEABLE',
-  'CONTAINMENT: FAILED',
-  'One infected. No cure. No mercy.',
-  'Find Patient Zero.',
-  'Before the plague takes hold.',
+// ── Story — three acts. Acts 1 & 2 fade+collapse when the next act begins. ───
+type Act = 1 | 2 | 3
+interface StoryLine { text: string; act: Act }
+
+const STORY: StoryLine[] = [
+  // Act I — Incubation
+  { text: 'Day 1 — a single cough in a crowded market.', act: 1 },
+  { text: 'Day 3 — two patients. High fever. Confusion.', act: 1 },
+  { text: 'Day 7 — the hospitals stopped counting.', act: 1 },
+  // Act II — Conspiracy
+  { text: 'The authorities declared full containment.', act: 2 },
+  { text: 'They lied.', act: 2 },
+  { text: 'The pathogen was already past the walls.', act: 2 },
+  // Act III — The Game (persists, never fades)
+  { text: 'Someone in this room carried it here.', act: 3 },
+  { text: 'One of you is Patient Zero.', act: 3 },
+  { text: 'Trust no one.  Find them first.', act: 3 },
 ]
 
-// ── Typewriter hook — restarts when `generation` increments ──────────────────
-function useTypewriter(lines: string[], generation: number, msPerChar = 40, msBetweenLines = 600) {
-  const [displayed, setDisplayed] = useState<string[]>([])
+const MS_PER_CHAR      = 44
+const MS_BETWEEN_LINES = 720
+const ACT_FADE_MS      = 1300  // CSS transition duration for fading acts out
+const ACT_PAUSE_MS     = 2000  // total pause (fade + settle) before next act types
+
+// ── Per-line render state ─────────────────────────────────────────────────────
+interface LineState {
+  text:      string       // currently displayed partial / full text
+  full:      string       // the complete target string
+  opacity:   number       // 1 = visible, 0 = fading out
+  collapsed: boolean      // true after fade completes → max-height collapses to 0
+  act:       1 | 2 | 3
+}
+
+// ── Pure state-updater factories (module-scope reduces nesting depth) ─────────
+function fadeAct(act: Act) {
+  return (prev: LineState[]) => prev.map(l => l.act === act ? { ...l, opacity: 0 } : l)
+}
+function collapseAct(act: Act) {
+  return (prev: LineState[]) => prev.map(l => l.act === act ? { ...l, collapsed: true } : l)
+}
+function startLine(i: number, text: string, act: Act) {
+  return (prev: LineState[]) => {
+    const next = [...prev]
+    next[i] = { text: '', full: text, opacity: 1, collapsed: false, act }
+    return next
+  }
+}
+function updateChar(i: number, text: string, c: number) {
+  return (prev: LineState[]) =>
+    prev.map((l, idx) => idx === i ? { ...l, text: text.slice(0, c) } : l)
+}
+function completeLine(i: number, text: string) {
+  return (prev: LineState[]) =>
+    prev.map((l, idx) => idx === i ? { ...l, text } : l)
+}
+
+// ── Async typewriter — clean loop, no double-setState, resets on generation ──
+function useStoryTypewriter(generation: number) {
+  const [lines, setLines]           = useState<LineState[]>([])
   const [activeLine, setActiveLine] = useState(0)
-  const [done, setDone] = useState(false)
+  const [done, setDone]             = useState(false)
 
   useEffect(() => {
-    // Reset on each generation
-    setDisplayed([])
+    setLines([])
     setActiveLine(0)
     setDone(false)
 
     let cancelled = false
-    let lineIdx = 0
-    let charIdx = 0
+    const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
-    const tick = () => {
-      if (cancelled) return
-      if (lineIdx >= lines.length) {
-        setDone(true)
-        return
-      }
-
-      setActiveLine(lineIdx)
-      const current = lines[lineIdx]
-      charIdx++
-      setDisplayed(prev => {
-        const next = [...prev]
-        const end = Math.min(charIdx, current.length)
-        next[lineIdx] = current.slice(0, end)
-        return next
-      })
-
-      if (charIdx >= current.length) {
-        setDisplayed(prev => {
-          const next = [...prev]
-          next[lineIdx] = current
-          return next
-        })
-        lineIdx++
-        charIdx = 0
-        setTimeout(tick, msBetweenLines)
-      } else {
-        setTimeout(tick, msPerChar)
-      }
+    // Fade out the previous act then pause before the next act starts typing.
+    async function transitionAct(fadingAct: Act) {
+      setLines(fadeAct(fadingAct))
+      setTimeout(() => { if (!cancelled) setLines(collapseAct(fadingAct)) }, ACT_FADE_MS + 100)
+      await wait(ACT_PAUSE_MS)
     }
-    setTimeout(tick, 600)
+
+    // Type a single story line character by character.
+    async function typeLine(i: number, text: string, act: Act) {
+      setActiveLine(i)
+      setLines(startLine(i, text, act))
+      await wait(MS_PER_CHAR)  // brief pause before first character appears
+      for (let c = 1; c <= text.length; c++) {
+        if (cancelled) return
+        setLines(updateChar(i, text, c))
+        if (c < text.length) await wait(MS_PER_CHAR)
+      }
+      if (!cancelled) setLines(completeLine(i, text))  // safety-net full string
+      await wait(MS_BETWEEN_LINES)
+    }
+
+    async function run() {
+      let prevAct: number | null = null
+
+      for (let i = 0; i < STORY.length; i++) {
+        if (cancelled) return
+        const { text, act } = STORY[i]
+
+        if (prevAct !== null && act !== prevAct) {
+          await transitionAct(prevAct as Act)
+          if (cancelled) return
+        }
+        await typeLine(i, text, act)
+        prevAct = act
+      }
+
+      if (!cancelled) setDone(true)
+    }
+
+    run()
     return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generation])
 
-  return { displayed, activeLine, done }
+  return { lines, activeLine, done }
 }
 
-// ── Particles — tiny biohazard dots drifting upward ──────────────────────────
-interface Particle {
-  id: number
-  x: number
-  size: number
-  delay: number
-  duration: number
-}
+// ── Particles ─────────────────────────────────────────────────────────────────
+interface Particle { id: number; x: number; size: number; delay: number; duration: number }
 
-function generateParticles(n: number): Particle[] {
-  return Array.from({ length: n }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    size: 3 + Math.random() * 5,
-    delay: Math.random() * 8,
-    duration: 6 + Math.random() * 8,
-  }))
-}
-
-const PARTICLES = generateParticles(24)
+const PARTICLES: Particle[] = Array.from({ length: 24 }, (_, i) => ({
+  id: i,
+  x: Math.random() * 100,
+  size: 3 + Math.random() * 5,
+  delay: Math.random() * 8,
+  duration: 6 + Math.random() * 8,
+}))
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export function SplashScreen() {
-  const pathname = usePathname()
+  const pathname    = usePathname()
   const prevPathRef = useRef<string | null>(null)
 
-  const [visible, setVisible] = useState(false)
-  const [exiting, setExiting] = useState(false)
+  const [visible,      setVisible]      = useState(false)
+  const [exiting,      setExiting]      = useState(false)
   const [finaleStatic, setFinaleStatic] = useState(false)
-  const [titleSlam, setTitleSlam] = useState(false)
-  const [audioArmed, setAudioArmed] = useState(false)
-  const [bgIndex, setBgIndex] = useState(0)
-  const [generation, setGeneration] = useState(0)
-  const ambientRef = useRef<HTMLAudioElement | null>(null)
-  const { displayed, activeLine, done } = useTypewriter(LORE, generation)
+  const [titleSlam,    setTitleSlam]    = useState(false)
+  const [audioArmed,   setAudioArmed]   = useState(false)
+  const [bgIndex,      setBgIndex]      = useState(0)
+  const [generation,   setGeneration]   = useState(0)
 
-  // Show splash whenever the user navigates BACK to home (soft nav only).
-  // On initial page load / hard refresh, prevPathRef is null → skip.
+  const ambientRef       = useRef<HTMLAudioElement | null>(null)
+  const lastHeartbeatRef = useRef(0)
+
+  const { lines, activeLine, done } = useStoryTypewriter(generation)
+
+  // ── Route-based trigger: replay only when navigating back to home ──────────
   useEffect(() => {
     if (prevPathRef.current === null) {
-      // First render after page load — record path, never show on refresh.
-      prevPathRef.current = pathname
+      prevPathRef.current = pathname   // first mount — record, don't show
       return
     }
     if (pathname === '/' && prevPathRef.current !== '/') {
-      // Navigated to home from another page — replay the intro.
       setBgIndex(0)
       setExiting(false)
       setFinaleStatic(false)
@@ -135,110 +177,88 @@ export function SplashScreen() {
     prevPathRef.current = pathname
   }, [pathname])
 
-  // Background advances on an independent timer — one frame every ~4.5 s.
+  // ── Lock body scroll while splash is open ────────────────────────────────
+  useEffect(() => {
+    document.body.style.overflow = visible ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [visible])
+
+  // ── Background crossfade — independent 4.5 s timer ───────────────────────
   useEffect(() => {
     if (!visible) return
     setBgIndex(0)
-    const id = setInterval(() => {
-      setBgIndex(i => Math.min(BG_FRAMES.length - 1, i + 1))
-    }, 4500)
+    const id = setInterval(() =>
+      setBgIndex(i => Math.min(BG_FRAMES.length - 1, i + 1)), 4500)
     return () => clearInterval(id)
   }, [visible, generation])
 
-  // Light heartbeat punctuates each story beat.
+  // ── Heartbeat — rate-limited to max once per 1.4 s ───────────────────────
   useEffect(() => {
     if (!visible) return
+    const now = Date.now()
+    if (now - lastHeartbeatRef.current < 1400) return
+    lastHeartbeatRef.current = now
     const beat = new Audio('/sounds/heartbeat.mp3')
     beat.volume = 0.18
     beat.play().catch(() => {})
   }, [activeLine, visible])
 
-  // Scream stab after "CONTAINMENT: FAILED" (line index 3) — one per generation.
+  // ── Scream — fires at Act I climax (line 2 "Day 7…"), echoes out over 4 s ─
   useEffect(() => {
-    if (!visible || activeLine !== 3) return
-    const timer = setTimeout(() => {
+    if (!visible || activeLine !== 2) return
+    const fire = setTimeout(() => {
       const scream = new Audio(SCREAM_TRACK)
-      scream.volume = 0.22
-      // Play only the first ~1.8 s of the track so it reads as a sting, not a song.
-      scream.currentTime = 0
+      scream.volume = 0.24
       scream.play().catch(() => {})
-      setTimeout(() => {
-        scream.pause()
-        scream.currentTime = 0
-      }, 1800)
-    }, 300)
-    return () => clearTimeout(timer)
+      // 20 steps × 200 ms = 4 s fade-out
+      let step = 0
+      const fade = setInterval(() => {
+        step++
+        scream.volume = Math.max(0, 0.24 * (1 - step / 20))
+        if (step >= 20) { clearInterval(fade); scream.pause() }
+      }, 200)
+    }, 500)
+    return () => clearTimeout(fire)
   }, [activeLine, visible, generation])
 
-  // Intro ambient sound. If autoplay is blocked, arm and retry on first user input.
+  // ── Ambient audio ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!visible) return
-
     const audio = new Audio(AMBIENT_TRACK)
-    audio.loop = true
+    audio.loop   = true
     audio.volume = 0.28
     ambientRef.current = audio
-
-    const start = async () => {
-      try {
-        await audio.play()
-      } catch {
-        setAudioArmed(true)
-      }
-    }
-
-    void start()
-
-    return () => {
-      audio.pause()
-      audio.currentTime = 0
-      ambientRef.current = null
-    }
+    audio.play().catch(() => setAudioArmed(true))
+    return () => { audio.pause(); audio.currentTime = 0; ambientRef.current = null }
   }, [visible, generation])
 
+  // ── Arm audio on first user gesture ──────────────────────────────────────
   useEffect(() => {
     if (!visible || !audioArmed || !ambientRef.current) return
-    const resume = () => {
-      const audio = ambientRef.current
-      if (!audio) return
-      audio.play().then(() => setAudioArmed(false)).catch(() => {
-        // Keep armed state until a browser-permitted interaction succeeds.
-      })
-    }
+    const resume = () =>
+      ambientRef.current?.play().then(() => setAudioArmed(false)).catch(() => {})
     globalThis.addEventListener('pointerdown', resume, { once: true })
-    globalThis.addEventListener('keydown', resume, { once: true })
+    globalThis.addEventListener('keydown',     resume, { once: true })
     return () => {
       globalThis.removeEventListener('pointerdown', resume)
-      globalThis.removeEventListener('keydown', resume)
+      globalThis.removeEventListener('keydown',     resume)
     }
   }, [visible, audioArmed])
 
+  // ── Dismiss / finale ─────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
     if (exiting || finaleStatic) return
     setFinaleStatic(true)
     setTitleSlam(true)
     const sting = new Audio('/sounds/reveal-sting.mp3')
     sting.volume = 0.35
-    sting.play().catch(() => {
-      // Ignore autoplay restrictions for the one-shot sting.
-    })
-
-    setTimeout(() => {
-      setExiting(true)
-    }, 260)
-
-    if (ambientRef.current) {
-      ambientRef.current.pause()
-      ambientRef.current.currentTime = 0
-    }
-    setTimeout(() => {
-      setVisible(false)
-      setFinaleStatic(false)
-      setTitleSlam(false)
-    }, 900)
+    sting.play().catch(() => {})
+    setTimeout(() => setExiting(true), 260)
+    if (ambientRef.current) { ambientRef.current.pause(); ambientRef.current.currentTime = 0 }
+    setTimeout(() => { setVisible(false); setFinaleStatic(false); setTitleSlam(false) }, 900)
   }, [exiting, finaleStatic])
 
-  // Allow keyboard Enter/Space to dismiss too
+  // ── Keyboard dismiss ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!visible) return
     const onKey = (e: KeyboardEvent) => {
@@ -254,211 +274,229 @@ export function SplashScreen() {
     <dialog
       open
       aria-label="Plague Protocol intro"
-      className="splash-root"
       style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100vw',
-        height: '100vh',
-        maxWidth: '100vw',
-        maxHeight: '100vh',
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
+        position:        'fixed',
+        inset:           0,
+        width:           '100vw',
+        height:          '100vh',
+        maxWidth:        '100vw',
+        maxHeight:       '100vh',
+        zIndex:          9999,
+        display:         'flex',
+        flexDirection:   'column',
+        alignItems:      'center',
+        justifyContent:  'center',
         backgroundColor: '#000',
-        overflow: 'hidden',
-        border: 'none',
-        padding: 0,
-        margin: 0,
-        animation: exiting ? 'splash-exit 0.8s ease-in forwards' : 'splash-enter 0.6s ease-out both',
+        overflow:        'hidden',
+        border:          'none',
+        padding:         0,
+        margin:          0,
+        animation: exiting
+          ? 'splash-exit 0.8s ease-in forwards'
+          : 'splash-enter 0.6s ease-out both',
       }}
     >
-      {/* Story background frames — stacked layers, crossfade via opacity */}
+      {/* Background layers — stacked, crossfade via opacity transition */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
         {BG_FRAMES.map((src, i) => (
-          <div
-            key={src}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: `url(${src})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              transform: 'scale(1.04)',
-              filter: 'saturate(0.9) contrast(1.05) brightness(0.4)',
-              opacity: i === bgIndex ? 1 : 0,
-              transition: 'opacity 2.5s ease',
-            }}
-          />
+          <div key={src} style={{
+            position:           'absolute',
+            inset:              0,
+            backgroundImage:    `url(${src})`,
+            backgroundSize:     'cover',
+            backgroundPosition: 'center',
+            transform:          'scale(1.04)',
+            filter:             'saturate(0.9) contrast(1.05) brightness(0.38)',
+            opacity:            i === bgIndex ? 1 : 0,
+            transition:         'opacity 2.5s ease',
+          }} />
         ))}
       </div>
 
-      {/* Scanlines overlay */}
+      {/* Scanlines */}
       <div style={{
-        position: 'absolute',
-        inset: 0,
+        position:        'absolute',
+        inset:           0,
+        zIndex:          1,
         backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px)',
-        pointerEvents: 'none',
-        zIndex: 1,
+        pointerEvents:   'none',
       }} />
 
       {/* Finale static burst */}
       <div style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        zIndex: 3,
-        opacity: finaleStatic ? 0.55 : 0,
-        transition: 'opacity 0.18s ease',
+        position:        'absolute',
+        inset:           0,
+        zIndex:          3,
+        pointerEvents:   'none',
+        opacity:         finaleStatic ? 0.55 : 0,
+        transition:      'opacity 0.18s ease',
         backgroundImage: 'radial-gradient(circle at 20% 10%, rgba(255,255,255,0.38) 0 1px, transparent 1px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.28) 0 1px, transparent 1px), radial-gradient(circle at 55% 30%, rgba(255,255,255,0.42) 0 1px, transparent 1px)',
-        backgroundSize: '6px 6px, 8px 8px, 5px 5px',
-        animation: finaleStatic ? 'splash-static 0.22s steps(4) infinite' : 'none',
+        backgroundSize:  '6px 6px, 8px 8px, 5px 5px',
+        animation:       finaleStatic ? 'splash-static 0.22s steps(4) infinite' : 'none',
       }} />
 
       {/* Floating particles */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
         {PARTICLES.map(p => (
-          <span
-            key={p.id}
-            style={{
-              position: 'absolute',
-              bottom: '-12px',
-              left: `${p.x}%`,
-              width: `${p.size}px`,
-              height: `${p.size}px`,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(57,255,20,0.35)',
-              boxShadow: '0 0 6px rgba(57,255,20,0.5)',
-              animation: `splash-particle ${p.duration}s ${p.delay}s ease-in infinite`,
-            }}
-          />
+          <span key={p.id} style={{
+            position:        'absolute',
+            bottom:          '-12px',
+            left:            `${p.x}%`,
+            width:           `${p.size}px`,
+            height:          `${p.size}px`,
+            borderRadius:    '50%',
+            backgroundColor: 'rgba(57,255,20,0.35)',
+            boxShadow:       '0 0 6px rgba(57,255,20,0.5)',
+            animation:       `splash-particle ${p.duration}s ${p.delay}s ease-in infinite`,
+          }} />
         ))}
       </div>
 
       {/* Blood vignette */}
       <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.7) 100%), radial-gradient(ellipse at center, transparent 35%, rgba(180,0,0,0.22) 100%)',
+        position:      'absolute',
+        inset:         0,
+        zIndex:        1,
         pointerEvents: 'none',
-        zIndex: 1,
+        background:    'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.7) 100%), radial-gradient(ellipse at center, transparent 35%, rgba(180,0,0,0.22) 100%)',
       }} />
 
-      {/* Content */}
-      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem', padding: '2rem', maxWidth: '560px', textAlign: 'center' }}>
+      {/* ── Content ────────────────────────────────────────────────────────── */}
+      <div style={{
+        position:      'relative',
+        zIndex:        2,
+        display:       'flex',
+        flexDirection: 'column',
+        alignItems:    'center',
+        gap:           '1.5rem',
+        padding:       '2rem',
+        maxWidth:      '600px',
+        width:         '100%',
+        textAlign:     'center',
+      }}>
 
-        {/* Biohazard symbol */}
-        <div
-          style={{
-            fontSize: '5rem',
+        {/* Biohazard + title */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+          <div style={{
+            fontSize:  '4rem',
             lineHeight: 1,
             animation: 'splash-pulse 3s ease-in-out infinite',
-            filter: 'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
-          }}
-        >
-          ☣
+            filter:    'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
+          }}>☣</div>
+
+          <h1 style={{
+            fontFamily:    'var(--font-display)',
+            fontSize:      'clamp(2.4rem, 7vw, 4.2rem)',
+            lineHeight:    1,
+            color:         '#d4c9b2',
+            letterSpacing: '0.06em',
+            textShadow:    '0 0 30px rgba(230,51,41,0.5)',
+            margin:        0,
+            transform:     titleSlam ? 'scale(1.12) skewX(-2deg)' : 'scale(1)',
+            transition:    'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+          }}>
+            PLAGUE PROTOCOL
+          </h1>
         </div>
 
-        {/* Title */}
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(2.8rem, 8vw, 5rem)',
-            lineHeight: 1,
-            color: '#d4c9b2',
-            letterSpacing: '0.06em',
-            textShadow: '0 0 30px rgba(230,51,41,0.5)',
-            margin: 0,
-            transform: titleSlam ? 'scale(1.12) skewX(-2deg)' : 'scale(1)',
-            transition: 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
-          }}
-        >
-          PLAGUE PROTOCOL
-        </h1>
-
-        {/* Typewriter lore */}
-        <div style={{ minHeight: '9rem', width: '100%', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-          {displayed.map((line, i) => {
-            const isLate = i >= 4        // last 3 lines are prose
-            const isLast = i === displayed.length - 1
+        {/* Story lines — fade+collapse between acts */}
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {lines.map((line, i) => {
+            const isAct3   = line.act === 3
+            const isClimax = isAct3 && i === STORY.length - 1 && done
+            let fontSize = '0.82rem'
+            if (isAct3) fontSize = i === STORY.length - 1 ? '1.15rem' : '0.95rem'
+            let marginBottom: string | number = isAct3 ? '0.55rem' : '0.32rem'
+            if (line.collapsed) marginBottom = 0
+            let textColor = '#7a8c74'
+            if (isAct3) textColor = '#d4c9b2'
+            if (isClimax) textColor = '#e63329'
+            const cursor = i === activeLine && !done
+              ? { borderRight: '2px solid #39ff14', paddingRight: '4px' }
+              : {}
             return (
-              <p
-                key={LORE[i]}
-                style={{
-                  margin: 0,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: isLate ? '1.05rem' : '0.8rem',
-                  letterSpacing: isLate ? '0.05em' : '0.22em',
-                  color: isLate ? '#d4c9b2' : '#e63329',
-                  textShadow: isLate ? undefined : '0 0 8px rgba(230,51,41,0.6)',
-                  fontWeight: isLate ? 400 : 700,
-                  paddingInline: '0.35rem',
-                  overflow: 'visible',
-                  // Blinking cursor on the line currently being typed
-                  ...(isLast && !done ? { borderRight: '2px solid #39ff14', paddingRight: '2px' } : {}),
-                }}
-              >
-                {line}
-              </p>
+              <div key={line.full} style={{
+                opacity:      line.opacity,
+                maxHeight:    line.collapsed ? '0px' : '3rem',
+                overflow:     'hidden',
+                transition:   `opacity ${ACT_FADE_MS}ms ease, max-height ${ACT_FADE_MS + 200}ms ease, margin-bottom ${ACT_FADE_MS + 200}ms ease`,
+                marginBottom,
+                width:        '100%',
+                textAlign:    'center',
+              }}>
+                <p style={{
+                  margin:        0,
+                  fontFamily:    'var(--font-mono)',
+                  fontSize,
+                  letterSpacing: isAct3 ? '0.04em' : '0.06em',
+                  // paddingRight compensates for trailing letter-spacing that
+                  // browsers visually clip at the text content-box edge
+                  paddingRight:  '0.12em',
+                  color:      textColor,
+                  textShadow: isClimax ? '0 0 14px rgba(230,51,41,0.75)' : 'none',
+                  fontWeight: isAct3 ? 600 : 400,
+                  ...cursor,
+                }}>
+                  {line.text}
+                </p>
+              </div>
             )
           })}
         </div>
 
-        {/* Enter button — fades in when typewriter finishes */}
+        {/* ENTER button — appears when story finishes */}
         <button
           onClick={dismiss}
           disabled={exiting || finaleStatic}
           style={{
-            marginTop: '0.5rem',
-            padding: '0.75rem 2.5rem',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '1rem',
+            marginTop:     '0.25rem',
+            padding:       '0.75rem 2.5rem',
+            fontFamily:    'var(--font-mono)',
+            fontSize:      '1rem',
             letterSpacing: '0.28em',
             textTransform: 'uppercase',
-            fontWeight: 700,
-            color: '#060b06',
+            fontWeight:    700,
+            color:         '#060b06',
             backgroundColor: '#39ff14',
-            border: '2px solid #39ff14',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            boxShadow: '0 0 24px rgba(57,255,20,0.6)',
-            opacity: done ? 1 : 0,
-            transform: done ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'opacity 0.6s ease, transform 0.6s ease, box-shadow 0.2s',
+            border:        '2px solid #39ff14',
+            borderRadius:  '6px',
+            cursor:        'pointer',
+            boxShadow:     '0 0 24px rgba(57,255,20,0.6)',
+            opacity:       done ? 1 : 0,
+            transform:     done ? 'translateY(0)' : 'translateY(8px)',
+            transition:    'opacity 0.6s ease, transform 0.6s ease, box-shadow 0.2s',
             pointerEvents: done && !exiting && !finaleStatic ? 'auto' : 'none',
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)' }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)'
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)'
+          }}
         >
           ENTER
         </button>
 
-        <p
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '0.65rem',
-            letterSpacing: '0.15em',
-            color: '#4a5e44',
-            margin: 0,
-            opacity: done ? 0.7 : 0,
-            transition: 'opacity 0.8s 0.3s',
-          }}
-        >
+        <p style={{
+          fontFamily:    'var(--font-mono)',
+          fontSize:      '0.65rem',
+          letterSpacing: '0.15em',
+          color:         '#4a5e44',
+          margin:        0,
+          opacity:       done ? 0.7 : 0,
+          transition:    'opacity 0.8s 0.3s',
+        }}>
           Press ENTER or SPACE to continue
         </p>
 
         {audioArmed && (
-          <p
-            style={{
-              margin: 0,
-              fontFamily: 'var(--font-mono)',
-              fontSize: '0.65rem',
-              letterSpacing: '0.14em',
-              color: '#f5c518',
-            }}
-          >
+          <p style={{
+            margin:        0,
+            fontFamily:    'var(--font-mono)',
+            fontSize:      '0.65rem',
+            letterSpacing: '0.14em',
+            color:         '#f5c518',
+          }}>
             Tap anywhere to enable intro audio
           </p>
         )}
