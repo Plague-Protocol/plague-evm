@@ -108,7 +108,6 @@ interface CreateRoomActionArgs {
   connect: () => Promise<void>
   maxPlayers: number
   stakeInput: string
-  proofFeeInput: string
   setCreating: (value: boolean) => void
   loadRooms: () => Promise<void>
   pushToGame: (roomId: bigint) => void
@@ -122,7 +121,6 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     connect,
     maxPlayers,
     stakeInput,
-    proofFeeInput,
     setCreating,
     loadRooms,
     pushToGame,
@@ -137,7 +135,7 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
   if (!client) return
 
   const stakeWei = BigInt(Math.round(Number.parseFloat(stakeInput) * 1e18))
-  const feeWei   = BigInt(Math.round(Number.parseFloat(proofFeeInput) * 1e18))
+  const feeWei   = stakeWei / 100n
   setCreating(true)
 
   try {
@@ -448,7 +446,6 @@ export default function LobbyPage() {
   // ── Create room form state ─────────────────────────────────────────────────
   const [maxPlayers, setMaxPlayers]   = useState(6)
   const [stakeInput, setStakeInput]   = useState('10')
-  const [proofFeeInput, setProofFeeInput] = useState('2')
   const [creating, setCreating]       = useState(false)
 
   // ── Join state ─────────────────────────────────────────────────────────────
@@ -586,12 +583,11 @@ export default function LobbyPage() {
       connect,
       maxPlayers,
       stakeInput,
-      proofFeeInput,
       setCreating,
       loadRooms,
       pushToGame,
     })
-  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, proofFeeInput, loadRooms, pushToGame, myActiveRoom])
+  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, loadRooms, pushToGame, myActiveRoom])
 
   const handleJoin = useCallback(async (room: RoomRow) => {
     // Already in this room — navigate back only if room hasn't expired
@@ -723,21 +719,9 @@ export default function LobbyPage() {
                       />
                     </div>
                   </div>
-                  <div>
-                    <label htmlFor="proofFeeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                      Proof Fee (cUSD per extra proof)
-                    </label>
-                    <input
-                      id="proofFeeInput"
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={proofFeeInput}
-                      onChange={e => setProofFeeInput(e.target.value)}
-                      className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
-                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
-                    />
-                  </div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+                    Proof fee: 1% of stake ({(Number.parseFloat(stakeInput || '0') * 0.01).toFixed(4)} cUSD per extra proof)
+                  </p>
 
                   {myActiveRoom && myActiveRoom.players >= myActiveRoom.maxPlayers && (
                     <p className="font-mono text-xs" style={{ color: '#39ff14' }}>
