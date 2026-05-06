@@ -2,7 +2,6 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { usePathname } from 'next/navigation'
 
 const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
 const SCREAM_TRACK  = '/sounds/infected-win.mp3'
@@ -143,16 +142,13 @@ const PARTICLES: Particle[] = Array.from({ length: 24 }, (_, i) => ({
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export function SplashScreen() {
-  const pathname    = usePathname()
-  const prevPathRef = useRef<string | null>(null)
-
   const [visible,      setVisible]      = useState(false)
   const [exiting,      setExiting]      = useState(false)
   const [finaleStatic, setFinaleStatic] = useState(false)
   const [titleSlam,    setTitleSlam]    = useState(false)
   const [audioArmed,   setAudioArmed]   = useState(false)
   const [bgIndex,      setBgIndex]      = useState(0)
-  const [generation,   setGeneration]   = useState(0)
+  const generation = 0
 
   const ambientRef       = useRef<HTMLAudioElement | null>(null)
   const lastHeartbeatRef = useRef(0)
@@ -165,24 +161,6 @@ export function SplashScreen() {
     if (!seen) setVisible(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // ── Route-based trigger: replay when navigating back to home ─────────────
-  useEffect(() => {
-    if (prevPathRef.current === null) {
-      prevPathRef.current = pathname   // first mount — record path, handled above
-      return
-    }
-    if (pathname === '/' && prevPathRef.current !== '/') {
-      setBgIndex(0)
-      setExiting(false)
-      setFinaleStatic(false)
-      setTitleSlam(false)
-      setAudioArmed(false)
-      setGeneration(g => g + 1)
-      setVisible(true)
-    }
-    prevPathRef.current = pathname
-  }, [pathname])
 
   // ── Lock body scroll while splash is open ────────────────────────────────
   useEffect(() => {

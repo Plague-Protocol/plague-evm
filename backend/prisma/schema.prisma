@@ -26,6 +26,7 @@ model Room {
   roomId      String     @unique
   hostAddress String
   status      RoomStatus @default(waiting)
+  name        String?
 
   maxPlayers  Int
   stakeAmount String
@@ -51,4 +52,11 @@ model RoomPlayer {
 
   @@unique([roomDbId, address])
   @@index([address])
+}
+
+model PlayerNickname {
+  address  String @id
+  nickname String
+
+  updatedAt DateTime @updatedAt
 }

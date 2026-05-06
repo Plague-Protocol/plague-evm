@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { isAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
 import { createRoomRecord, getActiveRoomByHost, listWaitingRooms } from '../repositories/rooms'
+import { prisma } from '../db/prisma'
 
 export const roomRouter = Router()
 
@@ -98,3 +99,44 @@ roomRouter.post('/', async (req, res) => {
   }
 })
 
+const RoomNameSchema = z.object({
+  name: z.string().min(1).max(40).trim(),
+})
+
+/**
+ * PUT /api/rooms/:id/name
+ * Set or update the display name of a room (off-chain).
+ * Body: { name: string }
+ */
+roomRouter.put('/:id/name', async (req, res) => {
+  const parsed = RoomNameSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() })
+  }
+  const roomId = req.params.id
+  try {
+    const room = await prisma.room.update({
+      where: { roomId },
+      data: { name: parsed.data.name },
+    })
+    res.json({ name: room.name })
+  } catch {
+    res.status(404).json({ error: `Room ${roomId} not found` })
+  }
+})
+
+/**
+ * GET /api/rooms/:id/name
+ * Get the display name of a room.
+ */
+roomRouter.get('/:id/name', async (req, res) => {
+  const roomId = req.params.id
+  try {
+    const room = await prisma.room.findUnique({ where: { roomId }, select: { name: true } })
+    if (!room) return res.status(404).json({ error: `Room ${roomId} not found` })
+    res.json({ name: room.name ?? null })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})

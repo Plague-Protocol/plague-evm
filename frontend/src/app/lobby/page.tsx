@@ -77,6 +77,7 @@ interface RoomRow {
   expiresAt: number   // unix ms
   pot: bigint
   host: string
+  name?: string | null
 }
 
 function getContractClient() {
@@ -108,6 +109,7 @@ interface CreateRoomActionArgs {
   connect: () => Promise<void>
   maxPlayers: number
   stakeInput: string
+  roomNameInput: string
   setCreating: (value: boolean) => void
   loadRooms: () => Promise<void>
   pushToGame: (roomId: bigint) => void
@@ -121,6 +123,7 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     connect,
     maxPlayers,
     stakeInput,
+    roomNameInput,
     setCreating,
     loadRooms,
     pushToGame,
@@ -147,6 +150,16 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
       await client.approveCUSD(address, cUSDAddr, stakeWei)
     }
     const newId = await client.createRoom(address, maxPlayers, stakeWei, feeWei, 600)
+    // Persist room name off-chain
+    const trimmedName = roomNameInput.trim()
+    if (trimmedName) {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+      await fetch(`${backendUrl}/api/rooms/${newId.toString()}/name`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedName }),
+      }).catch(() => { /* non-fatal */ })
+    }
     await loadRooms()
     pushToGame(newId)
   } catch (err) {
@@ -350,7 +363,9 @@ function RoomCard({
       {/* Top row */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: statusColor[room.status], boxShadow: `0 0 6px ${statusColor[room.status]}` }} />
-        <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>Room #{room.id.toString()}</span>
+        <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
+          {room.name ? room.name : `Room #${room.id.toString()}`}
+        </span>
         {room.status === 'active' && (
           <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(245,197,24,0.15)', color: '#f5c518', border: '1px solid rgba(245,197,24,0.3)' }}>
             In Progress
@@ -373,7 +388,7 @@ function RoomCard({
         )}
       </div>
 
-      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}</p>
+      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}{room.name ? ` · #${room.id.toString()}` : ''}</p>
 
       {/* Stats + action row */}
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
@@ -446,7 +461,13 @@ export default function LobbyPage() {
   // ── Create room form state ─────────────────────────────────────────────────
   const [maxPlayers, setMaxPlayers]   = useState(6)
   const [stakeInput, setStakeInput]   = useState('10')
+  const [roomNameInput, setRoomNameInput] = useState('')
   const [creating, setCreating]       = useState(false)
+
+  // ── Player nickname state ──────────────────────────────────────────────────
+  const [nicknameInput, setNicknameInput] = useState('')
+  const [savedNickname, setSavedNickname] = useState<string | null>(null)
+  const [savingNickname, setSavingNickname] = useState(false)
 
   // ── Join state ─────────────────────────────────────────────────────────────
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
@@ -521,7 +542,42 @@ export default function LobbyPage() {
     }
   }
 
-  // ── Load rooms from contract ───────────────────────────────────────────────
+  // ── Load own nickname on connect ──────────────────────────────────────────
+  useEffect(() => {
+    if (!address) return
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+    fetch(`${backendUrl}/api/players/${address}/nickname`)
+      .then(r => r.json())
+      .then((d: { nickname: string | null }) => {
+        setSavedNickname(d.nickname)
+        setNicknameInput(d.nickname ?? '')
+      })
+      .catch(() => { /* silently ignore */ })
+  }, [address])
+
+  const handleSaveNickname = useCallback(async () => {
+    if (!address) return
+    const trimmed = nicknameInput.trim()
+    if (!trimmed) return
+    setSavingNickname(true)
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+      const res = await fetch(`${backendUrl}/api/players/nickname`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, nickname: trimmed }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      setSavedNickname(trimmed)
+      toast.success(`Nickname saved: ${trimmed}`)
+    } catch {
+      toast.error('Could not save nickname. Try again.')
+    } finally {
+      setSavingNickname(false)
+    }
+  }, [address, nicknameInput])
+
+  // ── Load room names after rooms load ────────────────────────────────────────
   const loadRooms = useCallback(async () => {
     const client = getContractClient()
     if (!client) {
@@ -556,6 +612,17 @@ export default function LobbyPage() {
       }))
       // Sort: waiting first, then by id desc
       rows.sort(sortLobbyRooms)
+      // Fetch room names from backend
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+      await Promise.all(rows.map(async row => {
+        try {
+          const r = await fetch(`${backendUrl}/api/rooms/${row.id.toString()}/name`)
+          if (r.ok) {
+            const d = await r.json() as { name: string | null }
+            row.name = d.name
+          }
+        } catch { /* non-fatal */ }
+      }))
       setRooms(rows)
     } catch (err) {
       setRoomsError(err instanceof Error ? err.message : 'Failed to load rooms from contract.')
@@ -583,11 +650,12 @@ export default function LobbyPage() {
       connect,
       maxPlayers,
       stakeInput,
+      roomNameInput,
       setCreating,
       loadRooms,
       pushToGame,
     })
-  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, loadRooms, pushToGame, myActiveRoom])
+  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, pushToGame, myActiveRoom])
 
   const handleJoin = useCallback(async (room: RoomRow) => {
     // Already in this room — navigate back only if room hasn't expired
@@ -687,6 +755,21 @@ export default function LobbyPage() {
                   Create Room
                 </h2>
                 <div className="mt-6 space-y-4">
+                  <div>
+                    <label htmlFor="roomName" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+                      Room Name <span style={{ color: '#4a5e44' }}>(optional)</span>
+                    </label>
+                    <input
+                      id="roomName"
+                      type="text"
+                      maxLength={40}
+                      placeholder="e.g. The Cursed Village"
+                      value={roomNameInput}
+                      onChange={e => setRoomNameInput(e.target.value)}
+                      className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none placeholder:opacity-30"
+                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="maxPlayers" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
@@ -779,14 +862,38 @@ export default function LobbyPage() {
                   <div className="mt-3 space-y-3">
                     <div className="space-y-1">
                       <p className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
-                        {address.slice(0, 10)}…{address.slice(-6)}
+                        {savedNickname ?? `${address.slice(0, 10)}…${address.slice(-6)}`}
                       </p>
                       <p className="font-mono text-xs" style={{ color: '#84cc16' }}>
                         Connected · {chainId === 42220 ? 'Mainnet' : 'Alfajores'}
                       </p>
                     </div>
 
-                    {/* cUSD balance */}
+                    {/* Nickname */}
+                    <div className="space-y-1">
+                      <label htmlFor="nicknameInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</label>
+                      <div className="flex gap-2">
+                        <input
+                          id="nicknameInput"
+                          type="text"
+                          maxLength={20}
+                          placeholder="Anonymous"
+                          value={nicknameInput}
+                          onChange={e => setNicknameInput(e.target.value)}
+                          className="min-w-0 flex-1 rounded border bg-transparent px-3 py-2 font-mono text-xs focus:outline-none placeholder:opacity-30"
+                          style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                        />
+                        <button
+                          onClick={handleSaveNickname}
+                          disabled={savingNickname || !nicknameInput.trim()}
+                          className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14' }}
+                        >
+                          {savingNickname ? '…' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: '#0e180d' }}>
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>cUSD Balance</p>
                       <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#4a5e44' }}>

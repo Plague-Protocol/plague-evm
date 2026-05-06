@@ -6,6 +6,7 @@ import helmet from 'helmet'
 import dotenv from 'dotenv'
 import { roomRouter } from './routes/rooms'
 import { proveRouter } from './routes/prove'
+import { playerRouter } from './routes/players'
 import {
   setupSocketHandlers,
   startRoomExpiryMonitor,
@@ -30,6 +31,7 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 app.use('/api/rooms', roomRouter)
 app.use('/api/prove', proveRouter)
+app.use('/api/players', playerRouter)
 
 // ─── Socket.io ──────────────────────────────────────────────────────────────
 
