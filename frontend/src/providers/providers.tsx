@@ -2,12 +2,14 @@
 
 import { WalletProvider } from '@/providers/wallet-provider'
 import { SoundProvider } from '@/providers/sound-provider'
+import { SplashScreen } from '@/components/ui/splash-screen'
 import { Toaster } from 'sonner'
 import type { ReactNode } from 'react'
 
 export function Providers({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <SoundProvider>
+      <SplashScreen />
       <WalletProvider>{children}</WalletProvider>
       <Toaster
         position="bottom-right"
