@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 
-const STORAGE_KEY = 'plague_intro_seen'
 const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
 
 const BG_FRAMES = [
@@ -106,12 +105,9 @@ export function SplashScreen() {
   const ambientRef = useRef<HTMLAudioElement | null>(null)
   const { displayed, activeLine, done } = useTypewriter(LORE)
 
-  // Check if we should show: first-ever visit only
+  // Always show intro on each fresh visit before entering the app.
   useEffect(() => {
-    if (globalThis.localStorage === undefined) return
-    if (!globalThis.localStorage.getItem(STORAGE_KEY)) {
-      setVisible(true)
-    }
+    setVisible(true)
   }, [])
 
   // Background beat progression tracks the currently typed line.
@@ -190,7 +186,6 @@ export function SplashScreen() {
       ambientRef.current.pause()
       ambientRef.current.currentTime = 0
     }
-    globalThis.localStorage?.setItem(STORAGE_KEY, '1')
     setTimeout(() => {
       setVisible(false)
       setFinaleStatic(false)
@@ -218,6 +213,10 @@ export function SplashScreen() {
       style={{
         position: 'fixed',
         inset: 0,
+        width: '100vw',
+        height: '100vh',
+        maxWidth: '100vw',
+        maxHeight: '100vh',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
