@@ -159,10 +159,17 @@ export function SplashScreen() {
 
   const { lines, activeLine, done } = useStoryTypewriter(generation)
 
-  // ── Route-based trigger: replay only when navigating back to home ──────────
+  // ── First-time visitor: show on initial page load if never seen before ──────
+  useEffect(() => {
+    const seen = globalThis.window !== undefined && localStorage.getItem('plague_intro_seen')
+    if (!seen) setVisible(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Route-based trigger: replay when navigating back to home ─────────────
   useEffect(() => {
     if (prevPathRef.current === null) {
-      prevPathRef.current = pathname   // first mount — record, don't show
+      prevPathRef.current = pathname   // first mount — record path, handled above
       return
     }
     if (pathname === '/' && prevPathRef.current !== '/') {
@@ -248,6 +255,8 @@ export function SplashScreen() {
   // ── Dismiss / finale ─────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
     if (exiting || finaleStatic) return
+    // Mark as seen so page refreshes don't replay for returning users.
+    if (globalThis.window !== undefined) localStorage.setItem('plague_intro_seen', '1')
     setFinaleStatic(true)
     setTitleSlam(true)
     const sting = new Audio('/sounds/reveal-sting.mp3')
