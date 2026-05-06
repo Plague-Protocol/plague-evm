@@ -498,11 +498,10 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     if (!contractAddr) return
 
     const chain = network === 'mainnet' ? celo : celoSepolia
-    let wsClient: ReturnType<typeof createPublicClient> | null = null
     let unwatch: (() => void) | null = null
 
     try {
-      wsClient = createPublicClient({ chain, transport: webSocket(wsUrl) })
+      const wsClient = createPublicClient({ chain, transport: webSocket(wsUrl) })
       const roomBigInt = BigInt(roomId)
       unwatch = wsClient.watchEvent({
         address: contractAddr,

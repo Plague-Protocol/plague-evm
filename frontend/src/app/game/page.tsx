@@ -39,7 +39,7 @@ function playerStyle(status: string): { border: string; backgroundColor: string;
 }
 
 /** Only reveal 'infected' styling to the player themselves — hide it from others. */
-function visibleStatus(p: { walletAddress: string; status: string }, localAddress: string | undefined): string {
+function visibleStatus(p: { walletAddress: string; status: string }, localAddress: string | null | undefined): string {
   if (p.status === 'infected' && p.walletAddress.toLowerCase() !== (localAddress ?? '').toLowerCase()) {
     return 'clean'
   }

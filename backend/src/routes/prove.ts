@@ -91,7 +91,7 @@ proveRouter.post('/', async (req, res) => {
     // Circuit artifact path (compiled by `nargo compile` into zk/target/)
     const circuitPath = join(CIRCUIT_DIR, `${circuitId}.json`)
 
-    logger.debug({ circuitId, circuitPath, tmpDir }, 'bb prove: starting')
+    logger.debug('bb prove: starting', { circuitId, circuitPath, tmpDir })
 
     // -s ultra_honk  → UltraHonk proving scheme (matches deployed verifier contracts)
     // -t evm         → keccak oracle hash (matches --oracle_hash keccak used when
@@ -113,19 +113,19 @@ proveRouter.post('/', async (req, res) => {
       bbStderr = e.stderr ?? ''
       throw new Error(`bb prove exited with error.\nstdout: ${bbStdout}\nstderr: ${bbStderr}`)
     }
-    if (bbStderr) logger.debug({ circuitId, bbStderr }, 'bb prove: stderr')
+    if (bbStderr) logger.debug('bb prove: stderr', { circuitId, bbStderr })
 
     // bb writes the proof to <output_dir>/proof when -o is a directory
     const proofPath = join(tmpDir, 'proof')
 
     const proofBytes = await readFile(proofPath)
 
-    logger.debug({ circuitId, proofSize: proofBytes.length }, 'bb prove: done')
+    logger.debug('bb prove: done', { circuitId, proofSize: proofBytes.length })
 
     res.json({ proofHex: '0x' + proofBytes.toString('hex') })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    logger.error({ circuitId: parseResult.data.circuitId, error: msg }, 'bb prove: failed')
+    logger.error('bb prove: failed', { circuitId: parseResult.data.circuitId, error: msg })
     res.status(500).json({ error: 'Proof generation failed', detail: msg })
   } finally {
     if (tmpDir) {
