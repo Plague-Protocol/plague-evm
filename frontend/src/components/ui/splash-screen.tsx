@@ -1,8 +1,16 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 const STORAGE_KEY = 'plague_intro_seen'
+const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
+
+const BG_FRAMES = [
+  '/images/bg-horror.jpg',
+  '/images/bg-zombie-portrait.jpg',
+  '/images/bg-patient-zero.jpg',
+  '/images/bg-game.jpg',
+] as const
 
 // ── Lore lines — typewriter text sequence ─────────────────────────────────────
 const LORE: string[] = [
@@ -18,6 +26,7 @@ const LORE: string[] = [
 // ── Typewriter hook ───────────────────────────────────────────────────────────
 function useTypewriter(lines: string[], msPerChar = 40, msBetweenLines = 600) {
   const [displayed, setDisplayed] = useState<string[]>([])
+  const [activeLine, setActiveLine] = useState(0)
   const [done, setDone] = useState(false)
 
   useEffect(() => {
@@ -31,14 +40,25 @@ function useTypewriter(lines: string[], msPerChar = 40, msBetweenLines = 600) {
         setDone(true)
         return
       }
+
+      setActiveLine(lineIdx)
       const current = lines[lineIdx]
       charIdx++
       setDisplayed(prev => {
         const next = [...prev]
-        next[lineIdx] = current.slice(0, charIdx)
+        // Clamp slice index so the final character never gets dropped.
+        const end = Math.min(charIdx, current.length)
+        next[lineIdx] = current.slice(0, end)
         return next
       })
+
       if (charIdx >= current.length) {
+        // Force the final full line value before moving to the next line.
+        setDisplayed(prev => {
+          const next = [...prev]
+          next[lineIdx] = current
+          return next
+        })
         lineIdx++
         charIdx = 0
         setTimeout(tick, msBetweenLines)
@@ -51,7 +71,7 @@ function useTypewriter(lines: string[], msPerChar = 40, msBetweenLines = 600) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { displayed, done }
+  return { displayed, activeLine, done }
 }
 
 // ── Particles — tiny biohazard dots drifting upward ───────────────────────────
@@ -79,21 +99,104 @@ const PARTICLES = generateParticles(24)
 export function SplashScreen() {
   const [visible, setVisible] = useState(false)
   const [exiting, setExiting] = useState(false)
-  const { displayed, done } = useTypewriter(LORE)
+  const [finaleStatic, setFinaleStatic] = useState(false)
+  const [titleSlam, setTitleSlam] = useState(false)
+  const [audioArmed, setAudioArmed] = useState(false)
+  const [bgIndex, setBgIndex] = useState(0)
+  const ambientRef = useRef<HTMLAudioElement | null>(null)
+  const { displayed, activeLine, done } = useTypewriter(LORE)
 
   // Check if we should show: first-ever visit only
   useEffect(() => {
-    if (typeof globalThis.localStorage === 'undefined') return
+    if (globalThis.localStorage === undefined) return
     if (!globalThis.localStorage.getItem(STORAGE_KEY)) {
       setVisible(true)
     }
   }, [])
 
+  // Background beat progression tracks the currently typed line.
+  useEffect(() => {
+    setBgIndex(Math.min(BG_FRAMES.length - 1, Math.floor(activeLine / 2)))
+  }, [activeLine])
+
+  // Light heartbeat punctuates each story beat.
+  useEffect(() => {
+    if (!visible) return
+    const beat = new Audio('/sounds/heartbeat.mp3')
+    beat.volume = 0.18
+    beat.play().catch(() => {
+      // Ignore autoplay errors; ambient fallback prompt covers interaction.
+    })
+  }, [activeLine, visible])
+
+  // Intro ambient sound. If autoplay is blocked, arm and retry on first user input.
+  useEffect(() => {
+    if (!visible) return
+
+    const audio = new Audio(AMBIENT_TRACK)
+    audio.loop = true
+    audio.volume = 0.28
+    ambientRef.current = audio
+
+    const start = async () => {
+      try {
+        await audio.play()
+      } catch {
+        setAudioArmed(true)
+      }
+    }
+
+    void start()
+
+    return () => {
+      audio.pause()
+      audio.currentTime = 0
+      ambientRef.current = null
+    }
+  }, [visible])
+
+  useEffect(() => {
+    if (!visible || !audioArmed || !ambientRef.current) return
+    const resume = () => {
+      const audio = ambientRef.current
+      if (!audio) return
+      audio.play().then(() => setAudioArmed(false)).catch(() => {
+        // Keep armed state until a browser-permitted interaction succeeds.
+      })
+    }
+    globalThis.addEventListener('pointerdown', resume, { once: true })
+    globalThis.addEventListener('keydown', resume, { once: true })
+    return () => {
+      globalThis.removeEventListener('pointerdown', resume)
+      globalThis.removeEventListener('keydown', resume)
+    }
+  }, [visible, audioArmed])
+
   const dismiss = useCallback(() => {
-    setExiting(true)
+    if (exiting || finaleStatic) return
+    setFinaleStatic(true)
+    setTitleSlam(true)
+    const sting = new Audio('/sounds/reveal-sting.mp3')
+    sting.volume = 0.35
+    sting.play().catch(() => {
+      // Ignore autoplay restrictions for the one-shot sting.
+    })
+
+    setTimeout(() => {
+      setExiting(true)
+    }, 260)
+
+    if (ambientRef.current) {
+      ambientRef.current.pause()
+      ambientRef.current.currentTime = 0
+    }
     globalThis.localStorage?.setItem(STORAGE_KEY, '1')
-    setTimeout(() => setVisible(false), 800)
-  }, [])
+    setTimeout(() => {
+      setVisible(false)
+      setFinaleStatic(false)
+      setTitleSlam(false)
+    }, 900)
+  }, [exiting, finaleStatic])
 
   // Allow keyboard Enter/Space to dismiss too
   useEffect(() => {
@@ -101,16 +204,15 @@ export function SplashScreen() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') dismiss()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    globalThis.addEventListener('keydown', onKey)
+    return () => globalThis.removeEventListener('keydown', onKey)
   }, [visible, dismiss])
 
   if (!visible) return null
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      open
       aria-label="Plague Protocol intro"
       className="splash-root"
       style={{
@@ -123,9 +225,27 @@ export function SplashScreen() {
         justifyContent: 'center',
         backgroundColor: '#000',
         overflow: 'hidden',
+        border: 'none',
+        padding: 0,
+        margin: 0,
         animation: exiting ? 'splash-exit 0.8s ease-in forwards' : 'splash-enter 0.6s ease-out both',
       }}
     >
+      {/* Story background frame */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          backgroundImage: `url(${BG_FRAMES[bgIndex]})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          transform: 'scale(1.04)',
+          filter: 'saturate(0.9) contrast(1.05) brightness(0.4)',
+          transition: 'background-image 1.1s ease, filter 1.1s ease',
+        }}
+      />
+
       {/* Scanlines overlay */}
       <div style={{
         position: 'absolute',
@@ -133,6 +253,19 @@ export function SplashScreen() {
         backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px)',
         pointerEvents: 'none',
         zIndex: 1,
+      }} />
+
+      {/* Finale static burst */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        zIndex: 3,
+        opacity: finaleStatic ? 0.55 : 0,
+        transition: 'opacity 0.18s ease',
+        backgroundImage: 'radial-gradient(circle at 20% 10%, rgba(255,255,255,0.38) 0 1px, transparent 1px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.28) 0 1px, transparent 1px), radial-gradient(circle at 55% 30%, rgba(255,255,255,0.42) 0 1px, transparent 1px)',
+        backgroundSize: '6px 6px, 8px 8px, 5px 5px',
+        animation: finaleStatic ? 'splash-static 0.22s steps(4) infinite' : 'none',
       }} />
 
       {/* Floating particles */}
@@ -159,9 +292,9 @@ export function SplashScreen() {
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'radial-gradient(ellipse at center, transparent 40%, rgba(180,0,0,0.18) 100%)',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.7) 100%), radial-gradient(ellipse at center, transparent 35%, rgba(180,0,0,0.22) 100%)',
         pointerEvents: 'none',
-        zIndex: 0,
+        zIndex: 1,
       }} />
 
       {/* Content */}
@@ -189,6 +322,8 @@ export function SplashScreen() {
             letterSpacing: '0.06em',
             textShadow: '0 0 30px rgba(230,51,41,0.5)',
             margin: 0,
+            transform: titleSlam ? 'scale(1.12) skewX(-2deg)' : 'scale(1)',
+            transition: 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
           }}
         >
           PLAGUE PROTOCOL
@@ -201,7 +336,7 @@ export function SplashScreen() {
             const isLast = i === displayed.length - 1
             return (
               <p
-                key={i}
+                key={LORE[i]}
                 style={{
                   margin: 0,
                   fontFamily: 'var(--font-mono)',
@@ -210,6 +345,8 @@ export function SplashScreen() {
                   color: isLate ? '#d4c9b2' : '#e63329',
                   textShadow: isLate ? undefined : '0 0 8px rgba(230,51,41,0.6)',
                   fontWeight: isLate ? 400 : 700,
+                  paddingInline: '0.35rem',
+                  overflow: 'visible',
                   // Blinking cursor on the line currently being typed
                   ...(isLast && !done ? { borderRight: '2px solid #39ff14', paddingRight: '2px' } : {}),
                 }}
@@ -223,6 +360,7 @@ export function SplashScreen() {
         {/* Enter button — fades in when typewriter finishes */}
         <button
           onClick={dismiss}
+          disabled={exiting || finaleStatic}
           style={{
             marginTop: '0.5rem',
             padding: '0.75rem 2.5rem',
@@ -240,7 +378,7 @@ export function SplashScreen() {
             opacity: done ? 1 : 0,
             transform: done ? 'translateY(0)' : 'translateY(8px)',
             transition: 'opacity 0.6s ease, transform 0.6s ease, box-shadow 0.2s',
-            pointerEvents: done ? 'auto' : 'none',
+            pointerEvents: done && !exiting && !finaleStatic ? 'auto' : 'none',
           }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)' }}
@@ -261,7 +399,21 @@ export function SplashScreen() {
         >
           Press ENTER or SPACE to continue
         </p>
+
+        {audioArmed && (
+          <p
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.65rem',
+              letterSpacing: '0.14em',
+              color: '#f5c518',
+            }}
+          >
+            Tap anywhere to enable intro audio
+          </p>
+        )}
       </div>
-    </div>
+    </dialog>
   )
 }
