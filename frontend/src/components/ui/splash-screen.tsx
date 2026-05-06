@@ -161,7 +161,7 @@ export function SplashScreen() {
 
   // ── First-time visitor: show on initial page load if never seen before ──────
   useEffect(() => {
-    const seen = globalThis.window !== undefined && localStorage.getItem('plague_intro_seen')
+    const seen = globalThis.window !== undefined && sessionStorage.getItem('plague_intro_seen')
     if (!seen) setVisible(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -256,7 +256,7 @@ export function SplashScreen() {
   const dismiss = useCallback(() => {
     if (exiting || finaleStatic) return
     // Mark as seen so page refreshes don't replay for returning users.
-    if (globalThis.window !== undefined) localStorage.setItem('plague_intro_seen', '1')
+    if (globalThis.window !== undefined) sessionStorage.setItem('plague_intro_seen', '1')
     setFinaleStatic(true)
     setTitleSlam(true)
     const sting = new Audio('/sounds/reveal-sting.mp3')
