@@ -670,10 +670,11 @@ export function setupSocketHandlers(io: Server) {
      *   Players who didn't vote get their vote cast for the current
      *   leading target (prevents mass-abstention collusion by infected).
      *
-     * Endgame check after each resolve:
-     *   infected_alive == 0            → clean_win
-     *   infected_alive >= clean_alive  → infected_win  (includes 1 vs 1)
-     *   round == max_rounds            → infected_win (time expired)
+     * Endgame check (runs inside finalizeElimination after Reveal):
+     *   infected_alive == 0                        → clean_win
+     *   infected_alive == 1 && clean_alive == 1    → draw (1v1)
+     *   infected_alive > clean_alive               → infected_win
+     *   round == max_rounds                        → draw
      */
     socket.on('resolve_round', async ({ roomId }: { roomId: string }) => {
       try {

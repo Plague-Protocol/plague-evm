@@ -485,6 +485,8 @@ export default function LobbyPage() {
   // ── Room list from chain ───────────────────────────────────────────────────
   const [rooms, setRooms]           = useState<RoomRow[]>([])
   const [loadingRooms, setLoadingRooms] = useState(false)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+  const hasLoadedOnceRef = useRef(false)
   const [roomsError, setRoomsError] = useState<string | null>(null)
 
   // ── Create room form state ─────────────────────────────────────────────────
@@ -617,7 +619,7 @@ export default function LobbyPage() {
       setRoomsError('Contract address not configured. Set NEXT_PUBLIC_CONTRACT_ADDRESS.')
       return
     }
-    setLoadingRooms(true)
+    if (!hasLoadedOnceRef.current) setLoadingRooms(true)
     setRoomsError(null)
     try {
       const count = await client.getRoomCount()
@@ -660,6 +662,8 @@ export default function LobbyPage() {
     } catch (err) {
       setRoomsError(err instanceof Error ? err.message : 'Failed to load rooms from contract.')
     } finally {
+      hasLoadedOnceRef.current = true
+      setHasLoadedOnce(true)
       setLoadingRooms(false)
     }
   }, [])
@@ -1062,7 +1066,10 @@ export default function LobbyPage() {
                     className="rounded-full border px-3 py-1 font-mono text-xs"
                     style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14' }}
                   >
-                    {loadingRooms ? '…' : `${rooms.filter(r => r.status !== 'ended').length} rooms`}
+                    {`${rooms.filter(r => r.status !== 'ended').length} rooms`}
+                    {loadingRooms && hasLoadedOnce && (
+                      <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full animate-pulse align-middle" style={{ backgroundColor: '#39ff14' }} />
+                    )}
                   </span>
                   <button
                     onClick={loadRooms}
@@ -1079,7 +1086,7 @@ export default function LobbyPage() {
                 <p className="mt-4 font-mono text-xs" style={{ color: '#e63329' }}>{roomsError}</p>
               )}
 
-              {loadingRooms && (
+              {loadingRooms && rooms.length === 0 && (
                 <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
                   Loading rooms from chain…
                 </p>
