@@ -885,7 +885,7 @@ export default function LobbyPage() {
                         {savedNickname ?? `${address.slice(0, 10)}…${address.slice(-6)}`}
                       </p>
                       <p className="font-mono text-xs" style={{ color: '#84cc16' }}>
-                        Connected · {chainId === 42220 ? 'Mainnet' : 'Alfajores'}
+                        Connected · {chainId === 42220 ? 'Mainnet' : 'Celo Sepolia'}
                       </p>
                     </div>
 

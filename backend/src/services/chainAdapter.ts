@@ -13,7 +13,8 @@
  *    forward on-chain events to connected clients
  *
  * Environment variables (set in .env):
- *   CELO_RPC_URL        RPC endpoint (default: Alfajores public)
+ *   CELO_RPC_URL        RPC endpoint (default: Celo Sepolia public)
+ *   CELO_RPC_FALLBACK_URLS Optional comma-separated fallback RPC URLs
  *   CONTRACT_ADDRESS    Deployed PlagueGame address
  *   BACKEND_PRIVATE_KEY Hex private key for the backend signer wallet
  *   NETWORK             "testnet" | "mainnet"  (default: "testnet")
@@ -22,6 +23,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  fallback,
   http,
   parseAbi,
 } from 'viem'
@@ -29,19 +31,74 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { celoSepolia, celo } from 'viem/chains'
 import { logger } from '../lib/logger'
 
+type RpcHealthState = {
+  healthy: boolean
+  lastLogAt: number
+  lastError: string
+}
+
+const rpcHealthState = new Map<string, RpcHealthState>()
+const LOG_RATE_LIMIT_MS = 60_000
+
+function shouldLogRpc(url: string, healthy: boolean, errorMessage = ''): boolean {
+  const prev = rpcHealthState.get(url)
+  const now = Date.now()
+  if (!prev) {
+    rpcHealthState.set(url, { healthy, lastLogAt: now, lastError: errorMessage })
+    return true
+  }
+  const statusChanged = prev.healthy !== healthy
+  const windowElapsed = now - prev.lastLogAt >= LOG_RATE_LIMIT_MS
+  if (statusChanged || windowElapsed) {
+    rpcHealthState.set(url, { healthy, lastLogAt: now, lastError: errorMessage })
+    return true
+  }
+  return false
+}
+
+async function probeRpc(url: string, timeoutMs: number): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const startedAt = Date.now()
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
+      signal: controller.signal,
+    })
+    const latencyMs = Date.now() - startedAt
+    if (!response.ok) {
+      return { ok: false, latencyMs, error: `HTTP ${response.status}` }
+    }
+    const json = await response.json() as { result?: string; error?: { message?: string } }
+    if (typeof json.result === 'string') return { ok: true, latencyMs }
+    return { ok: false, latencyMs, error: json.error?.message ?? 'Invalid JSON-RPC response' }
+  } catch (err) {
+    const latencyMs = Date.now() - startedAt
+    const msg = err instanceof Error ? err.message : String(err)
+    return { ok: false, latencyMs, error: msg }
+  } finally {
+    clearTimeout(id)
+  }
+}
+
 // ── ABI (subset used by the backend) ─────────────────────────────────────────
 
 const PLAGUE_ABI = parseAbi([
   // Backend-only writes
   'function createRoom(uint32 maxPlayers, uint256 stakeAmount, uint256 proofFee, uint64 expirySecs) external returns (uint256)',
   'function beginActivePhase(uint256 roomId) external',
+  'function eliminateUncommittedPlayers(uint256 roomId) external',
   'function assignInfection(uint256 roomId, address target) external',
   'function openVoting(uint256 roomId) external',
   'function resolveRound(uint256 roomId) external',
+  'function finalizeElimination(uint256 roomId) external',
   'function expireRoom(uint256 roomId) external',
   // Reads
   'function getRoom(uint256 roomId) external view returns ((uint256 id, address host, uint8 status, (uint32 minPlayers, uint32 maxPlayers, uint256 stakeAmount, uint32 maxRounds, uint64 roundDurationSecs, uint64 discussionDurationSecs, uint64 votingDurationSecs, uint64 expirySecs, uint256 proofFee) config, address[] players, uint32 currentRound, uint8 currentPhase, uint256 pot, uint64 createdAt, uint64 expiresAt, uint64 startedAt, uint64 phaseStartedAt))',
   'function getPlayer(uint256 roomId, address player) external view returns ((address addr, uint8 status, bytes32 roleCommitment, uint256 staked, address voteTarget, uint64 joinedAt, bool freeProofUsed, uint32 proofsSubmittedTotal, bool pendingInfectionNextRound, bool hasProofThisRound, bool hasVotedThisRound, bool roleCommitted))',
+  'function currentPatientZero(uint256 roomId) external view returns (address)',
   'function roomCount() external view returns (uint256)',
   // Events
   'event PlayerJoined(uint256 indexed roomId, address player)',
@@ -78,6 +135,7 @@ const PLAGUE_ABI = parseAbi([
   'error NotParticipant()',
   'error NotAlive()',
   'error InvalidInfectionTarget()',
+  'error RoleCommitmentPending()',
   'error TooManyActiveRooms()',
   'error Reentrancy()',
 ] as const)
@@ -88,27 +146,46 @@ function buildClients() {
   const network    = (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
   const chain      = network === 'mainnet' ? celo : celoSepolia
   const rpcUrl     = process.env.CELO_RPC_URL
+  const fallbackRpcUrls = (process.env.CELO_RPC_FALLBACK_URLS ?? '')
+    .split(',')
+    .map(url => url.trim())
+    .filter(Boolean)
   const address    = process.env.CONTRACT_ADDRESS as `0x${string}` | undefined
   const privateKey = process.env.BACKEND_PRIVATE_KEY as `0x${string}` | undefined
+  const rpcTimeoutMs = Number(process.env.RPC_TIMEOUT_MS ?? 20_000)
+  const rpcRetryCount = Number(process.env.RPC_RETRY_COUNT ?? 2)
+  const rpcRetryDelayMs = Number(process.env.RPC_RETRY_DELAY_MS ?? 300)
 
   if (!address) throw new Error('CONTRACT_ADDRESS env var is not set')
   if (!privateKey) throw new Error('BACKEND_PRIVATE_KEY env var is not set')
 
+  const defaultRpc = chain.rpcUrls.default.http[0]
+  const rpcUrls = [rpcUrl ?? defaultRpc, ...fallbackRpcUrls]
+  const transport = fallback(
+    rpcUrls.map(url =>
+      http(url, {
+        timeout: rpcTimeoutMs,
+        retryCount: rpcRetryCount,
+        retryDelay: rpcRetryDelayMs,
+      })
+    )
+  )
+
   const publicClient = createPublicClient({
     chain,
-    transport: http(rpcUrl),
+    transport,
   })
 
   const account      = privateKeyToAccount(privateKey)
   const walletClient = createWalletClient({
     account,
     chain,
-    transport: http(rpcUrl),
+    transport,
   })
 
-  logger.info(`Chain adapter initialised: network=${network} contract=${address}`)
+  logger.info(`Chain adapter initialised: network=${network} contract=${address} rpcEndpoints=${rpcUrls.length}`)
 
-  return { publicClient, walletClient, account, address, chain }
+  return { publicClient, walletClient, account, address, chain, rpcUrls, rpcTimeoutMs }
 }
 
 // Lazily initialised on first use so tests can import without .env being set.
@@ -134,6 +211,29 @@ async function writeAndWait(functionName: string, args: readonly unknown[]) {
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
+
+export function startRpcHealthMonitor(intervalMs = Number(process.env.RPC_HEALTH_CHECK_INTERVAL_MS ?? 30_000)): NodeJS.Timeout | null {
+  const enabled = (process.env.RPC_HEALTH_MONITOR_ENABLED ?? 'true').toLowerCase() !== 'false'
+  if (!enabled) return null
+
+  const { rpcUrls, rpcTimeoutMs } = clients()
+  logger.info(`[rpc-health] monitor started intervalMs=${intervalMs} endpoints=${rpcUrls.length}`)
+
+  return setInterval(async () => {
+    await Promise.all(rpcUrls.map(async (url) => {
+      const result = await probeRpc(url, rpcTimeoutMs)
+      if (!result.ok) {
+        if (shouldLogRpc(url, false, result.error ?? 'unknown error')) {
+          logger.warn(`[rpc-health] endpoint degraded url=${url} latencyMs=${result.latencyMs} error=${result.error ?? 'unknown'}`)
+        }
+        return
+      }
+      if (shouldLogRpc(url, true)) {
+        logger.info(`[rpc-health] endpoint healthy url=${url} latencyMs=${result.latencyMs}`)
+      }
+    }))
+  }, intervalMs)
+}
 
 export const chainAdapter = {
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -164,6 +264,16 @@ export const chainAdapter = {
       address,
       abi:          PLAGUE_ABI,
       functionName: 'roomCount',
+    })
+  },
+
+  async getCurrentPatientZero(roomId: bigint): Promise<`0x${string}`> {
+    const { publicClient, address } = clients()
+    return publicClient.readContract({
+      address,
+      abi:          PLAGUE_ABI,
+      functionName: 'currentPatientZero',
+      args:         [roomId],
     })
   },
 
@@ -227,6 +337,11 @@ export const chainAdapter = {
     return writeAndWait('beginActivePhase', [roomId])
   },
 
+  /** Eliminate players who did not commit roles before timeout while room is Starting. */
+  async eliminateUncommittedPlayers(roomId: bigint) {
+    return writeAndWait('eliminateUncommittedPlayers', [roomId])
+  },
+
   /**
    * Assign infection for the current round.
    *
@@ -245,6 +360,11 @@ export const chainAdapter = {
   /** Resolve the current voting phase (Cases A/B/C/D + endgame check). */
   async resolveRound(roomId: bigint) {
     return writeAndWait('resolveRound', [roomId])
+  },
+
+  /** Finalize elimination phase: endgame check and next-round transition. */
+  async finalizeElimination(roomId: bigint) {
+    return writeAndWait('finalizeElimination', [roomId])
   },
 
   /** Expire a waiting room whose timer has passed (permissionless on-chain too). */

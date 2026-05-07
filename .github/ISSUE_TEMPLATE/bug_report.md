@@ -20,7 +20,7 @@ assignees: ''
 ## Environment
 - OS:
 - Browser / Node version:
-- Celo network: [ ] Alfajores testnet [ ] mainnet
+- Celo network: [ ] Celo Sepolia testnet [ ] mainnet
 
 ## Relevant files
 <!-- Which files are likely involved? -->

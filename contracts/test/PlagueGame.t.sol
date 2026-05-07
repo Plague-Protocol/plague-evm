@@ -75,6 +75,10 @@ contract PlagueGameTest is Test {
         game       = new PlagueGame();
         game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
+
+        // Host must approve stake for createRoom auto-join transfer.
+        vm.prank(host);
+        token.approve(address(game), type(uint256).max);
     }
 
     // ── Initialization ───────────────────────────────────────────────────────────
@@ -99,7 +103,7 @@ contract PlagueGameTest is Test {
         assertEq(uint(r.status), uint(PlagueGame.RoomStatus.Waiting));
         assertEq(r.config.stakeAmount, STAKE);
         assertEq(r.config.proofFee, FEE);
-        assertEq(r.config.minPlayers, 4);
+        assertEq(r.config.minPlayers, 3);
         assertEq(r.config.maxPlayers, 6);
         assertEq(r.expiresAt, r.createdAt + 600);
     }
@@ -190,10 +194,8 @@ contract PlagueGameTest is Test {
 
     function test_StartGame_TooFewPlayers_Reverts() public {
         _createRoom();
-        // Only host joins (1 player, need 4)
+        // Only host is present (auto-joined by createRoom)
         vm.startPrank(host);
-        token.approve(address(game), STAKE);
-        game.joinRoom(1);
         vm.expectRevert(PlagueGame.NotEnoughPlayers.selector);
         game.startGame(1);
         vm.stopPrank();
@@ -263,6 +265,102 @@ contract PlagueGameTest is Test {
         game.submitRoleCommitment(1, keccak256("commitment-0"), "");
     }
 
+    function test_RoleCommitTimeout_EliminatesUncommittedAndStarts() public {
+        _createAndStart();
+
+        vm.prank(host);
+        game.submitRoleCommitment(1, keccak256("commitment-host"), "");
+        vm.prank(players[0]);
+        game.submitRoleCommitment(1, keccak256("commitment-0"), "");
+        vm.prank(players[1]);
+        game.submitRoleCommitment(1, keccak256("commitment-1"), "");
+        vm.prank(players[2]);
+        game.submitRoleCommitment(1, keccak256("commitment-2"), "");
+
+        vm.warp(block.timestamp + game.ROLE_COMMIT_TIMEOUT_SECS() + 1);
+
+        vm.prank(backend);
+        game.eliminateUncommittedPlayers(1);
+
+        assertEq(uint(game.getPlayer(1, players[3]).status), uint(PlagueGame.PlayerStatus.Eliminated));
+        assertEq(uint(game.getPlayer(1, players[4]).status), uint(PlagueGame.PlayerStatus.Eliminated));
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+        assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Active));
+    }
+
+    function test_FinalizeElimination_ChecksWinnerBeforeQueuedInfection() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Current PZ votes players[1] for next infection, but gets eliminated this round.
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[1]);
+        game.castVote(1, players[0]);
+        vm.prank(players[2]);
+        game.castVote(1, players[0]);
+        vm.prank(players[3]);
+        game.castVote(1, players[0]);
+        vm.prank(players[4]);
+        game.castVote(1, players[0]);
+        vm.prank(host);
+        game.castVote(1, players[0]);
+
+        _resolveAndFinalize();
+
+        // Clean should win before any queued next infection can be applied.
+        assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
+        assertEq(uint(game.getPlayer(1, players[1]).status), uint(PlagueGame.PlayerStatus.Clean));
+    }
+
+    function test_PatientZeroVote_DrivesNextInfectionTarget() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Keep game alive by eliminating a clean player, while PZ points to players[1].
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[2]);
+        game.castVote(1, players[4]);
+        vm.prank(players[3]);
+        game.castVote(1, players[4]);
+        vm.prank(players[4]);
+        game.castVote(1, players[4]);
+        vm.prank(host);
+        game.castVote(1, players[4]);
+        vm.prank(players[1]);
+        game.castVote(1, players[4]);
+
+        _resolveAndFinalize();
+
+        // Round 2 Infection: backend argument is ignored in favor of queued PZ target.
+        vm.prank(backend);
+        game.assignInfection(1, players[2]);
+
+        assertEq(uint(game.getPlayer(1, players[1]).status), uint(PlagueGame.PlayerStatus.Infected));
+        assertEq(uint(game.getPlayer(1, players[2]).status), uint(PlagueGame.PlayerStatus.Clean));
+    }
+
     // ── Full round: Case A (single top, no proof → eliminated) ───────────────────
 
     function test_FullRound_CaseA_Elimination() public {
@@ -289,7 +387,7 @@ contract PlagueGameTest is Test {
         vm.prank(host);
         game.castVote(1, players[0]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         // players[0] should be eliminated
         assertEq(
@@ -328,7 +426,7 @@ contract PlagueGameTest is Test {
         vm.prank(host);
         game.castVote(1, players[1]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         // players[1] should NOT be eliminated (saved by proof)
         assertNotEq(
@@ -372,7 +470,7 @@ contract PlagueGameTest is Test {
         vm.prank(players[2]);
         game.castVote(1, players[2]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         assertNotEq(
             uint(game.getPlayer(1, players[1]).status),
@@ -417,7 +515,7 @@ contract PlagueGameTest is Test {
         vm.prank(players[4]);
         game.castVote(1, players[1]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         assertEq(
             uint(game.getPlayer(1, players[0]).status),
@@ -436,21 +534,30 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.beginActivePhase(1);
 
-        // Round 1: infect players[0], then eliminate players[4] so game continues.
+        // Round 1: infect players[0], queue players[1] via PZ vote,
+        // then eliminate players[4] so game continues.
         vm.prank(backend);
         game.assignInfection(1, players[0]);
 
         vm.prank(backend);
         game.openVoting(1);
 
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
         vm.prank(host);
         game.castVote(1, players[4]);
-        vm.prank(players[0]);
+        vm.prank(players[2]);
+        game.castVote(1, players[4]);
+        vm.prank(players[3]);
+        game.castVote(1, players[4]);
+        vm.prank(players[4]);
+        game.castVote(1, players[4]);
+        vm.prank(players[1]);
         game.castVote(1, players[4]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
-        // Round 2: infect players[1] so two infected players are alive.
+        // Round 2: queued players[1] becomes infected so two infected are alive.
         vm.prank(backend);
         game.assignInfection(1, players[1]);
 
@@ -471,7 +578,7 @@ contract PlagueGameTest is Test {
         vm.prank(players[3]);
         game.castVote(1, host);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         assertEq(
             uint(game.getPlayer(1, players[0]).status),
@@ -516,7 +623,7 @@ contract PlagueGameTest is Test {
         vm.prank(players[3]);
         game.castVote(1, players[3]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         assertNotEq(
             uint(game.getPlayer(1, players[1]).status),
@@ -576,7 +683,7 @@ contract PlagueGameTest is Test {
         game.openVoting(1);
         vm.prank(players[0]);
         game.castVote(1, players[4]);
-        game.resolveRound(1); // players[4] eliminated; game continues
+        _resolveAndFinalize(); // players[4] eliminated; game continues
 
         // Round 2 — paid proof; approve FEE before submitting
         vm.prank(backend);
@@ -609,7 +716,7 @@ contract PlagueGameTest is Test {
 
         // Nobody votes — resolveRound should apply self-votes (no leader yet)
         // This just checks it doesn't revert
-        game.resolveRound(1);
+        _resolveAndFinalize();
     }
 
     // ── Backend-only guards ───────────────────────────────────────────────────────
@@ -635,7 +742,7 @@ contract PlagueGameTest is Test {
         game.assignInfection(1, players[1]);
     }
 
-    function test_AssignInfection_TargetMustBeClean_RevertsForAlreadyInfected() public {
+    function test_AssignInfection_SkipsWhenQueuedTargetIsInvalid() public {
         _createAndStart();
         _submitAllCommitments();
 
@@ -649,16 +756,19 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.openVoting(1);
 
-        // Vote to eliminate a clean player (host) so the infected player survives into round 2.
-        // players[0] (infected) votes for host → host gets 2 votes (explicit + self), all others 1 self-vote.
+        // Queue an invalid next target by having PZ vote themself (already infected).
+        // Eliminate a clean player (host) so game continues to round 2.
         vm.prank(players[0]);
+        game.castVote(1, players[0]);
+        vm.prank(players[1]);
         game.castVote(1, host);
-        game.resolveRound(1); // host eliminated; game continues (infected still alive)
+        _resolveAndFinalize(); // host eliminated; game continues (infected still alive)
 
-        // Next infection phase: trying to re-infect already-infected player must fail
+        // Round 2 Infection: queued target is invalid, so no new infection is applied.
         vm.prank(backend);
-        vm.expectRevert(PlagueGame.InvalidInfectionTarget.selector);
-        game.assignInfection(1, players[0]);
+        game.assignInfection(1, players[2]);
+
+        assertEq(uint(game.getPlayer(1, players[2]).status), uint(PlagueGame.PlayerStatus.Clean));
     }
 
     function test_PatientZeroSuccession_WhenCurrentIsEliminated() public {
@@ -675,15 +785,26 @@ contract PlagueGameTest is Test {
 
         vm.prank(backend);
         game.openVoting(1);
-        // Vote to eliminate players[4] (clean) so infected players[0] survives into round 2.
-        // players[0] votes for players[4] → players[4] gets 2 votes, all others get 1 self-vote.
+        // Queue players[1] as next infection target by PZ vote,
+        // while others eliminate players[4] so game continues.
         vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[2]);
         game.castVote(1, players[4]);
-        game.resolveRound(1); // players[4] eliminated; game continues
+        vm.prank(players[3]);
+        game.castVote(1, players[4]);
+        vm.prank(players[4]);
+        game.castVote(1, players[4]);
+        vm.prank(host);
+        game.castVote(1, players[4]);
+        vm.prank(players[1]);
+        game.castVote(1, players[4]);
+        _resolveAndFinalize(); // players[4] eliminated; game continues
 
-        // Round 2: B infects E = players[1]
+        // Round 2: queued target (players[1]) becomes infected.
         vm.prank(backend);
         game.assignInfection(1, players[1]);
+        assertEq(uint(game.getPlayer(1, players[1]).status), uint(PlagueGame.PlayerStatus.Infected));
         assertEq(game.currentPatientZero(1), players[0]);
 
         vm.prank(backend);
@@ -702,7 +823,7 @@ contract PlagueGameTest is Test {
         vm.prank(players[0]);
         game.castVote(1, players[0]);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         // B eliminated, first infected successor E must now be patient zero
         assertEq(
@@ -744,11 +865,6 @@ contract PlagueGameTest is Test {
 
     /// @dev Host + 5 players approve and join (6 total = maxPlayers)
     function _fillRoom() internal {
-        vm.startPrank(host);
-        token.approve(address(game), STAKE);
-        game.joinRoom(1);
-        vm.stopPrank();
-
         for (uint256 i = 0; i < 5; i++) {
             vm.startPrank(players[i]);
             token.approve(address(game), STAKE);
@@ -773,6 +889,12 @@ contract PlagueGameTest is Test {
             vm.prank(players[i]);
             game.submitRoleCommitment(1, keccak256(abi.encodePacked("commitment", i)), "");
         }
+    }
+
+    function _resolveAndFinalize() internal {
+        game.resolveRound(1);
+        vm.prank(backend);
+        game.finalizeElimination(1);
     }
 }
 
@@ -809,6 +931,10 @@ contract PlagueGameExtendedTest is Test {
         game       = new PlagueGame();
         game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
+
+        // Host must approve stake for createRoom auto-join transfer.
+        vm.prank(host);
+        token.approve(address(game), type(uint256).max);
     }
 
     // ── Initialize zero-address guards ────────────────────────────────────────
@@ -964,7 +1090,7 @@ contract PlagueGameExtendedTest is Test {
         game.openVoting(1);
         vm.prank(players[0]);
         game.castVote(1, host);
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         // Round 2: players[1]'s second proof must be paid
         vm.prank(backend);
@@ -993,7 +1119,7 @@ contract PlagueGameExtendedTest is Test {
         }
         vm.prank(host);
         game.castVote(1, players[0]);
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         uint256 totalStaked = STAKE * 6;
         uint256 expectedFee = (totalStaked * 3) / 1000;
@@ -1061,7 +1187,7 @@ contract PlagueGameExtendedTest is Test {
 
         uint256 hostBefore   = token.balanceOf(host);
 
-        game.resolveRound(1);
+        _resolveAndFinalize();
 
         assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
         assertEq(token.balanceOf(host), hostBefore + share);
@@ -1086,7 +1212,7 @@ contract PlagueGameExtendedTest is Test {
         game.joinRoom(1);
         vm.stopPrank();
 
-        assertEq(game.getRoom(1).players.length, 2);
+        assertEq(game.getRoom(1).players.length, 3);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1097,10 +1223,6 @@ contract PlagueGameExtendedTest is Test {
     }
 
     function _fillRoom() internal {
-        vm.startPrank(host);
-        token.approve(address(game), STAKE);
-        game.joinRoom(1);
-        vm.stopPrank();
         for (uint256 i = 0; i < 5; i++) {
             vm.startPrank(players[i]);
             token.approve(address(game), STAKE);
@@ -1140,7 +1262,13 @@ contract PlagueGameExtendedTest is Test {
         }
         vm.prank(host);
         game.castVote(1, players[0]);
+        _resolveAndFinalize();
+    }
+
+    function _resolveAndFinalize() internal {
         game.resolveRound(1);
+        vm.prank(backend);
+        game.finalizeElimination(1);
     }
 }
 

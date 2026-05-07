@@ -44,8 +44,8 @@ import {IERC20}      from "./interfaces/IERC20.sol";
  *
  * ── Endgame (checked after every Reveal) ──────────────────────────────────────
  *  1. infected_alive == 0             → Clean wins
- *  2. infected_alive >= clean_alive   → Infected wins
- *  3. currentRound >= maxRounds       → Infected wins (max rounds draw counts as infected win)
+ *  2. currentRound >= maxRounds       → Draw
+ *  3. infected_alive >= clean_alive   → Infected wins
  *
  * ── Payout ─────────────────────────────────────────────────────────────────────
  *  pot = sum(stakes)
@@ -53,6 +53,8 @@ import {IERC20}      from "./interfaces/IERC20.sol";
  *  At game end: platform takes 0.3% of pot, remainder split among winners.
  */
 contract PlagueGame {
+    uint64 public constant ROLE_COMMIT_TIMEOUT_SECS = 120;
+
     // ─── Enums ────────────────────────────────────────────────────────────────────
 
     enum RoomStatus   { Waiting, Starting, Active, Ended }
@@ -114,6 +116,8 @@ contract PlagueGame {
     mapping(uint256 => uint256)                            private patientZeroIndex;
     /// @dev Cached current patient zero address for quick reads.
     mapping(uint256 => address)                            public currentPatientZero;
+    /// @dev Queued infection target for the next Infection phase (set from patient zero vote).
+    mapping(uint256 => address)                            private pendingInfectionTarget;
     /// @dev Nullifier registry — scoped per room so a nullifier used in room A
     ///      cannot be replayed in room B even with the same round number.
     mapping(uint256 => mapping(bytes32 => bool))           public usedNullifiers;
@@ -131,7 +135,7 @@ contract PlagueGame {
 
     uint256 public platformFees;
     address public platformReceiver;
-    /// @dev cUSD token contract. Alfajores: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
+    /// @dev cUSD token contract. Celo Sepolia: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
     ///      Mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
     IERC20  public cUsdToken;
     bool private _initialized;
@@ -184,6 +188,7 @@ contract PlagueGame {
     error InvalidInfectionTarget();
     error TooManyActiveRooms();
     error Reentrancy();
+    error RoleCommitmentPending();
 
     // ─── Modifiers ────────────────────────────────────────────────────────────────
 
@@ -420,6 +425,15 @@ contract PlagueGame {
         Room storage r = rooms[roomId];
         if (r.status != RoomStatus.Starting) revert WrongPhase();
 
+        uint256 aliveCommitted = 0;
+        for (uint256 i = 0; i < r.players.length; i++) {
+            PlayerState storage p = players[roomId][r.players[i]];
+            if (p.status == PlayerStatus.Eliminated) continue;
+            if (!p.roleCommitted) revert RoleCommitmentPending();
+            unchecked { aliveCommitted++; }
+        }
+        if (aliveCommitted < r.config.minPlayers) revert NotEnoughPlayers();
+
         r.status         = RoomStatus.Active;
         r.currentRound   = 1;
         r.currentPhase   = RoundPhase.Infection;
@@ -427,6 +441,25 @@ contract PlagueGame {
 
         emit RoundStarted(roomId, 1);
         emit PhaseChanged(roomId, RoundPhase.Infection);
+    }
+
+    /**
+     * @notice Eliminate players who failed to submit role commitments before timeout.
+     *         This prevents start-phase griefing/DoS by non-committing participants.
+     */
+    function eliminateUncommittedPlayers(uint256 roomId) external onlyBackend roomExists(roomId) {
+        Room storage r = rooms[roomId];
+        if (r.status != RoomStatus.Starting) revert WrongPhase();
+        if (block.timestamp < uint256(r.startedAt) + ROLE_COMMIT_TIMEOUT_SECS) revert WrongPhase();
+
+        address[] memory all = r.players;
+        for (uint256 i = 0; i < all.length; i++) {
+            PlayerState storage p = players[roomId][all[i]];
+            if (p.status == PlayerStatus.Eliminated) continue;
+            if (p.roleCommitted) continue;
+            p.status = PlayerStatus.Eliminated;
+            emit PlayerEliminated(roomId, all[i]);
+        }
     }
 
     /**
@@ -445,32 +478,48 @@ contract PlagueGame {
      *         After assignment, phase automatically advances to Discussion.
      */
     function assignInfection(uint256 roomId, address target) external onlyBackend roomExists(roomId) {
-        Room storage r        = rooms[roomId];
-        PlayerState storage p = players[roomId][target];
+        Room storage r = rooms[roomId];
 
         if (r.status != RoomStatus.Active)         revert NotActive();
         if (r.currentPhase != RoundPhase.Infection) revert WrongPhase();
-        if (p.addr == address(0))                  revert NotParticipant();
-        if (p.status == PlayerStatus.Eliminated)   revert NotAlive();
-        if (p.status != PlayerStatus.Clean)        revert InvalidInfectionTarget();
+
+        // Round 1: backend-provided target establishes initial patient zero.
+        // Round 2+: infection target is queued from patient zero's vote in resolveRound.
+        bool firstInfection = currentPatientZero[roomId] == address(0);
+        address infectionTarget = firstInfection ? target : pendingInfectionTarget[roomId];
 
         // If we already have a patient zero, keep it synced to the next alive
         // candidate in infection order before recording this new infection.
         _syncPatientZero(roomId);
 
-        p.status                    = PlayerStatus.Infected;
-        p.pendingInfectionNextRound = false;
+        if (infectionTarget != address(0)) {
+            PlayerState storage p = players[roomId][infectionTarget];
+            if (firstInfection) {
+                if (p.addr == address(0))                  revert NotParticipant();
+                if (p.status == PlayerStatus.Eliminated)   revert NotAlive();
+                if (p.status != PlayerStatus.Clean)        revert InvalidInfectionTarget();
+            }
 
-        infectionChain[roomId].push(target);
+            // For subsequent rounds, skip infection if the queued target is no
+            // longer a valid clean/alive participant by the time Infection opens.
+            if (p.addr != address(0) && p.status == PlayerStatus.Clean) {
+                p.status                    = PlayerStatus.Infected;
+                p.pendingInfectionNextRound = false;
 
-        // First infection establishes patient zero.
-        if (currentPatientZero[roomId] == address(0)) {
-            currentPatientZero[roomId] = target;
-            patientZeroIndex[roomId] = 0;
-            emit PatientZeroUpdated(roomId, target);
+                infectionChain[roomId].push(infectionTarget);
+
+                // First infection establishes patient zero.
+                if (currentPatientZero[roomId] == address(0)) {
+                    currentPatientZero[roomId] = infectionTarget;
+                    patientZeroIndex[roomId] = 0;
+                    emit PatientZeroUpdated(roomId, infectionTarget);
+                }
+
+                emit InfectionAssigned(roomId, infectionTarget);
+            }
         }
 
-        emit InfectionAssigned(roomId, target);
+        pendingInfectionTarget[roomId] = address(0);
 
         r.currentPhase   = RoundPhase.Discussion;
         r.phaseStartedAt = uint64(block.timestamp);
@@ -645,19 +694,47 @@ contract PlagueGame {
         r.phaseStartedAt = uint64(block.timestamp);
         emit PhaseChanged(roomId, RoundPhase.Reveal);
 
-        // 4. Endgame check (alive counts only)
+        // Queue next-round infection target from the current patient zero's vote.
+        // This decouples infection spread from public vote winner selection.
+        address pzAtVote = currentPatientZero[roomId];
+        address queuedTarget = address(0);
+        if (pzAtVote != address(0)) {
+            address votedTarget = players[roomId][pzAtVote].voteTarget;
+            PlayerState storage votedState = players[roomId][votedTarget];
+            if (
+                votedTarget != address(0) &&
+                votedState.addr != address(0) &&
+                votedState.status == PlayerStatus.Clean
+            ) {
+                queuedTarget = votedTarget;
+            }
+        }
+        pendingInfectionTarget[roomId] = queuedTarget;
+
+    }
+
+    /**
+     * @notice Finalize Elimination (Reveal) phase after vote effects have been applied.
+     *         Endgame checks run on the pre-infection state; new infection is applied
+     *         later during the next Infection phase.
+     */
+    function finalizeElimination(uint256 roomId) external onlyBackend roomExists(roomId) nonReentrant {
+        Room storage r = rooms[roomId];
+        if (r.status != RoomStatus.Active)         revert NotActive();
+        if (r.currentPhase != RoundPhase.Reveal)   revert WrongPhase();
+
         (uint256 infectedAlive, uint256 cleanAlive) = _countAliveByStatus(roomId);
-        bool     gameOver = false;
+        bool gameOver = false;
         GameOutcome outcome;
 
         if (infectedAlive == 0) {
-            outcome  = GameOutcome.CleanWin;
-            gameOver = true;
-        } else if (infectedAlive >= cleanAlive) {
-            outcome  = GameOutcome.InfectedWin;
+            outcome = GameOutcome.CleanWin;
             gameOver = true;
         } else if (r.currentRound >= r.config.maxRounds) {
-            outcome  = GameOutcome.MaxRoundsDraw;
+            outcome = GameOutcome.MaxRoundsDraw;
+            gameOver = true;
+        } else if (infectedAlive >= cleanAlive) {
+            outcome = GameOutcome.InfectedWin;
             gameOver = true;
         }
 
@@ -667,18 +744,19 @@ contract PlagueGame {
             unchecked { activeRoomCount--; }
             emit GameEnded(roomId, outcome);
             _distributePot(roomId, outcome);
-        } else {
-            // Keep patient-zero succession aligned after eliminations.
-            _syncPatientZero(roomId);
-
-            // 5b. Reset and start next round
-            _resetRoundState(roomId);
-            r.currentRound++;
-            r.currentPhase   = RoundPhase.Infection;
-            r.phaseStartedAt = uint64(block.timestamp);
-            emit RoundStarted(roomId, r.currentRound);
-            emit PhaseChanged(roomId, RoundPhase.Infection);
+            return;
         }
+
+        // Keep patient-zero succession aligned after eliminations.
+        _syncPatientZero(roomId);
+
+        // Reset and start next round; infection assignment runs in Infection phase.
+        _resetRoundState(roomId);
+        r.currentRound++;
+        r.currentPhase   = RoundPhase.Infection;
+        r.phaseStartedAt = uint64(block.timestamp);
+        emit RoundStarted(roomId, r.currentRound);
+        emit PhaseChanged(roomId, RoundPhase.Infection);
     }
 
     // ─── Room Expiry ──────────────────────────────────────────────────────────────
@@ -971,7 +1049,7 @@ contract PlagueGame {
             bool wins =
                 (outcome == GameOutcome.CleanWin    && p.status == PlayerStatus.Clean)   ||
                 (outcome == GameOutcome.InfectedWin && p.status == PlayerStatus.Infected) ||
-                (outcome == GameOutcome.MaxRoundsDraw && p.status == PlayerStatus.Infected);
+                (outcome == GameOutcome.MaxRoundsDraw);
             if (wins) winners[winnerCount++] = all[i];
         }
 

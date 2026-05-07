@@ -220,5 +220,5 @@ Before deploying to mainnet:
 
 | Network | PlagueGame | ZKVerifier (adapter) | StubZKVerifier (dev-only) | Block |
 |---------|-----------|-----------------------|----------------------------|-------|
-| Alfajores | — | — | — | — |
+| Celo Sepolia | — | — | — | — |
 | Celo Mainnet | — | — | n/a | — |

@@ -14,8 +14,8 @@ export type GameOutcome = 'clean_win' | 'infected_win' | 'max_rounds_draw'
  *
  * Win conditions (checked after every Reveal phase, alive counts only):
  *   clean_win    : infected_alive === 0
- *   infected_win : infected_alive >= clean_alive  (includes 1v1)
- *   max_rounds_draw: max_rounds reached without either above
+ *   max_rounds_draw: currentRound >= maxRounds
+ *   infected_win : infected_alive >= clean_alive
  */
 
 export type GameEventType =

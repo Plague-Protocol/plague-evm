@@ -14,6 +14,12 @@ type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
  * from firing duplicate transactions for the same room concurrently.
  */
 const roomPhaseInProgress = new Set<bigint>()
+let expiryMonitorTickInProgress = false
+let roleCommitmentTickInProgress = false
+let phaseAdvanceTickInProgress = false
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.ROLE_COMMIT_TIMEOUT_MS ?? 120_000)
+const ELIMINATION_PHASE_DURATION_MS = Number(process.env.ELIMINATION_PHASE_DURATION_MS ?? 6_000)
 
 /**
  * Recursively convert BigInt values to their decimal string representation so
@@ -97,15 +103,20 @@ async function enrichEventArgs(
   roomId: string,
 ): Promise<Record<string, unknown>> {
   const enriched = { ...args }
-  if (eventName !== 'RoundStarted' && eventName !== 'PhaseChanged') return enriched
+  if (eventName !== 'RoundStarted' && eventName !== 'PhaseChanged' && eventName !== 'GameStarted') return enriched
   try {
     const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
-    const phase = eventName === 'PhaseChanged'
-      ? Number(args.phase)
-      : rawRoom.currentPhase
     let durationMs = 0
-    if (phase === 1) durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
-    else if (phase === 2) durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
+    if (eventName === 'GameStarted') {
+      durationMs = ROLE_COMMIT_TIMEOUT_MS
+    } else {
+      const phase = eventName === 'PhaseChanged'
+        ? Number(args.phase)
+        : rawRoom.currentPhase
+      if (phase === 1) durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
+      else if (phase === 2) durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
+      else if (phase === 3) durationMs = ELIMINATION_PHASE_DURATION_MS
+    }
     enriched.durationMs = durationMs
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -116,6 +127,8 @@ async function enrichEventArgs(
 
 export function startRoomExpiryMonitor(io: Server, intervalMs = 15_000): NodeJS.Timeout {
   return setInterval(async () => {
+    if (expiryMonitorTickInProgress) return
+    expiryMonitorTickInProgress = true
     try {
       const nowSecs = Math.floor(Date.now() / 1000)
       const expiredRoomIds = await collectExpiredRoomIds(nowSecs)
@@ -126,6 +139,8 @@ export function startRoomExpiryMonitor(io: Server, intervalMs = 15_000): NodeJS.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.error(`[expiry-monitor] tick error: ${message}`)
+    } finally {
+      expiryMonitorTickInProgress = false
     }
   }, intervalMs)
 }
@@ -333,8 +348,10 @@ export function setupSocketHandlers(io: Server) {
         }
         if (cleanAlive.length === 0) return
 
+        const patientZero = await chainAdapter.getCurrentPatientZero(BigInt(roomId))
+        const patientZeroSeed = (patientZero ?? ZERO_ADDRESS).toLowerCase()
         const blockHash = await chainAdapter.getLatestBlockHash()
-        const seed = `${roomId}:${round}:${blockHash}`
+        const seed = `${roomId}:${round}:${patientZeroSeed}:${blockHash}`
         const h = BigInt(keccak256(toBytes(seed)))
         const idx = Number(h % BigInt(cleanAlive.length))
         const target = cleanAlive[idx]
@@ -560,14 +577,14 @@ function mapChainEventToGameEvent(
     case 'PlayerJoined':
       return { type: 'player_joined', roomId, payload: { address: String(args.player) }, timestamp }
     case 'GameStarted':
-      return { type: 'game_started', roomId, payload: {}, timestamp }
+      return { type: 'game_started', roomId, payload: { durationMs: Number(args.durationMs ?? 0) }, timestamp }
     case 'RoundStarted':
-      return { type: 'round_started', roomId, payload: { round: Number(args.round) }, timestamp }
+      return { type: 'round_started', roomId, payload: { round: Number(args.round), durationMs: Number(args.durationMs ?? 0) }, timestamp }
     case 'PhaseChanged': {
       const phase = Number(args.phase)
       // Emit phase_changed for all clients
       const events: GameEvent[] = [
-        { type: 'phase_changed', roomId, payload: { phase }, timestamp },
+        { type: 'phase_changed', roomId, payload: { phase, durationMs: Number(args.durationMs ?? 0) }, timestamp },
       ]
       // Emit companion events so clients can show/hide proof window reactively
       if (phase === 1) {
@@ -635,23 +652,36 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
   const rawRoom = await chainAdapter.getRoom(id)
   // RoomStatus.Starting = 1
   if (rawRoom.status !== 1) return
+  const startedAtMs = Number(rawRoom.startedAt) * 1000
+  const timeoutReached = Date.now() >= startedAtMs + ROLE_COMMIT_TIMEOUT_MS
   const playerAddrs = rawRoom.players
   if (playerAddrs.length === 0) return
   const playerStates = await Promise.all(
     playerAddrs.map(addr => chainAdapter.getPlayer(id, addr))
   )
-  const allCommitted = playerStates.every(p => p.roleCommitted === true)
-  if (!allCommitted) return
+
+  const alivePlayers = playerStates.filter(p => p.status !== 2)
+  const allCommitted = alivePlayers.every(p => p.roleCommitted === true)
+  if (!allCommitted && !timeoutReached) return
+
   // Skip if another tick is already processing this room
   if (roomPhaseInProgress.has(id)) return
   roomPhaseInProgress.add(id)
   try {
+    if (!allCommitted && timeoutReached) {
+      await chainAdapter.eliminateUncommittedPlayers(id)
+    }
     await chainAdapter.beginActivePhase(id)
     logger.info(`[role-commitment-monitor] beginActivePhase called for room ${id}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    // Ignore "WrongPhase" (selector 0xe2586bcc) — room was already advanced
-    if (!message.includes('WrongPhase') && !message.includes('0xe2586bcc')) {
+    // Ignore expected races/timeouts: WrongPhase, RoleCommitmentPending, NotEnoughPlayers
+    if (
+      !message.includes('WrongPhase') &&
+      !message.includes('0xe2586bcc') &&
+      !message.includes('RoleCommitmentPending') &&
+      !message.includes('NotEnoughPlayers')
+    ) {
       logger.warn(`[role-commitment-monitor] failed for room ${id}: ${message}`)
     }
   } finally {
@@ -661,6 +691,8 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
 
 export function startRoleCommitmentMonitor(_io: Server, intervalMs = 5_000): NodeJS.Timeout {
   return setInterval(async () => {
+    if (roleCommitmentTickInProgress) return
+    roleCommitmentTickInProgress = true
     try {
       const count = await chainAdapter.getRoomCount()
       for (let id = 1n; id <= count; id++) {
@@ -669,6 +701,8 @@ export function startRoleCommitmentMonitor(_io: Server, intervalMs = 5_000): Nod
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.error(`[role-commitment-monitor] tick error: ${message}`)
+    } finally {
+      roleCommitmentTickInProgress = false
     }
   }, intervalMs)
 }
@@ -705,12 +739,14 @@ async function handleInfectionPhase(id: bigint, rawRoom: RawRoom): Promise<void>
       if (playerStates[i].status === 0) cleanAlive.push(playerAddrs[i])
     }
     if (cleanAlive.length === 0) return
+    const patientZero = await chainAdapter.getCurrentPatientZero(id)
+    const patientZeroSeed = (patientZero ?? ZERO_ADDRESS).toLowerCase()
     const blockHash = await chainAdapter.getLatestBlockHash()
     const round = Number(rawRoom.currentRound)
-    const h = BigInt(keccak256(toBytes(`${id}:${round}:${blockHash}`)))
+    const h = BigInt(keccak256(toBytes(`${id}:${round}:${patientZeroSeed}:${blockHash}`)))
     const target = cleanAlive[Number(h % BigInt(cleanAlive.length))]
     await chainAdapter.assignInfection(id, target)
-    logger.info(`[phase-advance-monitor] assignInfection succeeded for room ${id} round ${round} target ${target}`)
+    logger.info(`[phase-advance-monitor] assignInfection succeeded for room ${id} round ${round} patientZero=${patientZeroSeed} target ${target}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message) && !message.includes('InvalidInfectionTarget')) {
@@ -759,15 +795,36 @@ async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Pro
   }
 }
 
+async function handleEliminationPhase(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
+  const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
+  if (now < phaseStartedAt + ELIMINATION_PHASE_DURATION_MS) return
+  if (roomPhaseInProgress.has(id)) return
+  roomPhaseInProgress.add(id)
+  try {
+    await chainAdapter.finalizeElimination(id)
+    logger.info(`[phase-advance-monitor] finalizeElimination succeeded for room ${id}`)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (!isExpectedPhaseRevert(message)) {
+      logger.warn(`[phase-advance-monitor] finalizeElimination failed for room ${id}: ${message}`)
+    }
+  } finally {
+    roomPhaseInProgress.delete(id)
+  }
+}
+
 async function processActiveRoom(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phase = Number(rawRoom.currentPhase)
   if (phase === 0) await handleInfectionPhase(id, rawRoom)
   else if (phase === 1) await handleDiscussionPhase(id, rawRoom, now)
   else if (phase === 2) await handleVotingPhase(id, rawRoom, now)
+  else if (phase === 3) await handleEliminationPhase(id, rawRoom, now)
 }
 
 export function startPhaseAdvanceMonitor(_io: Server, intervalMs = 5_000): NodeJS.Timeout {
   return setInterval(async () => {
+    if (phaseAdvanceTickInProgress) return
+    phaseAdvanceTickInProgress = true
     try {
       const count = await chainAdapter.getRoomCount()
       const now = Date.now()
@@ -780,6 +837,8 @@ export function startPhaseAdvanceMonitor(_io: Server, intervalMs = 5_000): NodeJ
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.error(`[phase-advance-monitor] tick error: ${message}`)
+    } finally {
+      phaseAdvanceTickInProgress = false
     }
   }, intervalMs)
 }

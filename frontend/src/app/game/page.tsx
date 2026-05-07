@@ -20,7 +20,7 @@ const PHASE_LABEL: Record<RoundPhase, string> = {
   infection:  'INFECTION',
   discussion: 'DISCUSS',
   voting:     'VOTING',
-  reveal:     'REVEAL',
+  reveal:     'ELIMINATION',
   ended:      'ENDED',
 }
 
@@ -57,6 +57,7 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
   11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD)
   42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
+const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_ROLE_COMMIT_TIMEOUT_MS ?? 120_000)
 
 // ── Contract error → user message ─────────────────────────────────────────────
 
@@ -101,6 +102,10 @@ function GamePageInner() {
 
   const phaseEndsAt = currentRound?.phaseEndsAt ?? 0
   const msLeft = phaseEndsAt > now ? phaseEndsAt - now : 0
+  const startCommitEndsAt = room?.status === 'starting' && room?.startedAt
+    ? room.startedAt + ROLE_COMMIT_TIMEOUT_MS
+    : 0
+  const headerCountdownMs = startCommitEndsAt > now ? startCommitEndsAt - now : msLeft
 
   // ── Vote state ───────────────────────────────────────────────────────────
   const [selectedVote, setSelectedVote]           = useState<string | null>(null)
@@ -111,11 +116,13 @@ function GamePageInner() {
   // ── Proof submission state ───────────────────────────────────────────────
   const [proving, setProving]       = useState(false)
   const [proofError, setProofError] = useState<string | null>(null)
+  const [optimisticProofDone, setOptimisticProofDone] = useState(false)
 
   // ── Role commitment state (during Starting phase) ────────────────────────
-  const [committing, setCommitting]         = useState(false)
-  const [commitError, setCommitError]       = useState<string | null>(null)
-  const [secretPhrase, setSecretPhrase]     = useState('')
+  const [committing, setCommitting]               = useState(false)
+  const [commitError, setCommitError]             = useState<string | null>(null)
+  const [secretPhrase, setSecretPhrase]           = useState('')
+  const [optimisticCommitDone, setOptimisticCommitDone] = useState(false)
 
   // ── Start game state (host only, Waiting phase) ──────────────────────────
   const [starting, setStarting]         = useState(false)
@@ -127,6 +134,12 @@ function GamePageInner() {
   const [chatInput, setChatInput]       = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  const schedulePostTxRefresh = useCallback(() => {
+    refresh()
+    setTimeout(() => refresh(), 800)
+    setTimeout(() => refresh(), 2_000)
+  }, [refresh])
+
   // ── Derived ──────────────────────────────────────────────────────────────
   const phase       = currentRound?.phase ?? 'ended'
   const round       = currentRound?.number ?? 0
@@ -136,8 +149,8 @@ function GamePageInner() {
   const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
   const hasVoted      = Boolean(optimisticVotedFor || localPlayer?.hasVotedThisRound)
   const myVotedTarget = optimisticVotedFor ?? localPlayer?.voteTarget
-  const hasProofThisRound = Boolean(localPlayer?.hasProofThisRound)
-  const commitDone = Boolean(localPlayer?.roleCommitted)
+  const hasProofThisRound = optimisticProofDone || Boolean(localPlayer?.hasProofThisRound)
+  const commitDone = optimisticCommitDone || Boolean(localPlayer?.roleCommitted)
   const canVote       = phase === 'voting' && isConnected && !!localPlayer && !localPlayer.isEliminated && !hasVoted && !voting
   const canProve      = phase === 'discussion' && isConnected && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound
   const canCommit     = room?.status === 'starting' && isConnected && !!localPlayer && !committing && !commitDone
@@ -152,7 +165,16 @@ function GamePageInner() {
 
   // Reset optimistic vote when round changes
   const roundNumber = currentRound?.number ?? 0
-  useEffect(() => { setOptimisticVotedFor(null) }, [roundNumber])
+  useEffect(() => {
+    setOptimisticVotedFor(null)
+    setOptimisticProofDone(false)
+  }, [roundNumber])
+
+  // Avoid carrying optimistic commitment state into another room.
+  useEffect(() => {
+    setOptimisticCommitDone(false)
+    setOptimisticProofDone(false)
+  }, [roomId])
 
   // If the room ended but live socket events were missed (result is still null),
   // do a chain read so the game-over overlay is populated correctly.
@@ -293,16 +315,24 @@ function GamePageInner() {
       }
 
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
+      setOptimisticProofDone(true)
+      socket?.emit('request_room_refresh', { roomId })
       toast.success('Innocence proof submitted!')
-      refresh()
+      schedulePostTxRefresh()
     } catch (err) {
       const msg = parseContractError(err)
-      setProofError(msg)
-      toast.error(msg)
+      if (msg.includes('AlreadyProvedThisRound')) {
+        setOptimisticProofDone(true)
+        socket?.emit('request_room_refresh', { roomId })
+        schedulePostTxRefresh()
+      } else {
+        setProofError(msg)
+        toast.error(msg)
+      }
     } finally {
       setProving(false)
     }
-  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket, refresh])
+  }, [address, roomId, secretPhrase, round, localPlayer, room, chainId, socket, schedulePostTxRefresh])
 
   const handleCommitRole = useCallback(async () => {
     if (!address || !roomId || !secretPhrase) {
@@ -321,24 +351,26 @@ function GamePageInner() {
       const proofBytes    = ('0x' + proofResult.proof.map((b: number) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
       const client = getContractClient()!
       await client.submitRoleCommitment(address, BigInt(roomId), commitmentHex, proofBytes)
+      setOptimisticCommitDone(true)
       setSecretPhrase('')
       socket?.emit('request_room_refresh', { roomId })
       toast.success('Role committed!')
-      refresh()
+      schedulePostTxRefresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Role commitment failed.'
       // AlreadyCommitted means a previous submission went through — treat as success
       if (msg.includes('AlreadyCommitted')) {
+        setOptimisticCommitDone(true)
         setSecretPhrase('')
         socket?.emit('request_room_refresh', { roomId })
-        refresh()
+        schedulePostTxRefresh()
       } else {
         setCommitError(msg.split('\n')[0])
       }
     } finally {
       setCommitting(false)
     }
-  }, [address, roomId, secretPhrase, refresh, socket])
+  }, [address, roomId, secretPhrase, schedulePostTxRefresh, socket])
 
   const handleStartGame = useCallback(async () => {
     if (!address || !roomId) return
@@ -348,7 +380,8 @@ function GamePageInner() {
     setStartError(null)
     try {
       await client.startGame(address, BigInt(roomId))
-      refresh()
+      socket?.emit('request_room_refresh', { roomId })
+      schedulePostTxRefresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start game.'
       // Extract the human-readable revert reason if present (e.g. NotEnoughPlayers)
@@ -358,7 +391,7 @@ function GamePageInner() {
     } finally {
       setStarting(false)
     }
-  }, [address, roomId, refresh])
+  }, [address, roomId, schedulePostTxRefresh, socket])
 
   // ── Phase advance ticker ─────────────────────────────────────────────────
   useEffect(() => {
@@ -456,14 +489,14 @@ function GamePageInner() {
             <h1 className="font-display text-7xl font-bold leading-none sm:text-8xl" style={{ color: '#d4c9b2' }}>
               {isLoading ? 'LOADING…' : round > 0 ? `ROUND ${round}` : room?.status === 'waiting' ? 'WAITING' : room?.status === 'ended' ? 'ENDED' : 'STARTING'}
             </h1>
-            {phaseEndsAt > 0 && (
+            {headerCountdownMs > 0 && (
               <div
                 className="flex flex-col items-center rounded-xl border px-10 py-4"
                 style={{ borderColor: 'rgba(57,255,20,0.45)', backgroundColor: 'rgba(57,255,20,0.06)' }}
               >
                 <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Time Left</p>
                 <p className="mt-1 font-display text-6xl font-bold leading-none tabular-nums" style={{ color: '#39ff14', textShadow: '0 0 20px rgba(57,255,20,0.5)' }}>
-                  {formatCountdown(msLeft)}
+                  {formatCountdown(headerCountdownMs)}
                 </p>
               </div>
             )}
@@ -575,7 +608,7 @@ function GamePageInner() {
                     </p>
                     <p className="mt-2 font-mono text-xs" style={{ color: '#ff6b6b' }}>
                       {localPlayer.role === 'patient_zero'
-                        ? 'The plague started with you. Lead the infected faction to parity.'
+                        ? 'The infected depends on you. Lead the infected faction to parity.'
                         : 'Spread the plague. Avoid suspicion. Infected players cannot submit innocence proofs.'}
                     </p>
                   </div>
@@ -620,7 +653,7 @@ function GamePageInner() {
                       {phase === 'infection'  && 'Infection spreading — new carrier assigned.'}
                       {phase === 'discussion' && 'Submit innocence proofs now before voting opens.'}
                       {phase === 'voting'     && (hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Cast your vote to eliminate the suspected carrier.')}
-                      {phase === 'reveal'     && 'Vote resolution in progress.'}
+                      {phase === 'reveal'     && 'Elimination resolution in progress.'}
                       {phase === 'ended' && (
                         result
                           ? `Game over: ${result.outcome.replaceAll('_', ' ')}`
@@ -678,6 +711,9 @@ function GamePageInner() {
                       <>
                         <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                           Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
+                        </p>
+                        <p className="mt-1 font-mono text-[11px]" style={{ color: '#84cc16' }}>
+                          Commit deadline: {formatCountdown(Math.max(0, startCommitEndsAt - now))}
                         </p>
                         <input
                           type="password"

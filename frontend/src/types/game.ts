@@ -207,8 +207,8 @@ export interface ProofSubmission {
 /**
  * Win conditions (checked after every Reveal phase):
  *   CLEAN_WIN  : infected_alive === 0
- *   INFECTED_WIN: infected_alive >= clean_alive (parity = inevitable spread)
- *   INFECTED_WIN: 1 infected vs 1 clean alive (parity rule, game over)
+ *   MAX_ROUNDS_DRAW: currentRound >= maxRounds
+ *   INFECTED_WIN: infected_alive >= clean_alive
  * alive counts = ONLY currently alive players (eliminated don't count).
  */
 export type GameOutcome = 'clean_win' | 'infected_win' | 'max_rounds_draw'

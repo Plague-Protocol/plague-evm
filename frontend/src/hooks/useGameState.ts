@@ -33,6 +33,7 @@ const PLAYER_STATUS_MAP: Record<number, 'clean' | 'infected' | 'eliminated'> = {
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const ELIMINATION_PHASE_DURATION_MS = Number(process.env.NEXT_PUBLIC_ELIMINATION_PHASE_DURATION_MS ?? 6_000)
 
 // ── Map raw on-chain room to Room type ────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +100,7 @@ function buildRoundFromRaw(rawRoom: any, players: Player[]): Round | null {
   let phaseDurationMs = 0
   if (phase === 'discussion') phaseDurationMs = Number(rawRoom.config?.discussionDurationSecs ?? 0) * 1000
   if (phase === 'voting') phaseDurationMs = Number(rawRoom.config?.votingDurationSecs ?? 0) * 1000
+  if (phase === 'reveal') phaseDurationMs = ELIMINATION_PHASE_DURATION_MS
 
   const votes = players
     .filter(p => p.hasVotedThisRound && !!p.voteTarget)
@@ -122,7 +124,7 @@ async function enrichLocalRole(
   roomId: bigint,
   localPlayer: Player | null,
 ): Promise<Player | null> {
-  if (!client || !localPlayer || localPlayer.status !== 'infected') return localPlayer
+  if (!client || localPlayer?.status !== 'infected') return localPlayer
   const patientZero = await client.getCurrentPatientZero(roomId).catch(() => ZERO_ADDRESS as `0x${string}`)
   return {
     ...localPlayer,
@@ -191,7 +193,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
       case 'game_started':
         appendFeed('Game started — submit your role commitment.')
-        setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'starting' } } : prev)
+        setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'starting', startedAt: event.timestamp } } : prev)
         break
 
       case 'round_started':
@@ -216,6 +218,12 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       case 'phase_changed': {
         const phaseName = PHASE_MAP[Number(p.phase)] ?? 'ended'
         appendFeed(`Phase → ${phaseName.toUpperCase()}`)
+        if (phaseName === 'reveal') {
+          appendFeed('Elimination phase resolving with previous infection state.')
+        }
+        if (phaseName === 'infection') {
+          appendFeed('Game continues. The next infection is now being applied.')
+        }
         setState(prev => {
           const updatedRound = prev.currentRound
             ? { ...prev.currentRound, phase: phaseName, phaseEndsAt: event.timestamp + Number(p.durationMs ?? 0) }
@@ -239,26 +247,37 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'player_eliminated':
-        appendFeed(`A player has been ELIMINATED.`)
-        setState(prev => ({
-          ...prev,
-          room: prev.room ? {
-            ...prev.room,
-            players: prev.room.players.map(pl =>
-              pl.walletAddress === p.player
-                ? { ...pl, status: 'eliminated' as const, isEliminated: true }
-                : pl
-            ),
-          } : null,
-          currentRound: prev.currentRound ? {
-            ...prev.currentRound,
-            eliminatedThisRound: [...prev.currentRound.eliminatedThisRound, String(p.player)],
-          } : null,
-        }))
+        setState(prev => {
+          const targetAddr = String(p.player).toLowerCase()
+          const prior = prev.room?.players.find(pl => pl.walletAddress.toLowerCase() === targetAddr)
+          if (prior?.status === 'infected') {
+            appendFeed('An infected player has been removed.')
+          } else if (prior?.status === 'clean') {
+            appendFeed('An innocent person has been eliminated.')
+          } else {
+            appendFeed('A player has been eliminated.')
+          }
+
+          return {
+            ...prev,
+            room: prev.room ? {
+              ...prev.room,
+              players: prev.room.players.map(pl =>
+                pl.walletAddress === p.player
+                  ? { ...pl, status: 'eliminated' as const, isEliminated: true }
+                  : pl
+              ),
+            } : null,
+            currentRound: prev.currentRound ? {
+              ...prev.currentRound,
+              eliminatedThisRound: [...prev.currentRound.eliminatedThisRound, String(p.player)],
+            } : null,
+          }
+        })
         break
 
       case 'player_saved_by_proof':
-        appendFeed(`A player was SAVED by their innocence proof.`)
+        appendFeed('A player was saved by an innocence proof.')
         break
 
       case 'vote_resolved':
@@ -275,7 +294,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'patient_zero_updated':
-        appendFeed('The patient zero mantle has passed to a new host.')
+        appendFeed('A new Patient Zero has risen through the ranks.')
         setState(prev => {
           if (!prev.localPlayer) return prev
           const isLocalPatientZero =
@@ -403,21 +422,17 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       if (room.status === 'ended') {
         const cleanAlive    = players.filter(p => !p.isEliminated && p.status === 'clean')
         const infectedAlive = players.filter(p => !p.isEliminated && p.status === 'infected')
-        let outcome: GameOutcome
-        let winners: Player[]
-        let losers: Player[]
+        let outcome: GameOutcome = 'max_rounds_draw'
+        let winners: Player[] = [...cleanAlive, ...infectedAlive]
+        let losers: Player[] = []
         if (infectedAlive.length === 0) {
           outcome = 'clean_win'
           winners = cleanAlive
           losers  = infectedAlive
-        } else if (infectedAlive.length >= cleanAlive.length) {
+        } else if (room.currentRound < room.maxRounds && infectedAlive.length >= cleanAlive.length) {
           outcome = 'infected_win'
           winners = infectedAlive
           losers  = cleanAlive
-        } else {
-          outcome = 'max_rounds_draw'
-          winners = [...cleanAlive, ...infectedAlive]
-          losers  = []
         }
         const totalPot     = room.stakeAmount * BigInt(room.players.length)
         const potPerWinner = winners.length > 0 ? totalPot / BigInt(winners.length) : 0n

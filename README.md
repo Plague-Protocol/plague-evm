@@ -122,7 +122,7 @@ forge build
 # Run tests
 forge test -vvv
 
-# Deploy to Alfajores testnet
+# Deploy to Celo Sepolia testnet
 forge script contracts/script/Deploy.s.sol --rpc-url $CELO_RPC_URL --broadcast
 ```
 
@@ -150,7 +150,7 @@ nargo test
 | Frontend | Next.js 14, TypeScript, Tailwind CSS, Framer Motion |
 | Wallet | MetaMask / Valora (EIP-1193) |
 | Backend | Node.js, Express, Socket.io, Redis |
-| Smart Contracts | Solidity 0.8.24, Foundry, Celo Alfajores/Mainnet |
+| Smart Contracts | Solidity 0.8.24, Foundry, Celo Sepolia/Mainnet |
 | ZK Circuits | Noir, Groth16/PLONK, snarkjs |
 | Randomness | Backend-signed commit-reveal scheme |
 
@@ -159,7 +159,7 @@ nargo test
 ## 🌐 Roadmap
 
 - [ ] **v0.1** — Playable game without ZK (roles server-assigned, revealed at end)
-- [ ] **v0.2** — Solidity escrow + on-chain voting live on Alfajores testnet
+- [ ] **v0.2** — Solidity escrow + on-chain voting live on Celo Sepolia testnet
 - [ ] **v0.3** — ZK role commitments (Noir circuits + on-chain verifier)
 - [ ] **v0.4** — Full ZK: infection proofs + innocence proofs
 - [ ] **v0.5** — Mainnet launch + leaderboard
