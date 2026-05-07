@@ -20,6 +20,12 @@ let phaseAdvanceTickInProgress = false
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.ROLE_COMMIT_TIMEOUT_MS ?? 120_000)
 const ELIMINATION_PHASE_DURATION_MS = Number(process.env.ELIMINATION_PHASE_DURATION_MS ?? 6_000)
+const ROOM_SNAPSHOT_THROTTLE_MS = Number(process.env.ROOM_SNAPSHOT_THROTTLE_MS ?? 250)
+
+const roomSnapshotTimers = new Map<string, NodeJS.Timeout>()
+const roomSnapshotLastEmittedAt = new Map<string, number>()
+const roomSnapshotInFlight = new Set<string>()
+const roomSnapshotDirty = new Set<string>()
 
 /**
  * Recursively convert BigInt values to their decimal string representation so
@@ -91,6 +97,50 @@ async function emitRoomSnapshot(io: Server, roomId: string, socketId?: string): 
     const message = err instanceof Error ? err.message : String(err)
     logger.warn(`[socket] failed to emit room_snapshot for ${roomId}: ${message}`)
   }
+}
+
+function clearRoomSnapshotTimer(roomId: string): void {
+  const timer = roomSnapshotTimers.get(roomId)
+  if (!timer) return
+  clearTimeout(timer)
+  roomSnapshotTimers.delete(roomId)
+}
+
+async function flushRoomSnapshot(io: Server, roomId: string): Promise<void> {
+  clearRoomSnapshotTimer(roomId)
+  roomSnapshotInFlight.add(roomId)
+  try {
+    await emitRoomSnapshot(io, roomId)
+    roomSnapshotLastEmittedAt.set(roomId, Date.now())
+  } finally {
+    roomSnapshotInFlight.delete(roomId)
+    if (roomSnapshotDirty.delete(roomId)) {
+      queueRoomSnapshot(io, roomId)
+    }
+  }
+}
+
+function queueRoomSnapshot(io: Server, roomId: string): void {
+  if (roomSnapshotInFlight.has(roomId)) {
+    roomSnapshotDirty.add(roomId)
+    return
+  }
+
+  const last = roomSnapshotLastEmittedAt.get(roomId) ?? 0
+  const elapsed = Date.now() - last
+  const waitMs = Math.max(0, ROOM_SNAPSHOT_THROTTLE_MS - elapsed)
+
+  if (waitMs === 0 && !roomSnapshotTimers.has(roomId)) {
+    void flushRoomSnapshot(io, roomId)
+    return
+  }
+
+  if (roomSnapshotTimers.has(roomId)) return
+
+  const timer = setTimeout(() => {
+    void flushRoomSnapshot(io, roomId)
+  }, waitMs)
+  roomSnapshotTimers.set(roomId, timer)
 }
 
 /**
@@ -221,7 +271,7 @@ export function setupSocketHandlers(io: Server) {
       io.to(socketId).emit('game_event', {
         type: 'infection_assigned', roomId, payload: { player }, timestamp,
       } as GameEvent)
-      await emitRoomSnapshot(io, roomId)
+      queueRoomSnapshot(io, roomId)
       return
     }
 
@@ -233,7 +283,7 @@ export function setupSocketHandlers(io: Server) {
     } else {
       io.to(roomId).emit('game_event', mapped)
     }
-    await emitRoomSnapshot(io, roomId)
+    queueRoomSnapshot(io, roomId)
   })
 
   io.on('connection', (socket: Socket) => {
@@ -376,7 +426,7 @@ export function setupSocketHandlers(io: Server) {
      */
     socket.on('request_room_refresh', async ({ roomId }: { roomId: string }) => {
       io.to(roomId).emit('room_refresh_requested', { roomId, timestamp: Date.now() })
-      await emitRoomSnapshot(io, roomId)
+      queueRoomSnapshot(io, roomId)
     })
 
     /**
@@ -565,6 +615,13 @@ export function setupSocketHandlers(io: Server) {
   })
 
   io.engine.on('close', () => {
+    for (const timer of roomSnapshotTimers.values()) {
+      clearTimeout(timer)
+    }
+    roomSnapshotTimers.clear()
+    roomSnapshotLastEmittedAt.clear()
+    roomSnapshotInFlight.clear()
+    roomSnapshotDirty.clear()
     unwatch()
   })
 }
