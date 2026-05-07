@@ -69,18 +69,20 @@ PlagueProtocol/
 ## 🎮 Game Loop
 
 ```
-1. Players join room & stake cUSD  →  Funds escrowed in contract
-2. VRF assigns Patient Zero        →  Verifiably random, nobody knows ahead of time
-3. All players commit their role   →  ZK commitment stored on-chain
-4. Round begins
-   ├── Infection phase:   Patient Zero silently infects one player
-   ├── Discussion phase:  Players discuss openly (off-chain chat)
-   ├── Voting phase:      Players vote on-chain to eliminate a suspect
-   └── Drain:             Infected players lose stake to pot
-5. Win conditions checked
+1. Players join room & stake cUSD      →  Funds escrowed in contract
+2. Host starts game                    →  Join window closes; RoomStatus: Starting
+3. All players commit their role       →  ZK commitment: Poseidon(role, secret) on-chain
+                                          (time-limited window — too few commits ends game early)
+4. Patient Zero assigned               →  Verifiable private event; no one else knows
+5. Round begins
+   ├── Infection phase:   Round 1 — deterministic target; Round 2+ — target is PZ's prior vote
+   ├── Discussion phase:  Players discuss; clean players may submit ZK innocence proofs
+   ├── Voting phase:      All players vote on-chain; absent players self-vote (silence = guilt)
+   └── Reveal:            Contract resolves votes, eliminates players, checks endgame
+6. Win conditions checked
    ├── Clean team wins:   All infected eliminated → clean players split pot
-   └── Infected win:      Infected reach majority → infected split pot
-6. Auto-payout via contract
+   └── Infected win:      Infected ≥ clean alive, or max rounds reached → infected split pot
+7. Auto-payout via contract — no manual claim needed
 ```
 
 ---

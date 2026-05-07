@@ -48,6 +48,16 @@ Players decide whether to join a room based on full public information: **stake,
   commitment = Poseidon(role, secret)   ← role_commitment.nr
   ```
 - All commitments are submitted on-chain. No one can see your role — it's cryptographically locked.
+
+**Starting phase timeout.**  
+Players have a configurable window to submit their commitment (default: 2 minutes, set by `ROLE_COMMIT_TIMEOUT_MS`). If the window expires:
+- Players who did not commit are immediately eliminated from the game.
+- If the remaining committed players satisfy `min_players`, `beginActivePhase` is called and the game proceeds normally.
+- If committed survivors fall below `min_players`, `finalizeStartTimeout` is called instead:
+  - Committed players split the pot equally.
+  - If nobody committed at all, all players are fully refunded.
+  - Room status is set to `Ended`.
+
 - `RoomStatus: Starting → Active`, Round 1 begins.
 
 ---
@@ -60,7 +70,9 @@ infection → discussion → voting → reveal
 
 ### Phase 1 — Infection
 - The **system automatically assigns** infection each round — infected players do NOT choose their target.
-- Target selection: `eligible_clean_alive[ hash(roomId, round, prevTxHash) % count ]`
+- **Round 1 target:** `eligible_clean_alive[ keccak256(roomId : round : currentPatientZero : blockHash) % count ]`
+- **Round 2+ target:** the player Patient Zero cast their vote for in the preceding voting phase, provided that player is still eligible (clean and alive). Falls back to the deterministic formula if the queued target is ineligible.
+- Patient Zero's on-chain vote openly nominates a suspect for elimination — and secretly queues that same player as the next infection target. Both roles of the vote are public on-chain; only the infection consequence is hidden from other players.
 - Spread rate: **+1 infected per round** (controlled, not exponential)
 - After Round N: N total infected players
 - Only the newly infected player receives a private `infection_assigned` event. The room is never told who was infected or why.
@@ -153,7 +165,7 @@ Checked after every Reveal phase using **alive player counts only** (eliminated 
 - **Winners** = alive players from the winning faction at game end.
 - `payout_per_winner = total_pot / winners.len()` (integer division, remainder stays in contract)
 - Eliminated and losing-faction players receive **nothing**.
-- Distribution is **automatic** — the contract transfers directly after `resolve_round`, no manual claim.
+- Distribution is **automatic** — the contract transfers directly after `finalizeElimination`, no manual claim.
 
 ---
 
@@ -178,8 +190,8 @@ Browser (Next.js)
   ↓ Socket.io  (private events: infection_assigned, own role)
   ↕ REST/RPC
 Backend (Node/Express)
-  ↓ Stellar SDK
-Soroban Contract  (PlagueGame)
+  ↓ viem (Celo RPC + contract event watcher)
+PlagueGame Contract  (Celo Sepolia / Celo Mainnet, Solidity 0.8.24)
   — escrow, votes, proof verification, tie resolution, payout
   ↑ ZK verifier calls
 Noir circuits

@@ -320,6 +320,8 @@ export function setupSocketHandlers(io: Server) {
         )
         socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
         await emitRoomSnapshot(io, roomId, socket.id)
+        // Broadcast updated state to all existing room members so they see the new player.
+        queueRoomSnapshot(io, roomId)
 
         // Send persisted chat history so reconnecting clients see previous messages.
         try {

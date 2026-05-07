@@ -10,7 +10,7 @@ const phases = [
     icon: '🦠',
     color: '#e63329',
     duration: 'Auto',
-    desc: 'The backend deterministically selects one Clean player to become infected. Only that player receives a private notification — everyone else sees nothing. The infected player must act natural throughout the round.',
+    desc: 'Round 1: the system selects a Clean player to infect using a deterministic hash. Round 2+: the player Patient Zero voted for in the previous round becomes the infection target (if still eligible). Only the newly infected player receives a private notification — everyone else sees nothing. This makes Patient Zero\'s vote a hidden strategic weapon: it openly nominates a suspect for elimination and secretly queues that same player as the next infection target.',
   },
   {
     number: '02',
@@ -252,8 +252,8 @@ export default function HowToPlayPage() {
               {
                 status: 'Starting',
                 color: '#f5c518',
-                desc: 'The host has called startGame. The join window is closed. Each player must now submit their ZK role commitment — a cryptographic binding of their role and secret that cannot be changed. Roles are never revealed on-chain.',
-                actions: ['Submit role commitment: Poseidon(role, secret)', 'All players must commit before the game begins', 'No new players can join'],
+                desc: 'The host has called startGame. The join window is closed. Each player must submit their ZK role commitment — a cryptographic binding of their role and secret — within a time-limited window. If too few players commit before the window expires, the game ends immediately: committed players split the pot equally, uncommitted players are refunded.',
+                actions: ['Submit role commitment: Poseidon(role, secret)', 'Commitment window is time-limited — missing it may end the game early', 'No new players can join'],
               },
               {
                 status: 'Active',

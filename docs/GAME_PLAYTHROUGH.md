@@ -1,7 +1,9 @@
 # PlagueProtocol — Full Game Playthrough
 
-> 8-player game, stake 10 XLM each, proof_fee 2 XLM, max 7 rounds.  
-> Pot starts at **80 XLM**. Proof fees are added as they're paid.
+> 8-player game, stake 10 cUSD each, proof_fee 2 cUSD, max 7 rounds.  
+> Pot starts at **80 cUSD**. Proof fees are added as they're paid.
+>
+> **Infection targeting mechanic:** Round 1 uses a deterministic hash. From Round 2 onwards, the player Patient Zero voted for in the previous round is queued as the next infection target (falls back to deterministic if the queued target is ineligible). See GAME_FLOW.md §3 for full details.
 
 ---
 
@@ -21,14 +23,14 @@
 > All players submit `commitment = Poseidon(role, secret)` on-chain.  
 > Only Alice knows her role is Patient Zero. Everyone else sees "Clean".
 
-**Pot:** 80 XLM (8 × 10)
+**Pot:** 80 cUSD (8 × 10)
 
 ---
 
 ## Round 1
 
 ### Infection Phase
-System selects: `eligible_clean_alive[ hash(room1, round1, prevTxHash) % 7 ]` → **Bob**
+System selects: Alice (PZ) voted **Dave** in Round 1 — but Dave was eliminated. Queued target is ineligible, so the system falls back to deterministic selection: `eligible_clean_alive[ keccak256(room1:round2:Alice:blockHash) % 5 ]` → **Grace**
 
 - Alice learns nothing new (she was already infected)
 - Bob receives private event `infection_assigned` — he's now infected
@@ -77,7 +79,7 @@ No tie. Dave eliminated (most votes, no proof needed).
 
 **Endgame check (alive only):** infected=2, clean=5 → `infected(2) < clean(5)` → **continue**
 
-**Pot:** 80 XLM (stake drain mechanic TBD — pot unchanged for this walkthrough)
+**Pot:** 80 cUSD (stake drain mechanic TBD — pot unchanged for this walkthrough)
 
 ---
 
@@ -85,7 +87,7 @@ No tie. Dave eliminated (most votes, no proof needed).
 
 ### Infection Phase
 Eligible clean alive: Carol, Eve, Frank, Grace, Henry (5 players)  
-System: `hash(room1, round2, prevTxHash) % 5` → **Grace**
+System: `hash(room1, round2, prevTxHash) % 5` → **Grace** (original deterministic calculation)
 
 - Grace receives private `infection_assigned`
 - Room sees nothing
@@ -133,26 +135,26 @@ No tie. Alice eliminated.
 ## Round 3
 
 ### Infection Phase
-Eligible clean alive: Carol, Eve, Frank, Henry (4 players)  
-System: `hash(room1, round3, prevTxHash) % 4` → **Frank**
+Alice (PZ at the time of Round 2's vote resolution) voted **Henry**. Henry is clean and alive — queued target is eligible → **Henry** is infected this round (not a fallback hash selection).
 
-- Frank receives private `infection_assigned`
+- Henry receives private `infection_assigned`
 
-**Alive: 6 | Clean: 3 (Carol/Eve/Henry) | Infected: 3 (Bob, Grace, Frank)**
+**Alive: 5 | Clean: 3 (Carol/Eve/Frank) | Infected: 3 (Bob, Grace, Henry)**
+
+> Bob is now Patient Zero (promoted after Alice's elimination).
 
 ### Discussion Phase
 ```
-Bob:    "Alice is gone but something still feels off. I'm going Henry."
-Henry:  "I'm going Bob. He's been pushing the same targets as Alice."
-Eve:    "Henry's onto something. Bob's votes aligned suspiciously."
-Carol:  "Bob or Frank. Frank has been very quiet this round."
-Frank:  "I'm thinking Eve deflects a lot."
+Bob:    "Alice is gone. But something still feels wrong. Frank has been too quiet."
+Grace:  "Bob's right. I'm suspicious of Frank or Eve."
+Henry:  "I'd look at Bob. His votes have aligned with the infected pattern."
+Carol:  "Bob pushing suspicion onto Frank feels deliberate."
+Frank:  "I'm going Bob. Henry might be right."
+Eve:    "Bob for me too."
 ```
 
-> Henry feels targeted this round. He **submits his innocence proof** during discussion (uses his free slot):
-> `nullifier = Poseidon(henry_secret, room1, 3)` — valid, accepted on-chain.
-> `proof_submitted` event is broadcast — room sees Henry submitted a proof but doesn't know why.
-> Bob attempts to generate a proof — **fails** (infected, circuit rejects). Submits nothing.
+> Henry knows he's infected — he cannot generate a valid innocence proof (circuit rejects infected role). Submits nothing.  
+> Carol considers proof but feels safe — doesn't submit.  
 > **Proof window closes. Voting opens.**
 
 ### Voting Phase
@@ -185,68 +187,64 @@ Both Henry and Bob tied at 3 votes. Contract checks proofs submitted during disc
 ## Round 4
 
 ### Infection Phase
-Eligible clean alive: Carol, Eve, Henry (3 players)  
-System: `hash(room1, round4, prevTxHash) % 3` → **Carol**
+Bob (PZ at the time of Round 3's vote resolution) voted **Frank**. Frank is clean and alive → **Frank** is infected.
 
-- Carol receives private `infection_assigned`
+- Frank receives private `infection_assigned`
 
-**Alive: 5 | Clean: 2 (Eve/Henry) | Infected: 3 (Grace/Frank/Carol)**
+**Alive: 4 | Clean: 2 (Carol/Eve) | Infected: 3 (Grace/Henry/Frank)**
 
-> Eve and Henry are the last two clean players.
-
-**Endgame check at infection phase start:** not triggered (checked only after Reveal).
+> Grace is Patient Zero. Infected now equal 3, clean equal 2.
 
 ### Discussion Phase
 ```
-Grace:  "This is getting intense. Eve has been flying under the radar."
-Frank:  "I agree. Eve for this round."
-Carol:  "Honestly yes, Eve."
-Henry:  "Eve has been fine. I'm going Carol — something changed."
-Eve:    "I'm going Grace. She's been coordinating votes weirdly."
+Grace:  "This is getting intense. Eve has been too quiet."
+Frank:  "Agreed. Eve for this round."
+Henry:  "Eve or Carol — one of them has been coordinating."
+Carol:  "I'm going Grace. She's been directing votes from the start."
+Eve:    "Honestly I'm going Grace too."
 ```
 
-> Eve and Henry are both nervous. Neither submits a proof (Eve doesn't think she's the main target; Henry already used his free slot and doesn't want to pay).  
+> Carol considers submitting a proof — decides against it (thinks Grace will be top-voted).  
 > **Proof window closes. Voting opens.**
 
 ### Voting Phase
 | Voter | Target |
 |-------|--------|
-| Grace | Eve |
-| Frank | Eve |
-| Carol | Eve |
-| Henry | Carol |
-| Eve   | Grace |
+| Grace | Eve    |
+| Henry | Eve    |
+| Frank | Eve    |
+| Carol | Grace  |
+| Eve   | Grace  |
 
 **Vote tally:**
 - Eve: 3 votes
-- Carol: 1 vote
-- Grace: 1 vote
+- Grace: 2 votes
 
 No tie. Eve eliminated.
 
 ### Reveal Phase
 `player_eliminated` → **Eve**
 
-**Endgame check:** infected=3 (Grace/Frank/Carol), clean=1 (Henry) → `infected(3) >= clean(1)` → **INFECTED WIN**
+**Endgame check:** infected=3 (Grace/Henry/Frank), clean=1 (Carol) → `infected(3) >= clean(1)` → **INFECTED WIN**
 
 ---
 
 ## Game Over
 
-**Outcome:** Infected wins — infected count reached parity with clean before Henry could eliminate anyone.
+**Outcome:** Infected wins — infected count reached parity with clean before Carol could eliminate anyone.
 
-**Winning faction (alive infected):** Grace, Frank, Carol  
-**Eliminated / losing:** Alice (elim R2), Dave (elim R1), Bob (elim R3), Eve (elim R4), Henry (alive but losing faction)
+**Winning faction (alive infected):** Grace, Henry, Frank  
+**Eliminated / losing:** Alice (elim R2), Dave (elim R1), Bob (elim R3), Eve (elim R4), Carol (alive but losing faction)
 
 **Payout:**
 ```
-Total pot = 80 XLM (stakes) + 0 XLM (no paid proofs used) = 80 XLM
-Winners   = Grace, Frank, Carol (3 players)
-Per winner = 80 / 3 = 26 XLM each (remainder 2 XLM stays in contract)
+Total pot = 80 cUSD (stakes) + 0 cUSD (no paid proofs used) = 80 cUSD
+Winners   = Grace, Henry, Frank (3 players)
+Per winner = 80 / 3 = 26 cUSD each (remainder 2 cUSD stays in contract)
 ```
 
-> Henry was alive but on the losing clean team — receives nothing.  
-> Contract auto-distributes directly after `resolve_round` on Round 4.
+> Carol was alive but on the losing clean team — receives nothing.  
+> Contract auto-distributes directly after `finalizeElimination` on Round 4.
 
 ---
 
@@ -256,24 +254,24 @@ Per winner = 80 / 3 = 26 XLM each (remainder 2 XLM stays in contract)
 |--------|------|-----------------|-------------|-------|
 | Alice  | Patient Zero | No | 0 | Tried to generate, circuit rejected |
 | Bob    | Infected | No | 0 | Tried to generate, circuit rejected |
-| Carol  | Infected (R4+) | No | 0 | Was clean rounds 1–3, became infected |
+| Carol  | Clean | No | 0 | Alive at game end, losing faction |
 | Dave   | Clean | No | 0 | Eliminated R1, no proof needed |
 | Eve    | Clean | No | 0 | Eliminated R4, misjudged her risk |
-| Frank  | Infected (R3+) | No | 0 | Was clean rounds 1–2, became infected |
+| Frank  | Infected (R4+) | No | 0 | Was clean rounds 1–3, became infected |
 | Grace  | Infected (R2+) | No | 0 | Was clean round 1 only |
-| Henry  | Clean | **Yes** | 0 | Submitted during discussion R3, saved from tie |
+| Henry  | Infected (R3+) | No | 0 | Was clean rounds 1–2, could not generate proof when targeted |
 
 ---
 
 ## Key Mechanics Demonstrated
 
-1. **Infection is system-assigned** — Alice never "chose" to infect Bob. No collusion leak.
-2. **Infected cannot prove innocence** — Bob and Alice failed the circuit; they couldn't bluff with proofs.
+1. **Infection is partly player-driven** — Round 1 infects Bob via deterministic hash. From Round 2+, Patient Zero's vote queues the next target. Alice voted Dave (eliminated) in R1 → R2 falls back deterministically to Grace. Alice voted Henry in R2 → R3 infects Henry. Bob voted Frank in R3 → R4 infects Frank.
+2. **Infected cannot prove innocence** — Bob, Henry, and Alice failed the circuit; they couldn't bluff with proofs.
 3. **Proof submitted during discussion (not during vote)** — Henry bet on being targeted before votes were cast. Strategic risk, not a reactive safety net.
 4. **Proof submission is public** — room saw Henry submitted a proof, which itself is information. He was betting the cost of the signal was worth avoiding elimination.
 5. **Generic resolution event** — room saw `"Vote resolved by protocol"` — nobody could tell if it was proof-related.
 6. **Endgame: parity = infected win** — when infected ≥ clean among alive players, game ends.
-7. **Auto payout** — no manual claim; contract distributed 80 XLM directly.
+7. **Auto payout** — no manual claim; contract distributed 80 cUSD directly.
 
 ---
 

@@ -34,6 +34,7 @@ const PLAYER_STATUS_MAP: Record<number, 'clean' | 'infected' | 'eliminated'> = {
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ELIMINATION_PHASE_DURATION_MS = Number(process.env.NEXT_PUBLIC_ELIMINATION_PHASE_DURATION_MS ?? 6_000)
+const SNAPSHOT_STALE_MS = Number(process.env.NEXT_PUBLIC_SNAPSHOT_STALE_MS ?? 2_000)
 
 // ── Map raw on-chain room to Room type ────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,6 +152,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
   const feedRef           = useRef<string[]>([])
   const pendingOutcomeRef = useRef<GameOutcome | null>(null)
   const socketConnectedRef = useRef(false)
+  const lastSnapshotAtRef = useRef(0)
   const [feed, setFeed] = useState<string[]>([])
 
   const applySocketSnapshot = useCallback(async (
@@ -177,6 +179,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       isLoading: false,
       error: null,
     }))
+    lastSnapshotAtRef.current = Date.now()
   }, [])
 
   // ── Append to live event feed ───────────────────────────────────────────────
@@ -521,6 +524,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
     socket.on('connect', () => {
       socketConnectedRef.current = true
+      lastSnapshotAtRef.current = Date.now()
       setState(prev => ({ ...prev, isConnected: true }))
       socket.emit('join_room', {
         roomId,
@@ -600,9 +604,8 @@ export function useGameState(roomId: string | null, playerAddress: string | null
   }, [roomId, playerAddress, loadRoomFromChain])
 
   // ── Direct WebSocket chain event watcher ──────────────────────────────────
-  // Supplements the socket.io backend subscription: fires loadRoomFromChain
-  // immediately on any relevant on-chain event so the UI stays current even
-  // when the backend is offline or the socket briefly disconnects.
+  // Resilience layer: only force a chain re-sync when socket snapshots are
+  // stale (or disconnected), avoiding redundant reads during healthy socket flow.
   useEffect(() => {
     if (!roomId) return
     const wsUrl = process.env.NEXT_PUBLIC_WS_RPC_URL
@@ -626,7 +629,14 @@ export function useGameState(roomId: string | null, playerAddress: string | null
             if (!log.topics?.[1]) return false
             try { return BigInt(log.topics[1]) === roomBigInt } catch { return false }
           })
-          if (relevant) loadRoomFromChain(roomId, playerAddress ?? undefined)
+          if (!relevant) return
+
+          const snapshotAge = Date.now() - lastSnapshotAtRef.current
+          const snapshotIsStale = snapshotAge > SNAPSHOT_STALE_MS
+
+          if (!socketConnectedRef.current || snapshotIsStale) {
+            loadRoomFromChain(roomId, playerAddress ?? undefined)
+          }
         },
         onError: () => {
           // WS errors are non-fatal; the polling fallback and socket.io handle it.
