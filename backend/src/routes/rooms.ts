@@ -13,7 +13,9 @@ const EvmAddress = z.string().refine(isAddress, { message: 'Invalid EVM address'
 const CreateRoomSchema = z.object({
   hostAddress:  EvmAddress,
   maxPlayers:   z.number().int().min(4).max(20),
-  stakeAmount:  z.string().regex(/^\d+$/, 'Must be a decimal bigint string'), // wei as string
+  stakeAmount:  z.string()
+    .regex(/^\d+$/, 'Must be a decimal bigint string')
+    .refine(v => BigInt(v) > 0n, { message: 'Stake amount must be greater than zero' }), // wei as string
   proofFee:     z.string().regex(/^\d+$/, 'Must be a decimal bigint string'),
   expirySecs:   z.number().int().min(60).max(86400).optional().default(600),
 })

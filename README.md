@@ -81,7 +81,8 @@ PlagueProtocol/
    └── Reveal:            Contract resolves votes, eliminates players, checks endgame
 6. Win conditions checked
    ├── Clean team wins:   All infected eliminated → clean players split pot
-   └── Infected win:      Infected ≥ clean alive, or max rounds reached → infected split pot
+   ├── Infected win:      Infected > clean alive → infected players split pot
+   └── Draw:              1v1 parity or max rounds reached
 7. Auto-payout via contract — no manual claim needed
 ```
 

@@ -44,8 +44,9 @@ import {IERC20}      from "./interfaces/IERC20.sol";
  *
  * ── Endgame (checked after every Reveal) ──────────────────────────────────────
  *  1. infected_alive == 0             → Clean wins
- *  2. currentRound >= maxRounds       → Draw
- *  3. infected_alive >= clean_alive   → Infected wins
+ *  2. infected_alive == 1 && clean_alive == 1 → Draw
+ *  3. infected_alive > clean_alive    → Infected wins
+ *  4. currentRound >= maxRounds       → Draw
  *
  * ── Payout ─────────────────────────────────────────────────────────────────────
  *  pot = sum(stakes)
@@ -795,11 +796,14 @@ contract PlagueGame {
         if (infectedAlive == 0) {
             outcome = GameOutcome.CleanWin;
             gameOver = true;
-        } else if (r.currentRound >= r.config.maxRounds) {
+        } else if (infectedAlive == 1 && cleanAlive == 1) {
             outcome = GameOutcome.MaxRoundsDraw;
             gameOver = true;
-        } else if (infectedAlive >= cleanAlive) {
+        } else if (infectedAlive > cleanAlive) {
             outcome = GameOutcome.InfectedWin;
+            gameOver = true;
+        } else if (r.currentRound >= r.config.maxRounds) {
+            outcome = GameOutcome.MaxRoundsDraw;
             gameOver = true;
         }
 

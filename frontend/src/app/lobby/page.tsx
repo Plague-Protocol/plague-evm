@@ -1,7 +1,7 @@
 'use client'
 
 import { SiteNav } from '@/components/ui/site-nav'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
@@ -155,7 +155,16 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
   const client = getContractClient()
   if (!client) return
 
-  const stakeWei = BigInt(Math.round(Number.parseFloat(stakeInput) * 1e18))
+  const stakeFloat = Number.parseFloat(stakeInput)
+  if (!Number.isFinite(stakeFloat) || stakeFloat <= 0) {
+    throw new Error('Stake amount must be greater than zero.')
+  }
+
+  const stakeWei = BigInt(Math.round(stakeFloat * 1e18))
+  if (stakeWei <= 0n) {
+    throw new Error('Stake amount must be greater than zero.')
+  }
+
   const feeWei   = stakeWei / 100n
   setCreating(true)
 
@@ -488,6 +497,8 @@ export default function LobbyPage() {
   const [nicknameInput, setNicknameInput] = useState('')
   const [savedNickname, setSavedNickname] = useState<string | null>(null)
   const [savingNickname, setSavingNickname] = useState(false)
+  const [editingNickname, setEditingNickname] = useState(false)
+  const lobbyRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Join state ─────────────────────────────────────────────────────────────
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
@@ -571,6 +582,7 @@ export default function LobbyPage() {
       .then((d: { nickname: string | null }) => {
         setSavedNickname(d.nickname)
         setNicknameInput(d.nickname ?? '')
+        setEditingNickname(!d.nickname)
       })
       .catch(() => { /* silently ignore */ })
   }, [address])
@@ -589,6 +601,7 @@ export default function LobbyPage() {
       })
       if (!res.ok) throw new Error('Failed to save')
       setSavedNickname(trimmed)
+      setEditingNickname(false)
       toast.success(`Nickname saved: ${trimmed}`)
     } catch {
       toast.error('Could not save nickname. Try again.')
@@ -652,6 +665,30 @@ export default function LobbyPage() {
   }, [])
 
   useEffect(() => { loadRooms() }, [loadRooms])
+
+  useEffect(() => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+    const socket = io(backendUrl, { transports: ['websocket'] })
+
+    const scheduleLobbyReload = () => {
+      if (lobbyRefreshTimerRef.current) return
+      lobbyRefreshTimerRef.current = setTimeout(() => {
+        lobbyRefreshTimerRef.current = null
+        void loadRooms()
+      }, 300)
+    }
+
+    socket.on('rooms_refresh_requested', scheduleLobbyReload)
+
+    return () => {
+      socket.off('rooms_refresh_requested', scheduleLobbyReload)
+      socket.disconnect()
+      if (lobbyRefreshTimerRef.current) {
+        clearTimeout(lobbyRefreshTimerRef.current)
+        lobbyRefreshTimerRef.current = null
+      }
+    }
+  }, [loadRooms])
 
   // ── Create / Join actions ──────────────────────────────────────────────────
   const pushToGame = useCallback((roomId: bigint) => {
@@ -813,7 +850,7 @@ export default function LobbyPage() {
                       <input
                         id="stakeInput"
                         type="number"
-                        min={0}
+                        min={0.000000000000000001}
                         step={0.1}
                         value={stakeInput}
                         onChange={e => setStakeInput(e.target.value)}
@@ -891,27 +928,58 @@ export default function LobbyPage() {
 
                     {/* Nickname */}
                     <div className="space-y-1">
-                      <label htmlFor="nicknameInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</label>
-                      <div className="flex gap-2">
-                        <input
-                          id="nicknameInput"
-                          type="text"
-                          maxLength={20}
-                          placeholder="Anonymous"
-                          value={nicknameInput}
-                          onChange={e => setNicknameInput(e.target.value)}
-                          className="min-w-0 flex-1 rounded border bg-transparent px-3 py-2 font-mono text-xs focus:outline-none placeholder:opacity-30"
-                          style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
-                        />
-                        <button
-                          onClick={handleSaveNickname}
-                          disabled={savingNickname || !nicknameInput.trim()}
-                          className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14' }}
-                        >
-                          {savingNickname ? '…' : 'Save'}
-                        </button>
-                      </div>
+                      {!editingNickname ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</span>
+                          <button
+                            aria-label="Edit display name"
+                            onClick={() => { setNicknameInput(savedNickname ?? ''); setEditingNickname(true) }}
+                            className="rounded p-0.5 transition-opacity hover:opacity-70"
+                            style={{ color: '#4a5e44', lineHeight: 1 }}
+                          >
+                            {/* pencil icon */}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <label htmlFor="nicknameInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</label>
+                          <div className="flex gap-2">
+                            <input
+                              id="nicknameInput"
+                              type="text"
+                              maxLength={20}
+                              placeholder="Anonymous"
+                              value={nicknameInput}
+                              onChange={e => setNicknameInput(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleSaveNickname()}
+                              autoFocus
+                              className="min-w-0 flex-1 rounded border bg-transparent px-3 py-2 font-mono text-xs focus:outline-none placeholder:opacity-30"
+                              style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                            />
+                            <button
+                              onClick={handleSaveNickname}
+                              disabled={savingNickname || !nicknameInput.trim()}
+                              className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14' }}
+                            >
+                              {savingNickname ? '…' : 'Save'}
+                            </button>
+                            {savedNickname && (
+                              <button
+                                onClick={() => setEditingNickname(false)}
+                                className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90"
+                                style={{ borderColor: 'rgba(212,201,178,0.2)', color: '#8fa882' }}
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: '#0e180d' }}>

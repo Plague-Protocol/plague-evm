@@ -7,6 +7,12 @@ import { keccak256, toBytes } from 'viem'
 import { redis } from '../db/redis'
 
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
+type RawPlayer = Awaited<ReturnType<typeof chainAdapter.getPlayer>>
+
+// Scope chat keys to contract address so redeployments don't bleed messages
+// between rooms with the same numeric ID.
+const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS ?? 'unknown').toLowerCase()
+const chatKey = (roomId: string) => `chat:${CONTRACT_ADDRESS}:${roomId}`
 
 /**
  * Per-room in-progress lock for phase transitions.
@@ -21,11 +27,74 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.ROLE_COMMIT_TIMEOUT_MS ?? 120_000)
 const ELIMINATION_PHASE_DURATION_MS = Number(process.env.ELIMINATION_PHASE_DURATION_MS ?? 6_000)
 const ROOM_SNAPSHOT_THROTTLE_MS = Number(process.env.ROOM_SNAPSHOT_THROTTLE_MS ?? 250)
+const LOBBY_REFRESH_THROTTLE_MS = Number(process.env.LOBBY_REFRESH_THROTTLE_MS ?? 400)
+
+/**
+ * Retry `getRoom` for newly-created rooms whose block hasn't propagated to
+ * every Forno RPC node yet. Backs off 1 s → 2 s → 3 s before giving up.
+ */
+async function getRoomWithRetry(roomId: bigint, maxRetries = 3): Promise<Awaited<ReturnType<typeof chainAdapter.getRoom>>> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await chainAdapter.getRoom(roomId)
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      const isInvalidRoom = msg.includes('0x353cbf17') || msg.includes('InvalidRoom')
+      if (!isInvalidRoom || attempt === maxRetries) throw err
+      const delayMs = (attempt + 1) * 1_000
+      logger.debug(`[socket] room ${roomId} not found yet — retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+  throw lastErr
+}
+
+async function getRoomStateForJoin(
+  roomId: bigint,
+  expectedPlayerAddress?: string,
+  maxRetries = 4,
+): Promise<{ rawRoom: RawRoom; rawPlayers: RawPlayer[] }> {
+  const expected = expectedPlayerAddress?.toLowerCase()
+  let latestRoom: RawRoom | null = null
+  let latestPlayers: RawPlayer[] = []
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const rawRoom = await getRoomWithRetry(roomId)
+    const rawPlayers = await Promise.all(rawRoom.players.map(addr => chainAdapter.getPlayer(roomId, addr)))
+    latestRoom = rawRoom
+    latestPlayers = rawPlayers
+
+    if (!expected) {
+      return { rawRoom, rawPlayers }
+    }
+
+    const hasExpectedPlayer = rawRoom.players.some(addr => addr.toLowerCase() === expected)
+    if (hasExpectedPlayer) {
+      return { rawRoom, rawPlayers }
+    }
+
+    if (attempt === maxRetries) break
+
+    const delayMs = (attempt + 1) * 250
+    await new Promise(resolve => setTimeout(resolve, delayMs))
+  }
+
+  return {
+    rawRoom: latestRoom ?? await getRoomWithRetry(roomId),
+    rawPlayers: latestPlayers,
+  }
+}
 
 const roomSnapshotTimers = new Map<string, NodeJS.Timeout>()
 const roomSnapshotLastEmittedAt = new Map<string, number>()
 const roomSnapshotInFlight = new Set<string>()
 const roomSnapshotDirty = new Set<string>()
+let lobbyRefreshTimer: NodeJS.Timeout | null = null
+let lobbyRefreshLastEmittedAt = 0
+let lobbyRefreshDirty = false
+let lobbyRefreshRoomId: string | null = null
 
 /**
  * Recursively convert BigInt values to their decimal string representation so
@@ -141,6 +210,46 @@ function queueRoomSnapshot(io: Server, roomId: string): void {
     void flushRoomSnapshot(io, roomId)
   }, waitMs)
   roomSnapshotTimers.set(roomId, timer)
+}
+
+function emitLobbyRefresh(io: Server, roomId?: string): void {
+  io.emit('rooms_refresh_requested', {
+    roomId: roomId ?? lobbyRefreshRoomId,
+    timestamp: Date.now(),
+  })
+}
+
+function clearLobbyRefreshTimer(): void {
+  if (!lobbyRefreshTimer) return
+  clearTimeout(lobbyRefreshTimer)
+  lobbyRefreshTimer = null
+}
+
+function flushLobbyRefresh(io: Server): void {
+  clearLobbyRefreshTimer()
+  emitLobbyRefresh(io)
+  lobbyRefreshLastEmittedAt = Date.now()
+  if (!lobbyRefreshDirty) return
+  lobbyRefreshDirty = false
+  queueLobbyRefresh(io)
+}
+
+function queueLobbyRefresh(io: Server, roomId?: string): void {
+  if (roomId) lobbyRefreshRoomId = roomId
+
+  const elapsed = Date.now() - lobbyRefreshLastEmittedAt
+  const waitMs = Math.max(0, LOBBY_REFRESH_THROTTLE_MS - elapsed)
+
+  if (waitMs === 0 && !lobbyRefreshTimer) {
+    flushLobbyRefresh(io)
+    return
+  }
+
+  lobbyRefreshDirty = true
+  if (lobbyRefreshTimer) return
+  lobbyRefreshTimer = setTimeout(() => {
+    flushLobbyRefresh(io)
+  }, waitMs)
 }
 
 /**
@@ -283,7 +392,15 @@ export function setupSocketHandlers(io: Server) {
     } else {
       io.to(roomId).emit('game_event', mapped)
     }
-    queueRoomSnapshot(io, roomId)
+
+    // For membership changes, push a fresh snapshot immediately so all players
+    // (including the newly joined one) see the same roster without delay.
+    if (eventName === 'PlayerJoined') {
+      void flushRoomSnapshot(io, roomId)
+    } else {
+      queueRoomSnapshot(io, roomId)
+    }
+    queueLobbyRefresh(io, roomId)
   })
 
   io.on('connection', (socket: Socket) => {
@@ -312,11 +429,9 @@ export function setupSocketHandlers(io: Server) {
       }
 
       try {
-        const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
-        const rawPlayers = await Promise.all(
-          rawRoom.players.map(addr =>
-            chainAdapter.getPlayer(BigInt(roomId), addr)
-          )
+        const { rawRoom, rawPlayers } = await getRoomStateForJoin(
+          BigInt(roomId),
+          playerAddress,
         )
         socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
         await emitRoomSnapshot(io, roomId, socket.id)
@@ -325,7 +440,7 @@ export function setupSocketHandlers(io: Server) {
 
         // Send persisted chat history so reconnecting clients see previous messages.
         try {
-          const raw = await redis.lrange(`chat:${roomId}`, 0, -1)
+          const raw = await redis.lrange(chatKey(roomId), 0, -1)
           if (raw.length > 0) {
             socket.emit('chat_history', raw.map(m => JSON.parse(m)))
           }
@@ -340,7 +455,7 @@ export function setupSocketHandlers(io: Server) {
         if (rawRoom.status === 3) {
           const ended = await chainAdapter.getGameEndedLogs(BigInt(roomId))
           // Fallback: if the log is outside the lookback window, infer outcome from player states.
-          const outcome = ended?.outcome ?? inferOutcome(rawPlayers)
+          const outcome = ended?.outcome ?? inferOutcome(rawRoom, rawPlayers)
           socket.emit('game_event', {
             type:      'game_ended',
             roomId,
@@ -429,6 +544,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on('request_room_refresh', async ({ roomId }: { roomId: string }) => {
       io.to(roomId).emit('room_refresh_requested', { roomId, timestamp: Date.now() })
       queueRoomSnapshot(io, roomId)
+      queueLobbyRefresh(io, roomId)
     })
 
     /**
@@ -599,8 +715,8 @@ export function setupSocketHandlers(io: Server) {
       io.to(roomId).emit('chat_message', chatMsg)
       // Persist to Redis so the history survives reconnects/refreshes (keep last 100).
       try {
-        await redis.rpush(`chat:${roomId}`, JSON.stringify(chatMsg))
-        await redis.ltrim(`chat:${roomId}`, -100, -1)
+        await redis.rpush(chatKey(roomId), JSON.stringify(chatMsg))
+        await redis.ltrim(chatKey(roomId), -100, -1)
       } catch (redisErr) {
         logger.warn(`[socket] failed to persist chat for room ${roomId}: ${redisErr}`)
       }
@@ -624,6 +740,10 @@ export function setupSocketHandlers(io: Server) {
     roomSnapshotLastEmittedAt.clear()
     roomSnapshotInFlight.clear()
     roomSnapshotDirty.clear()
+    clearLobbyRefreshTimer()
+    lobbyRefreshLastEmittedAt = 0
+    lobbyRefreshDirty = false
+    lobbyRefreshRoomId = null
     unwatch()
   })
 }
@@ -634,11 +754,13 @@ export function setupSocketHandlers(io: Server) {
  *  0 = CleanWin, 1 = InfectedWin, 2 = Draw
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function inferOutcome(players: any[]): number {
+function inferOutcome(rawRoom: RawRoom, players: any[]): number {
   const cleanAlive    = players.filter(p => Number(p.status) === 0).length
   const infectedAlive = players.filter(p => Number(p.status) === 1).length
   if (cleanAlive > 0 && infectedAlive === 0) return 0   // CleanWin
-  if (infectedAlive > 0 && cleanAlive === 0) return 1   // InfectedWin
+  if (infectedAlive === 1 && cleanAlive === 1) return 2 // MaxRoundsDraw (1v1)
+  if (infectedAlive > cleanAlive) return 1              // InfectedWin
+  if (Number(rawRoom.currentRound) >= Number(rawRoom.config.maxRounds)) return 2 // MaxRoundsDraw
   return 2                                               // Draw
 }
 

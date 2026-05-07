@@ -110,7 +110,7 @@ const roles = [
     bgColor: 'rgba(230,51,41,0.1)',
     borderColor: 'rgba(230,51,41,0.4)',
     desc: 'The original source of infection. Has the power to spread the plague each round. If eliminated, the next player in the infection chain is promoted to Patient Zero.',
-    winCondition: 'Survive until infected players outnumber or equal clean players alive.',
+    winCondition: 'Survive until infected players strictly outnumber clean players alive.',
   },
   {
     name: 'Infected',
@@ -119,7 +119,7 @@ const roles = [
     bgColor: 'rgba(245,197,24,0.08)',
     borderColor: 'rgba(245,197,24,0.35)',
     desc: 'Secretly infected by the current Patient Zero. Acts as a normal Clean player to the public while secretly working to let the infection spread. Waiting in succession to become Patient Zero.',
-    winCondition: 'Survive until infected players outnumber or equal clean players alive.',
+    winCondition: 'Survive until infected players strictly outnumber clean players alive.',
   },
   {
     name: 'Clean',
@@ -144,8 +144,15 @@ const endgame = [
     title: 'Infected Win',
     icon: '☣️',
     color: '#e63329',
-    condition: 'Infected players alive ≥ Clean players alive (including 1 vs 1 parity).',
+    condition: 'Infected players alive > Clean players alive.',
     payout: 'The pot is split equally among surviving Infected players.',
+  },
+  {
+    title: '1 vs 1 Draw',
+    icon: '⚖️',
+    color: '#d4c9b2',
+    condition: 'Exactly 1 infected alive and 1 clean alive at Reveal finalization.',
+    payout: 'Draw outcome. No faction win is declared.',
   },
   {
     title: 'Max Rounds Draw',

@@ -114,6 +114,12 @@ contract PlagueGameTest is Test {
         game.createRoom(3, STAKE, FEE, 600); // below min 4
     }
 
+    function test_CreateRoom_ZeroStake_Reverts() public {
+        vm.prank(host);
+        vm.expectRevert(bytes("stakeAmount must be > 0"));
+        game.createRoom(6, 0, FEE, 600);
+    }
+
     // ── joinRoom ─────────────────────────────────────────────────────────────────
 
     function test_JoinRoom() public {
@@ -357,6 +363,125 @@ contract PlagueGameTest is Test {
         // Clean should win before any queued next infection can be applied.
         assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
         assertEq(uint(game.getPlayer(1, players[1]).status), uint(PlagueGame.PlayerStatus.Clean));
+    }
+
+    function test_FinalizeElimination_ParityAboveOne_ContinuesGame() public {
+        _createAndStart();
+        _submitAllCommitments();
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // Round 1: infect players[0], queue players[1], eliminate players[4].
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[1]);
+        game.castVote(1, players[4]);
+        vm.prank(players[2]);
+        game.castVote(1, players[4]);
+        vm.prank(players[3]);
+        game.castVote(1, players[4]);
+        vm.prank(players[4]);
+        game.castVote(1, players[4]);
+        vm.prank(host);
+        game.castVote(1, players[4]);
+
+        _resolveAndFinalize();
+
+        // Round 2: queued target players[1] becomes infected.
+        vm.prank(backend);
+        game.assignInfection(1, players[1]);
+
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Eliminate one clean so we end Reveal at 2 infected vs 2 clean.
+        vm.prank(players[0]);
+        game.castVote(1, players[3]);
+        vm.prank(players[1]);
+        game.castVote(1, players[3]);
+        vm.prank(host);
+        game.castVote(1, players[3]);
+        vm.prank(players[2]);
+        game.castVote(1, host);
+        vm.prank(players[3]);
+        game.castVote(1, host);
+
+        _resolveAndFinalize();
+
+        // 2v2 parity is no longer an infected win; game must continue.
+        PlagueGame.Room memory r = game.getRoom(1);
+        assertEq(uint(r.status), uint(PlagueGame.RoomStatus.Active));
+        assertEq(uint(r.currentPhase), uint(PlagueGame.RoundPhase.Infection));
+        assertEq(r.currentRound, 3);
+    }
+
+    function test_FinalizeElimination_OneVsOne_IsDraw() public {
+        // Build a 4-player room to reach 1v1 naturally.
+        vm.prank(host);
+        game.createRoom(4, STAKE, FEE, 600);
+
+        for (uint256 i = 0; i < 3; i++) {
+            vm.startPrank(players[i]);
+            token.approve(address(game), STAKE);
+            game.joinRoom(1);
+            vm.stopPrank();
+        }
+
+        vm.prank(host);
+        game.startGame(1);
+
+        vm.prank(host);
+        game.submitRoleCommitment(1, keccak256("commitment-host"), "");
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(players[i]);
+            game.submitRoleCommitment(1, keccak256(abi.encodePacked("commitment", i)), "");
+        }
+
+        vm.prank(backend);
+        game.beginActivePhase(1);
+
+        // Round 1: infect players[0], queue players[1], eliminate players[2].
+        vm.prank(backend);
+        game.assignInfection(1, players[0]);
+        vm.prank(backend);
+        game.openVoting(1);
+
+        vm.prank(players[0]);
+        game.castVote(1, players[1]);
+        vm.prank(players[1]);
+        game.castVote(1, players[2]);
+        vm.prank(players[2]);
+        game.castVote(1, players[2]);
+        vm.prank(host);
+        game.castVote(1, players[2]);
+
+        _resolveAndFinalize();
+
+        // Round 2: players[1] becomes infected (2 infected, 1 clean).
+        vm.prank(backend);
+        game.assignInfection(1, players[1]);
+        vm.prank(backend);
+        game.openVoting(1);
+
+        // Eliminate infected players[0] so Reveal ends at 1 infected vs 1 clean.
+        vm.prank(host);
+        game.castVote(1, players[0]);
+        vm.prank(players[0]);
+        game.castVote(1, host);
+        vm.prank(players[1]);
+        game.castVote(1, players[0]);
+
+        _resolveAndFinalize();
+
+        assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
+        assertEq(uint(game.getRoom(1).currentPhase), uint(PlagueGame.RoundPhase.Ended));
     }
 
     function test_PatientZeroVote_DrivesNextInfectionTarget() public {

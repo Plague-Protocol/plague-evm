@@ -16,6 +16,30 @@ function getContractClient() {
   return createContractClient({ contractAddress: address, network })
 }
 
+/**
+ * Retry getRoom for newly-created rooms whose block hasn't propagated to every
+ * Forno RPC node yet (load-balanced cluster inconsistency). Backs off 1s→2s→3s.
+ */
+async function getRoomWithRetry(
+  client: ReturnType<typeof getContractClient>,
+  roomId: bigint,
+  maxRetries = 3,
+): ReturnType<NonNullable<typeof client>['getRoom']> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await client!.getRoom(roomId)
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      const isInvalidRoom = msg.includes('InvalidRoom') || msg.includes('0x353cbf17')
+      if (!isInvalidRoom || attempt === maxRetries) throw err
+      await new Promise(r => setTimeout(r, (attempt + 1) * 1_000))
+    }
+  }
+  throw lastErr
+}
+
 // ── Phase numeric → string mapping (mirrors Solidity RoundPhase enum) ─────────
 const PHASE_MAP: Record<number, RoundPhase> = {
   0: 'infection',
@@ -197,7 +221,8 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         appendFeed(`A new player joined the room.`)
         setState(prev => {
           if (!prev.room) return prev
-          const already = prev.room.players.some(pl => pl.walletAddress === p.address)
+          const joinedAddress = String(p.address).toLowerCase()
+          const already = prev.room.players.some(pl => pl.walletAddress.toLowerCase() === joinedAddress)
           if (already) return prev
           const playerNum = prev.room.players.length + 1
           const newPlayer: Player = {
@@ -429,7 +454,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     if (!client) return
     try {
       setState(prev => ({ ...prev, isLoading: true }))
-      const raw = await client.getRoom(BigInt(rid))
+      const raw = await getRoomWithRetry(client, BigInt(rid))
       const room = mapRoom(raw)
 
       // Load each player's data from chain

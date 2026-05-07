@@ -738,7 +738,7 @@ function GamePageInner() {
                 )}
 
                 {/* Proof Submission panel (Discussion phase) — only for active participants */}
-                {phase === 'discussion' && !!localPlayer && localPlayer.status !== 'infected' && !hasProofThisRound && (
+                {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                   <div
                     className="mt-5 rounded-lg border p-5"
                     style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}
