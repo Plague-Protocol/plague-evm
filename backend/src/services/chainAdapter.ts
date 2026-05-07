@@ -90,6 +90,7 @@ const PLAGUE_ABI = parseAbi([
   'function createRoom(uint32 maxPlayers, uint256 stakeAmount, uint256 proofFee, uint64 expirySecs) external returns (uint256)',
   'function beginActivePhase(uint256 roomId) external',
   'function eliminateUncommittedPlayers(uint256 roomId) external',
+  'function finalizeStartTimeout(uint256 roomId) external',
   'function assignInfection(uint256 roomId, address target) external',
   'function openVoting(uint256 roomId) external',
   'function resolveRound(uint256 roomId) external',
@@ -340,6 +341,11 @@ export const chainAdapter = {
   /** Eliminate players who did not commit roles before timeout while room is Starting. */
   async eliminateUncommittedPlayers(roomId: bigint) {
     return writeAndWait('eliminateUncommittedPlayers', [roomId])
+  },
+
+  /** Finalize timed-out Starting rooms that cannot proceed due to low committed count. */
+  async finalizeStartTimeout(roomId: bigint) {
+    return writeAndWait('finalizeStartTimeout', [roomId])
   },
 
   /**

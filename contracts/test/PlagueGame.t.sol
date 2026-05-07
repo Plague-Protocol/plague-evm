@@ -290,6 +290,41 @@ contract PlagueGameTest is Test {
         assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Active));
     }
 
+    function test_RoleCommitTimeout_TooFewCommitted_FinalizesAndPaysCommitted() public {
+        _createAndStart();
+
+        // Only two players commit (below minPlayers=3).
+        vm.prank(host);
+        game.submitRoleCommitment(1, keccak256("commitment-host"), "");
+        vm.prank(players[0]);
+        game.submitRoleCommitment(1, keccak256("commitment-0"), "");
+
+        uint256 hostBefore = token.balanceOf(host);
+        uint256 p0Before = token.balanceOf(players[0]);
+
+        vm.warp(block.timestamp + game.ROLE_COMMIT_TIMEOUT_SECS() + 1);
+
+        vm.prank(backend);
+        game.finalizeStartTimeout(1);
+
+        // Room is closed and cannot get stuck in Starting.
+        PlagueGame.Room memory r = game.getRoom(1);
+        assertEq(uint(r.status), uint(PlagueGame.RoomStatus.Ended));
+        assertEq(uint(r.currentPhase), uint(PlagueGame.RoundPhase.Ended));
+
+        // Non-committers are eliminated.
+        assertEq(uint(game.getPlayer(1, players[1]).status), uint(PlagueGame.PlayerStatus.Eliminated));
+        assertEq(uint(game.getPlayer(1, players[2]).status), uint(PlagueGame.PlayerStatus.Eliminated));
+        assertEq(uint(game.getPlayer(1, players[3]).status), uint(PlagueGame.PlayerStatus.Eliminated));
+        assertEq(uint(game.getPlayer(1, players[4]).status), uint(PlagueGame.PlayerStatus.Eliminated));
+
+        // Entire pot (6 * STAKE) is split among committed survivors (host + players[0]).
+        uint256 expectedShare = (6 * STAKE) / 2;
+        assertEq(token.balanceOf(host), hostBefore + expectedShare);
+        assertEq(token.balanceOf(players[0]), p0Before + expectedShare);
+        assertEq(game.getRoom(1).pot, 0);
+    }
+
     function test_FinalizeElimination_ChecksWinnerBeforeQueuedInfection() public {
         _createAndStart();
         _submitAllCommitments();

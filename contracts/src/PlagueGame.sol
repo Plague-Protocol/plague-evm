@@ -189,6 +189,7 @@ contract PlagueGame {
     error TooManyActiveRooms();
     error Reentrancy();
     error RoleCommitmentPending();
+    error StartThresholdMet();
 
     // ─── Modifiers ────────────────────────────────────────────────────────────────
 
@@ -460,6 +461,70 @@ contract PlagueGame {
             p.status = PlayerStatus.Eliminated;
             emit PlayerEliminated(roomId, all[i]);
         }
+    }
+
+    /**
+     * @notice Finalize a timed-out Starting room when too few committed players remain.
+     *         Uncommitted alive players are eliminated, and escrow is split among committed
+     *         survivors. If nobody committed, everyone is refunded their original stake.
+     *
+     *         This prevents room deadlocks where beginActivePhase can never pass minPlayers.
+     */
+    function finalizeStartTimeout(uint256 roomId) external onlyBackend roomExists(roomId) nonReentrant {
+        Room storage r = rooms[roomId];
+        if (r.status != RoomStatus.Starting) revert WrongPhase();
+        if (block.timestamp < uint256(r.startedAt) + ROLE_COMMIT_TIMEOUT_SECS) revert WrongPhase();
+
+        address[] memory all = r.players;
+        uint256 committedAlive = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            PlayerState storage p = players[roomId][all[i]];
+            if (p.status == PlayerStatus.Eliminated) continue;
+            if (!p.roleCommitted) {
+                p.status = PlayerStatus.Eliminated;
+                emit PlayerEliminated(roomId, all[i]);
+                continue;
+            }
+            unchecked { committedAlive++; }
+        }
+
+        if (committedAlive >= r.config.minPlayers) revert StartThresholdMet();
+
+        uint256 pot = r.pot;
+        r.pot = 0;
+
+        if (pot > 0) {
+            if (committedAlive == 0) {
+                // No one committed in time: return everyone their original stake.
+                for (uint256 i = 0; i < all.length; i++) {
+                    PlayerState storage p = players[roomId][all[i]];
+                    uint256 refund = p.staked;
+                    if (refund == 0) continue;
+                    _safeTransfer(all[i], refund);
+                    emit PotDrained(roomId, all[i], refund);
+                }
+            } else {
+                uint256 share = pot / committedAlive;
+                uint256 dust = pot - (share * committedAlive);
+                bool dustPaid = false;
+                for (uint256 i = 0; i < all.length; i++) {
+                    PlayerState storage p = players[roomId][all[i]];
+                    if (p.status == PlayerStatus.Eliminated || !p.roleCommitted) continue;
+                    uint256 payout = share;
+                    if (!dustPaid && dust > 0) {
+                        payout += dust;
+                        dustPaid = true;
+                    }
+                    _safeTransfer(all[i], payout);
+                    emit PotDrained(roomId, all[i], payout);
+                }
+            }
+        }
+
+        r.status       = RoomStatus.Ended;
+        r.currentPhase = RoundPhase.Ended;
+        unchecked { activeRoomCount--; }
+        emit GameEnded(roomId, GameOutcome.MaxRoundsDraw);
     }
 
     /**

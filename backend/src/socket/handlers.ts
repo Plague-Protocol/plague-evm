@@ -769,6 +769,7 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
   const rawRoom = await chainAdapter.getRoom(id)
   // RoomStatus.Starting = 1
   if (rawRoom.status !== 1) return
+  const minPlayers = Number(rawRoom.config.minPlayers)
   const startedAtMs = Number(rawRoom.startedAt) * 1000
   const timeoutReached = Date.now() >= startedAtMs + ROLE_COMMIT_TIMEOUT_MS
   const playerAddrs = rawRoom.players
@@ -788,16 +789,31 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
     if (!allCommitted && timeoutReached) {
       await chainAdapter.eliminateUncommittedPlayers(id)
     }
+
+    if (timeoutReached) {
+      const latestRoom = await chainAdapter.getRoom(id)
+      const latestStates = await Promise.all(
+        latestRoom.players.map(addr => chainAdapter.getPlayer(id, addr))
+      )
+      const committedAlive = latestStates.filter(p => p.status !== 2 && p.roleCommitted).length
+      if (committedAlive < minPlayers) {
+        await chainAdapter.finalizeStartTimeout(id)
+        logger.info(`[role-commitment-monitor] finalizeStartTimeout called for room ${id} committedAlive=${committedAlive} minPlayers=${minPlayers}`)
+        return
+      }
+    }
+
     await chainAdapter.beginActivePhase(id)
     logger.info(`[role-commitment-monitor] beginActivePhase called for room ${id}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    // Ignore expected races/timeouts: WrongPhase, RoleCommitmentPending, NotEnoughPlayers
+    // Ignore expected races/timeouts.
     if (
       !message.includes('WrongPhase') &&
       !message.includes('0xe2586bcc') &&
       !message.includes('RoleCommitmentPending') &&
-      !message.includes('NotEnoughPlayers')
+      !message.includes('NotEnoughPlayers') &&
+      !message.includes('StartThresholdMet')
     ) {
       logger.warn(`[role-commitment-monitor] failed for room ${id}: ${message}`)
     }
