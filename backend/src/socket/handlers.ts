@@ -37,6 +37,62 @@ function serializeBigInts(value: any): any {
   return value
 }
 
+function computePhaseEndsAtMs(rawRoom: RawRoom): number {
+  const status = Number(rawRoom.status)
+  if (status === 1) {
+    return Number(rawRoom.startedAt) * 1000 + ROLE_COMMIT_TIMEOUT_MS
+  }
+
+  const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
+  const phase = Number(rawRoom.currentPhase)
+  if (phase === 1) return phaseStartedAt + Number(rawRoom.config.discussionDurationSecs) * 1000
+  if (phase === 2) return phaseStartedAt + Number(rawRoom.config.votingDurationSecs) * 1000
+  if (phase === 3) return phaseStartedAt + ELIMINATION_PHASE_DURATION_MS
+  return phaseStartedAt
+}
+
+async function buildRoomSnapshot(roomId: string) {
+  const id = BigInt(roomId)
+  const rawRoom = await chainAdapter.getRoom(id)
+  const rawPlayers = await Promise.all(rawRoom.players.map(addr => chainAdapter.getPlayer(id, addr)))
+
+  let alive = 0
+  let infectedAlive = 0
+  for (const p of rawPlayers) {
+    const status = Number(p.status)
+    if (status === 2) continue
+    alive++
+    if (status === 1) infectedAlive++
+  }
+
+  return serializeBigInts({
+    roomId,
+    room: rawRoom,
+    players: rawPlayers,
+    derived: {
+      activePlayers: alive,
+      infectedAlive,
+      cleanAlive: alive - infectedAlive,
+      phaseEndsAt: computePhaseEndsAtMs(rawRoom),
+      snapshotAt: Date.now(),
+    },
+  })
+}
+
+async function emitRoomSnapshot(io: Server, roomId: string, socketId?: string): Promise<void> {
+  try {
+    const snapshot = await buildRoomSnapshot(roomId)
+    if (socketId) {
+      io.to(socketId).emit('room_snapshot', snapshot)
+      return
+    }
+    io.to(roomId).emit('room_snapshot', snapshot)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logger.warn(`[socket] failed to emit room_snapshot for ${roomId}: ${message}`)
+  }
+}
+
 /**
  * Room expiry monitor — runs on a fixed interval server-side.
  *
@@ -165,6 +221,7 @@ export function setupSocketHandlers(io: Server) {
       io.to(socketId).emit('game_event', {
         type: 'infection_assigned', roomId, payload: { player }, timestamp,
       } as GameEvent)
+      await emitRoomSnapshot(io, roomId)
       return
     }
 
@@ -176,6 +233,7 @@ export function setupSocketHandlers(io: Server) {
     } else {
       io.to(roomId).emit('game_event', mapped)
     }
+    await emitRoomSnapshot(io, roomId)
   })
 
   io.on('connection', (socket: Socket) => {
@@ -211,6 +269,7 @@ export function setupSocketHandlers(io: Server) {
           )
         )
         socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
+        await emitRoomSnapshot(io, roomId, socket.id)
 
         // Send persisted chat history so reconnecting clients see previous messages.
         try {
@@ -315,8 +374,9 @@ export function setupSocketHandlers(io: Server) {
      * Clients call this after impactful successful actions (join, commit, vote)
      * to nudge all room subscribers to immediately re-read chain state.
      */
-    socket.on('request_room_refresh', ({ roomId }: { roomId: string }) => {
+    socket.on('request_room_refresh', async ({ roomId }: { roomId: string }) => {
       io.to(roomId).emit('room_refresh_requested', { roomId, timestamp: Date.now() })
+      await emitRoomSnapshot(io, roomId)
     })
 
     /**

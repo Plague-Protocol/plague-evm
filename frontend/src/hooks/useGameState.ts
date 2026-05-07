@@ -153,6 +153,32 @@ export function useGameState(roomId: string | null, playerAddress: string | null
   const socketConnectedRef = useRef(false)
   const [feed, setFeed] = useState<string[]>([])
 
+  const applySocketSnapshot = useCallback(async (
+    snapshot: { room?: unknown; players?: unknown[] },
+    rid: string,
+    pAddr: string | null,
+  ) => {
+    if (!snapshot?.room) return
+
+    const room = mapRoom(snapshot.room)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room.players = (snapshot.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
+    const chainRound = buildRoundFromRaw(snapshot.room, room.players)
+    let localPlayer = pAddr
+      ? room.players.find(p => p.walletAddress.toLowerCase() === pAddr.toLowerCase()) ?? null
+      : null
+    localPlayer = await enrichLocalRole(getContractClient(), BigInt(rid), localPlayer)
+
+    setState(prev => ({
+      ...prev,
+      room,
+      localPlayer,
+      currentRound: chainRound,
+      isLoading: false,
+      error: null,
+    }))
+  }, [])
+
   // ── Append to live event feed ───────────────────────────────────────────────
   const appendFeed = useCallback((msg: string) => {
     feedRef.current = [msg, ...feedRef.current.slice(0, 49)]
@@ -505,15 +531,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     socket.on('room_state', async (initialState: { room: unknown; players: unknown[]; error?: string }) => {
       // Server sends full room snapshot on join
       if (initialState?.room) {
-        const room = mapRoom(initialState.room)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        room.players = (initialState.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
-        const chainRound = buildRoundFromRaw(initialState.room, room.players)
-        let localPlayer = playerAddress
-          ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
-          : null
-        localPlayer = await enrichLocalRole(getContractClient(), BigInt(roomId), localPlayer)
-        setState(prev => ({ ...prev, room, localPlayer, currentRound: chainRound, isLoading: false }))
+        await applySocketSnapshot(initialState, roomId, playerAddress)
       } else if (initialState?.error === 'room_not_found') {
         // Backend couldn't read the room (may be a brand-new room the RPC hasn't indexed
         // yet).  Try a direct chain read; only set the error if that also fails.
@@ -528,9 +546,17 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       }
     })
 
+    socket.on('room_snapshot', async (snapshot: { room?: unknown; players?: unknown[] }) => {
+      await applySocketSnapshot(snapshot, roomId, playerAddress)
+    })
+
     socket.on('game_event', handleEvent)
     socket.on('room_refresh_requested', () => {
-      loadRoomFromChain(roomId, playerAddress ?? undefined)
+      // Backend emits room_snapshot immediately after this event.
+      // Keep chain reads for the offline fallback path only.
+      if (!socketConnectedRef.current) {
+        loadRoomFromChain(roomId, playerAddress ?? undefined)
+      }
     })
 
     socket.on('connect_error', (err) => {
@@ -551,10 +577,11 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
     return () => {
       socket.off('room_refresh_requested')
+      socket.off('room_snapshot')
       socket.disconnect()
       socketRef.current = null
     }
-  }, [roomId, playerAddress, handleEvent, loadRoomFromChain])
+  }, [roomId, playerAddress, handleEvent, loadRoomFromChain, applySocketSnapshot])
 
   // ── Polling fallback: re-sync from chain when socket is offline ──────────────
   // Only fires while the socket is disconnected; once reconnected the server

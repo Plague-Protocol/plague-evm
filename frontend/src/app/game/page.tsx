@@ -135,10 +135,10 @@ function GamePageInner() {
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   const schedulePostTxRefresh = useCallback(() => {
-    refresh()
-    setTimeout(() => refresh(), 800)
-    setTimeout(() => refresh(), 2_000)
-  }, [refresh])
+    socket?.emit('request_room_refresh', { roomId })
+    // Safety fallback in case socket delivery is delayed.
+    setTimeout(() => refresh(), 2_500)
+  }, [refresh, roomId, socket])
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const phase       = currentRound?.phase ?? 'ended'
