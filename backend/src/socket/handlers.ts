@@ -907,6 +907,39 @@ export function setupSocketHandlers(io: Server) {
       if (!roomId || !message || !playerAddress) return
       const safe = String(message).slice(0, 256).trim()
       if (!safe) return
+
+      try {
+        const roomIdBigInt = BigInt(roomId)
+        const rawRoom = await chainAdapter.getRoom(roomIdBigInt)
+        const inRoom = rawRoom.players.some(addr => addr.toLowerCase() === playerAddress.toLowerCase())
+        if (!inRoom) {
+          socket.emit('chat_error', { roomId, message: 'Only joined room players can use chat.' })
+          return
+        }
+
+        // Active room restrictions: only alive players can chat, and voting is silent.
+        if (rawRoom.status === 2) {
+          const rawPlayer = await chainAdapter.getPlayer(roomIdBigInt, playerAddress as `0x${string}`)
+          if (Number(rawPlayer.status) === 2) {
+            socket.emit('chat_error', { roomId, message: 'Eliminated players cannot use chat.' })
+            return
+          }
+          if (rawRoom.currentPhase === 2) {
+            socket.emit('chat_error', { roomId, message: 'Chat is disabled during voting.' })
+            return
+          }
+        }
+
+        if (rawRoom.status === 3) {
+          socket.emit('chat_error', { roomId, message: 'Chat is closed because this game has ended.' })
+          return
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        socket.emit('chat_error', { roomId, message: msg })
+        return
+      }
+
       const chatMsg = {
         roomId,
         sender:      playerAddress,

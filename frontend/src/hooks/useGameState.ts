@@ -305,7 +305,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'round_started':
-        appendFeed(`Round ${p.round} started.`)
+        appendFeed(`Round ${p.round} started. Infection resolves before discussion opens.`)
         setState(prev => {
           if (!prev.room) return prev
           const round: Round = {
@@ -325,12 +325,12 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
       case 'phase_changed': {
         const phaseName = PHASE_MAP[Number(p.phase)] ?? 'ended'
-        appendFeed(`Phase → ${phaseName.toUpperCase()}`)
+        appendFeed(`Phase changed: ${phaseName.toUpperCase()}`)
         if (phaseName === 'reveal') {
-          appendFeed('Elimination phase resolving with previous infection state.')
+          appendFeed('Elimination results are being finalized now.')
         }
         if (phaseName === 'infection') {
-          appendFeed('Game continues. The next infection is now being applied.')
+          appendFeed('Applying infection for this round before discussion/voting.')
         }
         setState(prev => {
           const updatedRound = prev.currentRound
@@ -351,7 +351,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'proof_submitted':
-        appendFeed(`An innocence proof was submitted.`)
+        setState(prev => {
+          const playerAddr = String(p.player).toLowerCase()
+          const playerName = prev.room?.players.find(pl => pl.walletAddress.toLowerCase() === playerAddr)?.displayName
+          const label = playerName ?? `${playerAddr.slice(0, 6)}…${playerAddr.slice(-4)}`
+          appendFeed(`${label} submitted an innocence proof.`)
+          return prev
+        })
         break
 
       case 'player_eliminated':
@@ -360,9 +366,9 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           const prior = prev.room?.players.find(pl => pl.walletAddress.toLowerCase() === targetAddr)
           const targetLabel = prior?.displayName ?? `${targetAddr.slice(0, 6)}…${targetAddr.slice(-4)}`
           if (prior?.status === 'infected') {
-            appendFeed(`${targetLabel} was eliminated (infected removed).`)
+            appendFeed(`Infected eliminated: ${targetLabel}.`)
           } else if (prior?.status === 'clean') {
-            appendFeed(`${targetLabel} was eliminated (clean).`)
+            appendFeed(`Clean player eliminated: ${targetLabel}.`)
           } else {
             appendFeed(`${targetLabel} was eliminated.`)
           }
@@ -390,13 +396,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           const savedAddr = String(p.player).toLowerCase()
           const savedName = prev.room?.players.find(pl => pl.walletAddress.toLowerCase() === savedAddr)?.displayName
           const savedLabel = savedName ?? `${savedAddr.slice(0, 6)}…${savedAddr.slice(-4)}`
-          appendFeed(`${savedLabel} was saved by innocence proof.`)
+          appendFeed(`Saved by innocence proof: ${savedLabel}.`)
           return prev
         })
         break
 
       case 'vote_resolved':
-        appendFeed(`Vote resolved: ${String(p.message)}`)
+        appendFeed(`Vote result: ${String(p.message)}`)
         break
 
       case 'infection_assigned':

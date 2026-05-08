@@ -42,11 +42,11 @@ import {IERC20}      from "./interfaces/IERC20.sol";
  *       - else eliminate ALL tied unprotected clean candidates
  *       - tied clean candidates with valid proofs are always saved
  *
- * ── Endgame (checked after every Reveal) ──────────────────────────────────────
- *  1. infected_alive == 0             → Clean wins
- *  2. infected_alive == 1 && clean_alive == 1 → Draw
- *  3. infected_alive > clean_alive    → Infected wins
- *  4. currentRound >= maxRounds       → Draw
+ * ── Endgame ───────────────────────────────────────────────────────────────────
+ *  1. infected_alive > clean_alive    → Infected wins (checked after Infection)
+ *  2. infected_alive == 0             → Clean wins (checked after Reveal)
+ *  3. infected_alive == 1 && clean_alive == 1 → Draw (checked after Reveal)
+ *  4. currentRound >= maxRounds       → Draw (checked after Reveal)
  *
  * ── Payout ─────────────────────────────────────────────────────────────────────
  *  pot = sum(stakes)
@@ -307,7 +307,7 @@ contract PlagueGame {
         cfg.maxRounds             = 10;
         cfg.roundDurationSecs     = 180;
         cfg.discussionDurationSecs = 180;
-        cfg.votingDurationSecs    = 180;
+        cfg.votingDurationSecs    = 120;
         cfg.expirySecs            = expirySecs;
         cfg.proofFee              = proofFee;
 
@@ -587,6 +587,22 @@ contract PlagueGame {
 
         pendingInfectionTarget[roomId] = address(0);
 
+        // Endgame parity check is evaluated after infection is applied so the
+        // player-visible state and game outcome stay aligned.
+        // The very first infection only initializes the game and should never
+        // end it immediately.
+        if (!firstInfection) {
+            (uint256 infectedAlive, uint256 cleanAlive) = _countAliveByStatus(roomId);
+            if (infectedAlive > cleanAlive) {
+                r.status       = RoomStatus.Ended;
+                r.currentPhase = RoundPhase.Ended;
+                unchecked { activeRoomCount--; }
+                emit GameEnded(roomId, GameOutcome.InfectedWin);
+                _distributePot(roomId, GameOutcome.InfectedWin);
+                return;
+            }
+        }
+
         r.currentPhase   = RoundPhase.Discussion;
         r.phaseStartedAt = uint64(block.timestamp);
         emit PhaseChanged(roomId, RoundPhase.Discussion);
@@ -721,12 +737,12 @@ contract PlagueGame {
             if (_isProtectedCleanCandidate(roomId, top)) {
                 // Protected clean candidate — saved
                 emit PlayerSavedByProof(roomId, top);
-                emit VoteResolved(roomId, "Top candidate saved (clean + valid innocence proof)");
+                emit VoteResolved(roomId, "Top-voted player proved innocence and was saved");
             } else {
                 // Not protected — eliminated
                 players[roomId][top].status = PlayerStatus.Eliminated;
                 emit PlayerEliminated(roomId, top);
-                emit VoteResolved(roomId, "Top candidate eliminated (infected or no valid protection)");
+                emit VoteResolved(roomId, "Top-voted player eliminated");
             }
         } else {
             bool anyInfected = false;
@@ -741,16 +757,16 @@ contract PlagueGame {
                 // If infected candidates are tied at top votes, eliminate all tied infected.
                 _eliminateAllTiedInfected(roomId, topCandidates);
                 _emitSavedProtectedTied(roomId, topCandidates);
-                emit VoteResolved(roomId, "Tie: all tied infected candidates eliminated; proved clean candidates saved");
+                emit VoteResolved(roomId, "Tie resolved: tied infected players eliminated; proved clean players saved");
             } else {
                 // No infected in tie: eliminate all tied unprotected clean candidates.
                 uint256 eliminated = _eliminateAllTiedUnprotectedClean(roomId, topCandidates);
                 uint256 saved = _emitSavedProtectedTied(roomId, topCandidates);
 
                 if (eliminated == 0 && saved > 0) {
-                    emit VoteResolved(roomId, "Tie: all tied clean candidates proved innocence; all saved");
+                    emit VoteResolved(roomId, "Tie resolved: all tied clean players proved innocence and were saved");
                 } else {
-                    emit VoteResolved(roomId, "Tie: all tied unprotected clean candidates eliminated; proved clean candidates saved");
+                    emit VoteResolved(roomId, "Tie resolved: tied clean players without proof were eliminated; proved players were saved");
                 }
             }
         }
@@ -788,8 +804,8 @@ contract PlagueGame {
 
     /**
      * @notice Finalize Elimination (Reveal) phase after vote effects have been applied.
-     *         Endgame checks run on the pre-infection state; new infection is applied
-     *         later during the next Infection phase.
+     *         Infection parity win checks are handled after Infection assignment,
+     *         while reveal finalization handles clean win / draw / max-rounds checks.
      */
     function finalizeElimination(uint256 roomId) external onlyBackend roomExists(roomId) nonReentrant {
         Room storage r = rooms[roomId];
@@ -805,9 +821,6 @@ contract PlagueGame {
             gameOver = true;
         } else if (infectedAlive == 1 && cleanAlive == 1) {
             outcome = GameOutcome.MaxRoundsDraw;
-            gameOver = true;
-        } else if (infectedAlive > cleanAlive) {
-            outcome = GameOutcome.InfectedWin;
             gameOver = true;
         } else if (r.currentRound >= r.config.maxRounds) {
             outcome = GameOutcome.MaxRoundsDraw;

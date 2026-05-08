@@ -101,6 +101,20 @@ function getVotePanelLabel(phase: RoundPhase, hasVoted: boolean): string {
   return hasVoted ? 'Vote submitted' : 'Select suspected carrier'
 }
 
+function getChatBlockedReason(
+  socketOnline: boolean,
+  localPlayer: { isEliminated: boolean } | null,
+  roomStatus: string | undefined,
+  phase: RoundPhase,
+): string | null {
+  if (!socketOnline) return 'Chat unavailable while backend is offline.'
+  if (localPlayer === null) return 'Only joined room players can chat.'
+  if (roomStatus === 'ended') return 'Chat is closed because this game has ended.'
+  if (localPlayer.isEliminated) return 'Eliminated players cannot use chat.'
+  if (roomStatus === 'active' && phase === 'voting') return 'Chat is disabled during voting.'
+  return null
+}
+
 function ensureHexPrefixed(value: string): `0x${string}` {
   if (value.startsWith('0x')) return value as `0x${string}`
   return `0x${value}`
@@ -124,6 +138,9 @@ const CONTRACT_ERROR_MAP: Record<string, string> = {
 
 function parseContractError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
+  if (/cannot satisfy constraint|cannot satisfy constraints|unsatisfied constraint/i.test(msg)) {
+    return 'Proof generation failed. Your secret phrase is incorrect for this room/round. Please use the exact phrase you committed with.'
+  }
   for (const [name, friendly] of Object.entries(CONTRACT_ERROR_MAP)) {
     if (msg.includes(name)) return friendly
   }
@@ -202,6 +219,8 @@ function GamePageInner() { // NOSONAR
   const canVote       = phase === 'voting' && isConnected && !!localPlayer && !localPlayer.isEliminated && !hasVoted && !voting
   const canProve      = phase === 'discussion' && isConnected && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound
   const canCommit     = room?.status === 'starting' && isConnected && !!localPlayer && !committing && !commitDone
+  const chatBlockedReason = getChatBlockedReason(socketOn, localPlayer, room?.status, phase)
+  const canChat = chatBlockedReason === null
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
   // Spectator: wallet connected but address not in players list (late viewer)
   const isSpectator   = !!address && !!room && room.status === 'active' && !room.players.some(p => p.walletAddress.toLowerCase() === address.toLowerCase())
@@ -211,6 +230,10 @@ function GamePageInner() { // NOSONAR
   const headerTitle = getHeaderTitle(isLoading, round, room?.status)
   const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status)
   const phaseCardBackground = getPhaseCardBackground(phase)
+  const synchronizedFeed = [
+    `System sync: Round ${round > 0 ? round : '-'} · ${PHASE_LABEL[phase]} · Infected ${infectedCount}/${Math.max(activePlayers.length, 1)}`,
+    ...feed,
+  ].slice(0, 50)
   const hostPlayerCountLabel = `${totalPlayers} player${totalPlayers === 1 ? '' : 's'} in room. Start when ready.`
   const votePanelLabel = getVotePanelLabel(phase, hasVoted)
   let potPerWinnerValue = 0
@@ -290,11 +313,16 @@ function GamePageInner() { // NOSONAR
     const historyHandler = (history: { sender: string; displayName: string; message: string; timestamp: number }[]) => {
       setChatMessages(history.slice(-200))
     }
+    const errorHandler = (data: { message?: string }) => {
+      if (data?.message) toast.error(data.message)
+    }
     socket.on('chat_message', msgHandler)
     socket.on('chat_history', historyHandler)
+    socket.on('chat_error', errorHandler)
     return () => {
       socket.off('chat_message', msgHandler)
       socket.off('chat_history', historyHandler)
+      socket.off('chat_error', errorHandler)
     }
   }, [socket])
 
@@ -304,12 +332,12 @@ function GamePageInner() { // NOSONAR
   }, [chatMessages])
 
   const handleSendChat = useCallback(() => {
-    if (!chatInput.trim() || !socket || !address || !roomId) return
+    if (!chatInput.trim() || !socket || !address || !roomId || !canChat) return
     const displayName = room?.players?.find(p => p.walletAddress.toLowerCase() === address.toLowerCase())?.displayName
       ?? `${address.slice(0, 6)}…${address.slice(-4)}`
     socket.emit('chat_message', { roomId, message: chatInput.trim(), playerAddress: address, displayName })
     setChatInput('')
-  }, [chatInput, socket, address, roomId, room])
+  }, [chatInput, socket, address, roomId, room, canChat])
 
   // ── Vote tally ────────────────────────────────────────────────────────────
   const voteTally: Record<string, number> = {}
@@ -635,6 +663,9 @@ function GamePageInner() { // NOSONAR
             </button>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
           </div>
+          <p className="mt-2 font-mono text-xs font-bold uppercase tracking-[0.12em]" style={{ color: '#f5c518' }}>
+            Important: tap Sync regularly to stay aligned with live phase changes and eliminations.
+          </p>
         </div>
       </header>
 
@@ -727,12 +758,12 @@ function GamePageInner() { // NOSONAR
                   >
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Live Feed</p>
                     <ul className="mt-3 space-y-2 font-mono text-xs max-h-32 overflow-y-auto" style={{ color: '#8fa882' }}>
-                      {feed.length > 0 ? feed.map((msg) => (
+                      {synchronizedFeed.length > 0 ? synchronizedFeed.map((msg) => (
                         <li key={msg} className="flex gap-2">
                           <span style={{ color: '#4a5e44' }}>→</span> {msg}
                         </li>
                       )) : (
-                        <li className="text-gray-500">Waiting for game events…</li>
+                        <li className="text-gray-500">No recent events yet. Press Sync to fetch latest state.</li>
                       )}
                     </ul>
                   </div>
@@ -1026,23 +1057,27 @@ function GamePageInner() { // NOSONAR
                 <div className="mt-3 flex gap-2">
                   <input
                     type="text"
-                    placeholder="Say something…"
+                    placeholder={chatBlockedReason ?? 'Say something…'}
                     value={chatInput}
                     maxLength={256}
                     onChange={e => setChatInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleSendChat() }}
+                    disabled={!canChat}
                     className="flex-1 rounded border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
                     style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#d4c9b2' }}
                   />
                   <button
                     onClick={handleSendChat}
-                    disabled={!chatInput.trim() || !socketOn}
+                    disabled={!chatInput.trim() || !canChat}
                     className="rounded border px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                     style={{ borderColor: '#39ff14', color: '#39ff14' }}
                   >
                     Send
                   </button>
                 </div>
+                {chatBlockedReason && (
+                  <p className="mt-2 font-mono text-[11px]" style={{ color: '#f5c518' }}>{chatBlockedReason}</p>
+                )}
               </div>
 
               {/* Back to Lobby */}

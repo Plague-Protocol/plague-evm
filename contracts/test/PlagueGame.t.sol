@@ -422,8 +422,9 @@ contract PlagueGameTest is Test {
         assertEq(r.currentRound, 3);
     }
 
-    function test_FinalizeElimination_OneVsOne_IsDraw() public {
-        // Build a 4-player room to reach 1v1 naturally.
+    function test_InfectionPhase_StrictMajorityEndsBeforeReveal() public {
+        // Build a 4-player room where round-2 infection creates a strict
+        // infected majority and should end the game immediately.
         vm.prank(host);
         game.createRoom(4, STAKE, FEE, 600);
 
@@ -464,21 +465,9 @@ contract PlagueGameTest is Test {
 
         _resolveAndFinalize();
 
-        // Round 2: players[1] becomes infected (2 infected, 1 clean).
+        // Round 2: players[1] becomes infected (2 infected, 1 clean) and game ends.
         vm.prank(backend);
         game.assignInfection(1, players[1]);
-        vm.prank(backend);
-        game.openVoting(1);
-
-        // Eliminate infected players[0] so Reveal ends at 1 infected vs 1 clean.
-        vm.prank(host);
-        game.castVote(1, players[0]);
-        vm.prank(players[0]);
-        game.castVote(1, host);
-        vm.prank(players[1]);
-        game.castVote(1, players[0]);
-
-        _resolveAndFinalize();
 
         assertEq(uint(game.getRoom(1).status), uint(PlagueGame.RoomStatus.Ended));
         assertEq(uint(game.getRoom(1).currentPhase), uint(PlagueGame.RoundPhase.Ended));
