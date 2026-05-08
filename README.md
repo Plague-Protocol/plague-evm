@@ -53,6 +53,7 @@ PlagueProtocol/
 - Backend: room routes and socket handlers tracked in `backend/src`
 - Contracts: Solidity contracts and Foundry tests tracked in `contracts/src` and `contracts/test`
 - ZK: Noir circuit scaffolding tracked in `zk/circuits`
+- Leaderboard data: completed games are summarized in Postgres and exposed through the backend leaderboard API; nicknames are used for display when available.
 
 ---
 

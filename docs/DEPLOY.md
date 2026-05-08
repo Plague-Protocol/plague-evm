@@ -220,5 +220,5 @@ Before deploying to mainnet:
 
 | Network | PlagueGame | ZKVerifier (adapter) | StubZKVerifier (dev-only) | Block |
 |---------|-----------|-----------------------|----------------------------|-------|
-| Celo Sepolia | — | — | — | — |
+| Celo Sepolia | `0x4484a72DeA332e2DA8e62C509fa4A50A9ae9c447` | `0xba9AB7135a4BD99fbF8a070Cbe4D5048081e56E7` | n/a | `24985522` |
 | Celo Mainnet | — | — | n/a | — |
