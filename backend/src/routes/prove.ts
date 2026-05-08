@@ -71,7 +71,7 @@ proveRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid request: ' + parseResult.error.message })
   }
 
-  const { circuitId, witnessBase64 } = parseResult.data
+  const { circuitId, witnessBase64 }: { circuitId: CircuitId; witnessBase64: string } = parseResult.data
   let tmpDir: string | null = null
 
   try {

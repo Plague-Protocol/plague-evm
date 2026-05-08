@@ -531,15 +531,14 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           outcome = 'clean_win'
           winners = cleanAlive
           losers  = infectedAlive
-        } else if (infectedAlive.length === 1 && cleanAlive.length === 1) {
-          outcome = 'max_rounds_draw'
-          winners = [...cleanAlive, ...infectedAlive]
-          losers  = []
         } else if (infectedAlive.length > cleanAlive.length) {
           outcome = 'infected_win'
           winners = infectedAlive
           losers  = cleanAlive
-        } else if (room.currentRound >= room.maxRounds) {
+        } else if (
+          (infectedAlive.length === 1 && cleanAlive.length === 1) ||
+          room.currentRound >= room.maxRounds
+        ) {
           outcome = 'max_rounds_draw'
           winners = [...cleanAlive, ...infectedAlive]
           losers  = []

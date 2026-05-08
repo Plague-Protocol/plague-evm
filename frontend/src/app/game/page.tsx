@@ -160,7 +160,7 @@ function GamePageInner() {
 
   // ── Soundscape ───────────────────────────────────────────────────────────
   const { muted } = useSound()
-  const soundScene = room?.status === 'ended' ? 'ended' : (phase as RoundPhase)
+  const soundScene = room?.status === 'ended' ? 'ended' : phase
   useSoundscape(soundScene, muted)
 
   // Reset optimistic vote when round changes
