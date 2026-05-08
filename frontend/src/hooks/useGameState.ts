@@ -40,6 +40,45 @@ async function getRoomWithRetry(
   throw lastErr
 }
 
+// ── Backend meta helpers (nicknames + room name) ──────────────────────────────
+
+async function fetchNicknames(addresses: string[]): Promise<Record<string, string>> {
+  if (addresses.length === 0) return {}
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+  try {
+    const res = await fetch(`${backendUrl}/api/players/nicknames`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ addresses }),
+    })
+    if (!res.ok) return {}
+    const data = await res.json() as { nicknames: Record<string, string> }
+    return data.nicknames ?? {}
+  } catch {
+    return {}
+  }
+}
+
+async function applyNicknames(players: Player[]): Promise<Player[]> {
+  const nicknames = await fetchNicknames(players.map(p => p.walletAddress))
+  return players.map(p => {
+    const nick = nicknames[p.walletAddress] ?? nicknames[p.walletAddress.toLowerCase()]
+    return nick ? { ...p, displayName: nick } : p
+  })
+}
+
+async function fetchRoomName(roomId: string): Promise<string | null> {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+  try {
+    const res = await fetch(`${backendUrl}/api/rooms/${roomId}/name`)
+    if (!res.ok) return null
+    const data = await res.json() as { name: string | null }
+    return data.name
+  } catch {
+    return null
+  }
+}
+
 // ── Phase numeric → string mapping (mirrors Solidity RoundPhase enum) ─────────
 const PHASE_MAP: Record<number, RoundPhase> = {
   0: 'infection',
@@ -197,7 +236,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
 
     const room = mapRoom(snapshot.room)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    room.players = (snapshot.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
+    const rawPlayers = (snapshot.players ?? []).map((p: any, idx: number) => mapPlayer(p, p.addr ?? p.address, idx + 1))
+    const [enrichedPlayers, roomName] = await Promise.all([
+      applyNicknames(rawPlayers),
+      fetchRoomName(rid),
+    ])
+    room.players = enrichedPlayers
+    if (roomName) room.name = roomName
     const chainRound = buildRoundFromRaw(snapshot.room, room.players)
     let localPlayer = pAddr
       ? room.players.find(p => p.walletAddress.toLowerCase() === pAddr.toLowerCase()) ?? null
@@ -461,11 +506,16 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         const pRaw = await client.getPlayer(BigInt(rid), addr as `0x${string}`)
         return mapPlayer(pRaw, addr, idx + 1)
       }))
-      room.players = players
-      const chainRound = buildRoundFromRaw(raw, players)
+      const [enrichedPlayers, roomName] = await Promise.all([
+        applyNicknames(players),
+        fetchRoomName(rid),
+      ])
+      room.players = enrichedPlayers
+      if (roomName) room.name = roomName
+      const chainRound = buildRoundFromRaw(raw, room.players)
 
       let localPlayer = playerAddress
-        ? players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
+        ? room.players.find(p => p.walletAddress.toLowerCase() === playerAddress.toLowerCase()) ?? null
         : null
       localPlayer = await enrichLocalRole(client, BigInt(rid), localPlayer)
 

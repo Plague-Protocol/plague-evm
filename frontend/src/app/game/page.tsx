@@ -475,7 +475,7 @@ function GamePageInner() {
               className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.25em]"
               style={{ borderColor: 'rgba(230,51,41,0.5)', backgroundColor: 'rgba(230,51,41,0.12)', color: '#e63329' }}
             >
-              Room #{roomId}
+              {room?.name ?? `Room #${roomId}`}
             </span>
             <span
               className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.2em]"

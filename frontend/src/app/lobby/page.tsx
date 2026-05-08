@@ -805,6 +805,39 @@ export default function LobbyPage() {
         </div>
       </header>
 
+      {/* Active game banner */}
+      {myActiveRoom && myActiveRoom.status !== 'ended' && myActiveRoom.status !== 'waiting' && (
+        <div className="px-6 pb-2">
+          <div className="mx-auto w-full max-w-6xl">
+            <div
+              className="flex items-center justify-between gap-4 rounded-lg border px-5 py-4"
+              style={{ backgroundColor: 'rgba(57,255,20,0.07)', borderColor: 'rgba(57,255,20,0.45)' }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-400" style={{ boxShadow: '0 0 6px #39ff14' }} />
+                <span className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
+                  You are in{' '}
+                  <span style={{ color: '#39ff14' }}>
+                    {myActiveRoom.name ?? `Room #${myActiveRoom.id.toString()}`}
+                  </span>
+                  {' — '}
+                  <span className="uppercase tracking-widest" style={{ color: '#4a5e44' }}>
+                    {myActiveRoom.status}
+                  </span>
+                </span>
+              </div>
+              <button
+                onClick={() => pushToGame(myActiveRoom.id)}
+                className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
+                style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}
+              >
+                Return to Game →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-6 pb-20">
         <div className="mx-auto w-full max-w-6xl">
           <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">

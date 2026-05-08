@@ -49,6 +49,7 @@ export type RoomStatus = 'waiting' | 'starting' | 'active' | 'ended'
 
 export interface Room {
   id: string
+  name?: string
   contractAddress: string
   hostAddress: string
   players: Player[]
