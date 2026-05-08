@@ -354,6 +354,9 @@ function getJoinButtonState(
   if (room.status === 'waiting') {
     return { bg: '#e63329', border: '#e63329', color: '#d4c9b2', label: statusLabel[room.status], disabled }
   }
+  if (room.status === 'starting') {
+    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Starting\u2026', disabled: true }
+  }
   return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: statusLabel[room.status], disabled }
 }
 
