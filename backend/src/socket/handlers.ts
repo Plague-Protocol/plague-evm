@@ -2,7 +2,7 @@ import { Server, Socket } from 'socket.io'
 import { logger } from '../lib/logger'
 import type { GameEvent } from '../types/game'
 import { chainAdapter } from '../services/chainAdapter'
-import { listExpiredWaitingRooms, setRoomStatus } from '../repositories/rooms'
+import { listExpiredWaitingRooms, setRoomStatus, upsertGameSummary } from '../repositories/rooms'
 import { keccak256, toBytes } from 'viem'
 import { redis } from '../db/redis'
 
@@ -50,8 +50,10 @@ const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.ROLE_COMMIT_TIMEOUT_MS ?? 120_
 const ELIMINATION_PHASE_DURATION_MS = Number(process.env.ELIMINATION_PHASE_DURATION_MS ?? 6_000)
 const ROOM_SNAPSHOT_THROTTLE_MS = Number(process.env.ROOM_SNAPSHOT_THROTTLE_MS ?? 250)
 const LOBBY_REFRESH_THROTTLE_MS = Number(process.env.LOBBY_REFRESH_THROTTLE_MS ?? 400)
-const EARLY_RESOLVE_RETRY_DELAY_MS = Number(process.env.EARLY_RESOLVE_RETRY_DELAY_MS ?? 1_200)
-const EARLY_RESOLVE_MAX_RETRIES = Number(process.env.EARLY_RESOLVE_MAX_RETRIES ?? 3)
+const EARLY_RESOLVE_RETRY_DELAY_MS = Number(process.env.EARLY_RESOLVE_RETRY_DELAY_MS ?? 1_000)
+const EARLY_RESOLVE_MAX_RETRIES = Number(process.env.EARLY_RESOLVE_MAX_RETRIES ?? 6)
+const NETWORK = (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
+const CHAIN_ID = NETWORK === 'mainnet' ? 42220 : 44787
 const earlyResolveRetryTimers = new Map<string, NodeJS.Timeout>()
 const earlyResolveRetryAttempts = new Map<string, number>()
 
@@ -98,7 +100,9 @@ async function tryEarlyResolveAfterAllVotes(roomId: string): Promise<void> {
       p => Number(p.status) !== 2 && !p.hasVotedThisRound
     )
     if (aliveNotVoted.length > 0) {
-      clearEarlyResolveRetry(roomId)
+      // Keep a short retry loop to absorb RPC/event propagation lag between
+      // the last VoteCast event and read visibility of hasVotedThisRound.
+      scheduleEarlyResolveRetry(roomId)
       return
     }
 
@@ -415,6 +419,83 @@ async function processExpiredRoom(io: Server, roomId: string): Promise<void> {
   logger.info(`[expiry-monitor] expired waiting room ${roomId}`)
 }
 
+async function persistGameSummaryFromChain(roomId: string, outcome?: number): Promise<void> {
+  const id = BigInt(roomId)
+  const rawRoom = await chainAdapter.getRoom(id)
+  const rawPlayers = await Promise.all(rawRoom.players.map(addr => chainAdapter.getPlayer(id, addr)))
+  const totalPot = rawPlayers.reduce((sum, player) => sum + BigInt(player.staked.toString()), 0n)
+  const endedOutcome = outcome ?? (await chainAdapter.getGameEndedLogs(id))?.outcome ?? 2
+
+  let winningFaction: 'clean' | 'infected' | null = null
+  if (endedOutcome === 0) {
+    winningFaction = 'clean'
+  } else if (endedOutcome === 1) {
+    winningFaction = 'infected'
+  }
+
+  const alivePlayers = rawPlayers.filter(player => Number(player.status) !== 2)
+  const winnerAddresses = winningFaction
+    ? alivePlayers.filter(player => Number(player.status) === (winningFaction === 'clean' ? 0 : 1)).map(player => player.addr)
+    : alivePlayers.map(player => player.addr)
+  const winnerCount = winnerAddresses.length
+  const potPerWinner = winnerCount > 0 ? totalPot / BigInt(winnerCount) : 0n
+
+  const displayNameByAddress = new Map<string, string>()
+  for (const player of rawPlayers) {
+    if (typeof player.addr === 'string' && player.addr.length > 0) {
+      displayNameByAddress.set(player.addr.toLowerCase(), `${player.addr.slice(0, 6)}…${player.addr.slice(-4)}`)
+    }
+  }
+
+  const playerSummaries = rawPlayers.map(player => {
+    const status = Number(player.status)
+    let result: 'win' | 'loss' | 'draw' = 'loss'
+    if (endedOutcome === 2) {
+      result = 'draw'
+    } else if (winningFaction !== null) {
+      const winningStatus = winningFaction === 'clean' ? 0 : 1
+      const isWinner = status === winningStatus
+      result = isWinner ? 'win' : 'loss'
+    }
+
+    let statusAtEnd: 'eliminated' | 'infected' | 'clean' = 'clean'
+    if (status === 2) {
+      statusAtEnd = 'eliminated'
+    } else if (status === 1) {
+      statusAtEnd = 'infected'
+    }
+
+    return {
+      address: player.addr,
+      displayNameSnapshot: displayNameByAddress.get(player.addr.toLowerCase()) ?? null,
+      result,
+      proofsSubmittedTotal: Number(player.proofsSubmittedTotal),
+      statusAtEnd,
+      joinedAt: new Date(Number(player.joinedAt) * 1000),
+    }
+  })
+
+  let outcomeLabel: 'clean_win' | 'infected_win' | 'max_rounds_draw' = 'max_rounds_draw'
+  if (endedOutcome === 0) {
+    outcomeLabel = 'clean_win'
+  } else if (endedOutcome === 1) {
+    outcomeLabel = 'infected_win'
+  }
+
+  await upsertGameSummary({
+    roomId,
+    chainId: CHAIN_ID,
+    contractAddress: process.env.CONTRACT_ADDRESS ?? '',
+    outcome: outcomeLabel,
+    totalRounds: Number(rawRoom.currentRound ?? 0),
+    totalPot: totalPot.toString(),
+    potPerWinner: potPerWinner.toString(),
+    winnerCount,
+    endedAt: new Date(),
+    players: playerSummaries,
+  })
+}
+
 async function enrichEventArgs(
   eventName: string,
   args: Record<string, unknown>,
@@ -494,6 +575,13 @@ export function setupSocketHandlers(io: Server) {
       for (const ev of mapped) io.to(roomId).emit('game_event', ev)
     } else {
       io.to(roomId).emit('game_event', mapped)
+    }
+
+    if (eventName === 'GameEnded') {
+      void persistGameSummaryFromChain(roomId, Number(enrichedArgs.outcome)).catch(err => {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[socket] persistGameSummaryFromChain failed for room ${roomId}: ${message}`)
+      })
     }
 
     // For membership changes, push a fresh snapshot immediately so all players
@@ -1001,6 +1089,16 @@ function mapChainEventToGameEvent(
   }
 }
 
+function isExpectedCommitmentMonitorRevert(message: string): boolean {
+  return (
+    message.includes('WrongPhase') ||
+    message.includes('0xe2586bcc') ||
+    message.includes('RoleCommitmentPending') ||
+    message.includes('NotEnoughPlayers') ||
+    message.includes('StartThresholdMet')
+  )
+}
+
 /**
  * Broadcast a game event to all players in a room
  */
@@ -1058,13 +1156,7 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     // Ignore expected races/timeouts.
-    if (
-      !message.includes('WrongPhase') &&
-      !message.includes('0xe2586bcc') &&
-      !message.includes('RoleCommitmentPending') &&
-      !message.includes('NotEnoughPlayers') &&
-      !message.includes('StartThresholdMet')
-    ) {
+    if (!isExpectedCommitmentMonitorRevert(message)) {
       logger.warn(`[role-commitment-monitor] failed for room ${id}: ${message}`)
     }
   } finally {
@@ -1162,12 +1254,23 @@ async function handleDiscussionPhase(id: bigint, rawRoom: RawRoom, now: number):
 async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   const durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
-  if (now < phaseStartedAt + durationMs) return
+
+  const playerStates = await Promise.all(
+    rawRoom.players.map(addr => chainAdapter.getPlayer(id, addr))
+  )
+  const allAliveVoted = playerStates.every(
+    p => Number(p.status) === 2 || p.hasVotedThisRound
+  )
+  if (!allAliveVoted && now < phaseStartedAt + durationMs) return
+
   if (roomPhaseInProgress.has(id)) return
   roomPhaseInProgress.add(id)
   try {
     await chainAdapter.resolveRound(id)
-    logger.info(`[phase-advance-monitor] resolveRound succeeded for room ${id}`)
+    logger.info(
+      `[phase-advance-monitor] resolveRound succeeded for room ${id}` +
+      (allAliveVoted ? ' (all alive players voted early)' : '')
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message)) {
@@ -1204,7 +1307,7 @@ async function processActiveRoom(id: bigint, rawRoom: RawRoom, now: number): Pro
   else if (phase === 3) await handleEliminationPhase(id, rawRoom, now)
 }
 
-export function startPhaseAdvanceMonitor(_io: Server, intervalMs = 5_000): NodeJS.Timeout {
+export function startPhaseAdvanceMonitor(_io: Server, intervalMs = Number(process.env.PHASE_ADVANCE_INTERVAL_MS ?? 2_000)): NodeJS.Timeout {
   return setInterval(async () => {
     if (phaseAdvanceTickInProgress) return
     phaseAdvanceTickInProgress = true

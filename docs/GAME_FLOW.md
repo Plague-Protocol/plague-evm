@@ -71,7 +71,8 @@ infection → discussion → voting → reveal
 ### Phase 1 — Infection
 - The **system automatically assigns** infection each round — infected players do NOT choose their target.
 - **Round 1 target:** `eligible_clean_alive[ keccak256(roomId : round : currentPatientZero : blockHash) % count ]`
-- **Round 2+ target:** the player Patient Zero cast their vote for in the preceding voting phase, provided that player is still eligible (clean and alive). Falls back to the deterministic formula if the queued target is ineligible.
+- **Round 2+ target:** the player Patient Zero cast their vote for in the preceding voting phase, provided that player is still eligible (clean and alive).
+- If the current Patient Zero is eliminated during vote resolution, their queued infection is **nullified** and no queued target is carried into the next round.
 - Patient Zero's on-chain vote openly nominates a suspect for elimination — and secretly queues that same player as the next infection target. Both roles of the vote are public on-chain; only the infection consequence is hidden from other players.
 - Spread rate: **+1 infected per round** (controlled, not exponential)
 - After Round N: N total infected players
@@ -95,6 +96,7 @@ infection → discussion → voting → reveal
   contract.cast_vote(room_id, target_address)
   ```
 - Votes are **publicly visible** on-chain (who voted for whom).
+- If all alive players vote before the timer ends, the backend resolves the voting phase early (no need to wait for countdown expiry).
 - **Absent vote rule:** any player who doesn't vote before the timer expires has their vote automatically cast against **themselves**. Silence equals guilt — abstention is actively dangerous to the abstaining player, regardless of who is currently leading the vote.
 - No proof submissions are accepted during this phase.
 
@@ -152,18 +154,21 @@ Checked after every Reveal phase using **alive player counts only** (eliminated 
 | Priority | Condition | Outcome |
 |---|---|---|
 | 1 | `infected_alive == 0` | **Clean wins** |
-| 2 | `infected_alive >= clean_alive` | **Infected wins** (parity = spread is inevitable) |
-| 3 | `round == max_rounds` | **Infected wins** (clean ran out of time) |
+| 2 | `infected_alive == 1 && clean_alive == 1` | **Draw** |
+| 3 | `infected_alive > clean_alive` | **Infected wins** |
+| 4 | `round >= max_rounds` | **Draw** |
 
-**1v1 edge case:** 1 infected vs 1 clean → `infected_alive >= clean_alive` → **Infected wins** immediately.
+**1v1 edge case:** 1 infected vs 1 clean is an immediate **Draw**.
 
 ---
 
 ## 7. Payout
 
-- `total_pot = sum(all stakes) + sum(all paid proof fees)`
+- `total_pot = sum(all stakes)`
+- Paid proof fees are collected separately as platform fees and are **not** added to the winner pot.
 - **Winners** = alive players from the winning faction at game end.
-- `payout_per_winner = total_pot / winners.len()` (integer division, remainder stays in contract)
+- The contract takes a **0.3% platform fee** from `total_pot`; the remainder is split among winners.
+- `payout_per_winner = (total_pot - platform_fee) / winners.len()` (integer division, remainder routed to platform fees)
 - Eliminated and losing-faction players receive **nothing**.
 - Distribution is **automatic** — the contract transfers directly after `finalizeElimination`, no manual claim.
 

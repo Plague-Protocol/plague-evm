@@ -59,6 +59,53 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 }
 const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_ROLE_COMMIT_TIMEOUT_MS ?? 120_000)
 
+function getHeaderTitle(isLoading: boolean, round: number, roomStatus?: string): string {
+  if (isLoading) return 'LOADING…'
+  if (round > 0) return `ROUND ${round}`
+  if (roomStatus === 'waiting') return 'WAITING'
+  if (roomStatus === 'ended') return 'ENDED'
+  return 'STARTING'
+}
+
+function getPhaseCardBackground(phase: RoundPhase): string {
+  if (phase === 'infection') return 'rgba(230,51,41,0.1)'
+  if (phase === 'discussion') return 'rgba(57,255,20,0.1)'
+  if (phase === 'voting') return 'rgba(245,197,24,0.1)'
+  return 'rgba(143,168,130,0.1)'
+}
+
+function getPhaseDescription(
+  phase: RoundPhase,
+  hasVoted: boolean,
+  result: { outcome: string } | null,
+  roomStatus?: string,
+): string {
+  if (phase === 'infection') return 'Infection spreading — new carrier assigned.'
+  if (phase === 'discussion') return 'Submit innocence proofs now before voting opens.'
+  if (phase === 'voting') return hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Cast your vote to eliminate the suspected carrier.'
+  if (phase === 'reveal') return 'Elimination resolution in progress.'
+  if (result) return `Game over: ${result.outcome.replaceAll('_', ' ')}`
+  if (roomStatus === 'waiting') return 'Waiting for players to join.'
+  if (roomStatus === 'starting') return 'Waiting for all players to commit their role.'
+  return 'Game ended.'
+}
+
+function getResultLabel(outcome: string): string {
+  if (outcome === 'clean_win') return 'Clean Win'
+  if (outcome === 'infected_win') return 'Infected Win'
+  return 'Draw'
+}
+
+function getVotePanelLabel(phase: RoundPhase, hasVoted: boolean): string {
+  if (phase !== 'voting') return 'Voting not open'
+  return hasVoted ? 'Vote submitted' : 'Select suspected carrier'
+}
+
+function ensureHexPrefixed(value: string): `0x${string}` {
+  if (value.startsWith('0x')) return value as `0x${string}`
+  return `0x${value}`
+}
+
 // ── Contract error → user message ─────────────────────────────────────────────
 
 const CONTRACT_ERROR_MAP: Record<string, string> = {
@@ -85,7 +132,7 @@ function parseContractError(err: unknown): string {
 
 // ── Inner component (uses hooks that need Suspense) ───────────────────────────
 
-function GamePageInner() {
+function GamePageInner() { // NOSONAR
   const router = useRouter()
   const params = useSearchParams()
   const roomId = params.get('room')
@@ -133,6 +180,7 @@ function GamePageInner() {
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
   const [chatInput, setChatInput]       = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const phaseAdvanceNudgeKeyRef = useRef<string>('')
 
   const schedulePostTxRefresh = useCallback(() => {
     socket?.emit('request_room_refresh', { roomId })
@@ -157,6 +205,46 @@ function GamePageInner() {
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
   // Spectator: wallet connected but address not in players list (late viewer)
   const isSpectator   = !!address && !!room && room.status === 'active' && !room.players.some(p => p.walletAddress.toLowerCase() === address.toLowerCase())
+  const isPhaseSyncing = room?.status === 'active'
+    && (phase === 'discussion' || phase === 'voting' || phase === 'reveal')
+    && headerCountdownMs <= 0
+  const headerTitle = getHeaderTitle(isLoading, round, room?.status)
+  const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status)
+  const phaseCardBackground = getPhaseCardBackground(phase)
+  const hostPlayerCountLabel = `${totalPlayers} player${totalPlayers === 1 ? '' : 's'} in room. Start when ready.`
+  const votePanelLabel = getVotePanelLabel(phase, hasVoted)
+  let potPerWinnerValue = 0
+  if (result?.potPerWinner && result.potPerWinner > 0n) {
+    potPerWinnerValue = Number(result.potPerWinner) / 1e18
+  } else if (result && result.winners.length > 0) {
+    potPerWinnerValue = Number(result.totalPot) / 1e18 / result.winners.length
+  }
+  const potPerWinnerDisplay = potPerWinnerValue.toFixed(4)
+  let playersPanelBody: React.ReactNode
+  if (isLoading) {
+    playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Loading players…</p>
+  } else if (room?.players?.length) {
+    playersPanelBody = (
+      <div className="grid grid-cols-4 gap-3">
+        {room.players.map((p) => (
+          <button
+            key={p.walletAddress}
+            onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
+            className="rounded-lg py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
+            style={{
+              ...playerStyle(visibleStatus(p, address)),
+              boxShadow: selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
+              cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
+            }}
+          >
+            {p.displayName}
+          </button>
+        ))}
+      </div>
+    )
+  } else {
+    playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Waiting for players…</p>
+  }
 
   // ── Soundscape ───────────────────────────────────────────────────────────
   const { muted } = useSound()
@@ -280,7 +368,7 @@ function GamePageInner() {
         commitment,
       })
 
-      const nullifierHex = `0x${nullifier.toString(16).padStart(64, '0')}` as `0x${string}`
+      const nullifierHex: `0x${string}` = `0x${nullifier.toString(16).padStart(64, '0')}`
       const proofBytes   = ('0x' + proof.proof.map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
 
       // Notify backend before writing on-chain — backend validates and may send proof_error
@@ -347,7 +435,7 @@ function GamePageInner() {
       const secretBigInt = await deriveSecret(secretPhrase)
       const { commitment } = await generateRoleCommitment(role, secretBigInt)
       const proofResult = await proveRoleCommitment({ role, secret: secretBigInt, commitment })
-      const commitmentHex = commitment.startsWith('0x') ? commitment as `0x${string}` : `0x${commitment}` as `0x${string}`
+      const commitmentHex = ensureHexPrefixed(commitment)
       const proofBytes    = ('0x' + proofResult.proof.map((b: number) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
       const client = getContractClient()!
       await client.submitRoleCommitment(address, BigInt(roomId), commitmentHex, proofBytes)
@@ -398,9 +486,28 @@ function GamePageInner() {
     if (!socket || !roomId || room?.status !== 'active') return
     const id = setInterval(() => {
       socket.emit('request_phase_advance', { roomId })
-    }, 10_000)
+    }, 2_000)
     return () => clearInterval(id)
   }, [socket, roomId, room?.status])
+
+  // When the local timer reaches zero, proactively request phase advancement
+  // once per round+phase to avoid UI stalling until the next monitor tick.
+  useEffect(() => {
+    if (!socket || !roomId || room?.status !== 'active') return
+    const key = `${round}:${phase}`
+    if (headerCountdownMs > 0) {
+      if (phaseAdvanceNudgeKeyRef.current === key) {
+        phaseAdvanceNudgeKeyRef.current = ''
+      }
+      return
+    }
+    if (phaseAdvanceNudgeKeyRef.current === key) return
+    if (phase !== 'discussion' && phase !== 'voting' && phase !== 'reveal') return
+
+    phaseAdvanceNudgeKeyRef.current = key
+    socket.emit('request_phase_advance', { roomId })
+    socket.emit('request_room_refresh', { roomId })
+  }, [socket, roomId, room?.status, headerCountdownMs, phase, round])
 
   // ── Periodic full refresh — only when socket is offline ─────────────────
   useEffect(() => {
@@ -487,7 +594,7 @@ function GamePageInner() {
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-6">
             <h1 className="font-display text-7xl font-bold leading-none sm:text-8xl" style={{ color: '#d4c9b2' }}>
-              {isLoading ? 'LOADING…' : round > 0 ? `ROUND ${round}` : room?.status === 'waiting' ? 'WAITING' : room?.status === 'ended' ? 'ENDED' : 'STARTING'}
+              {headerTitle}
             </h1>
             {headerCountdownMs > 0 && (
               <div
@@ -501,6 +608,15 @@ function GamePageInner() {
               </div>
             )}
           </div>
+
+          {isPhaseSyncing && (
+            <div
+              className="mt-4 inline-flex items-center rounded border px-3 py-2 font-mono text-xs uppercase tracking-[0.16em]"
+              style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)', color: '#f5c518' }}
+            >
+              Syncing next phase on-chain...
+            </div>
+          )}
 
           {/* Connection status */}
           <div className="mt-3 flex items-center gap-3">
@@ -570,28 +686,7 @@ function GamePageInner() {
                   className="mt-6 rounded-lg border p-5"
                   style={{ backgroundColor: '#0c1309', borderColor: 'rgba(57,255,20,0.15)' }}
                 >
-                  {isLoading ? (
-                    <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Loading players…</p>
-                  ) : room?.players?.length ? (
-                    <div className="grid grid-cols-4 gap-3">
-                      {room.players.map((p) => (
-                        <button
-                          key={p.walletAddress}
-                          onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
-                          className="rounded-lg py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
-                          style={{
-                            ...playerStyle(visibleStatus(p, address)),
-                            boxShadow: selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
-                            cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
-                          }}
-                        >
-                          {p.displayName}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Waiting for players…</p>
-                  )}
+                  {playersPanelBody}
                 </div>
 
                 {/* Role awareness banners — private, only shown to the local player */}
@@ -632,8 +727,8 @@ function GamePageInner() {
                   >
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Live Feed</p>
                     <ul className="mt-3 space-y-2 font-mono text-xs max-h-32 overflow-y-auto" style={{ color: '#8fa882' }}>
-                      {feed.length > 0 ? feed.map((msg, i) => (
-                        <li key={i} className="flex gap-2">
+                      {feed.length > 0 ? feed.map((msg) => (
+                        <li key={msg} className="flex gap-2">
                           <span style={{ color: '#4a5e44' }}>→</span> {msg}
                         </li>
                       )) : (
@@ -643,26 +738,14 @@ function GamePageInner() {
                   </div>
                   <div
                     className="rounded-lg border p-5"
-                    style={{ backgroundColor: `rgba(${PHASE_COLOR[phase] === '#e63329' ? '230,51,41' : phase === 'discussion' ? '57,255,20' : phase === 'voting' ? '245,197,24' : '143,168,130'},0.1)`, borderColor: `${PHASE_COLOR[phase]}4d` }}
+                    style={{ backgroundColor: phaseCardBackground, borderColor: `${PHASE_COLOR[phase]}4d` }}
                   >
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Phase</p>
                     <p className="mt-2 font-display text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>
                       {PHASE_LABEL[phase]}
                     </p>
                     <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      {phase === 'infection'  && 'Infection spreading — new carrier assigned.'}
-                      {phase === 'discussion' && 'Submit innocence proofs now before voting opens.'}
-                      {phase === 'voting'     && (hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Cast your vote to eliminate the suspected carrier.')}
-                      {phase === 'reveal'     && 'Elimination resolution in progress.'}
-                      {phase === 'ended' && (
-                        result
-                          ? `Game over: ${result.outcome.replaceAll('_', ' ')}`
-                          : (
-                              room?.status === 'waiting'  ? 'Waiting for players to join.' :
-                              room?.status === 'starting' ? 'Waiting for all players to commit their role.' :
-                              'Game ended.'
-                            )
-                      )}
+                      {phaseCardDescription}
                     </p>
                   </div>
                 </div>
@@ -677,7 +760,7 @@ function GamePageInner() {
                       Host Controls
                     </p>
                     <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      {`${totalPlayers} player${totalPlayers !== 1 ? 's' : ''} in room. Start when ready.`}
+                      {hostPlayerCountLabel}
                     </p>
                     {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
                     <button
@@ -785,15 +868,10 @@ function GamePageInner() {
                 >
                   <h3 className="font-display text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
                   <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>
-                    {result.outcome === 'clean_win' ? 'Clean Win' : result.outcome === 'infected_win' ? 'Infected Win' : 'Draw'}
+                    {getResultLabel(result.outcome)}
                   </p>
                   <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>
-                    Pot per winner: {result.potPerWinner > 0n
-                      ? (Number(result.potPerWinner) / 1e18).toFixed(4)
-                      : result.winners.length > 0
-                        ? (Number(result.totalPot) / 1e18 / result.winners.length).toFixed(4)
-                        : '0.0000'
-                    } cUSD
+                    Pot per winner: {potPerWinnerDisplay} cUSD
                   </p>
                   <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
                     Winners: {result.winners.map(w => {
@@ -815,7 +893,7 @@ function GamePageInner() {
               >
                 <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
                 <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>
-                  {phase === 'voting' ? (hasVoted ? 'Vote submitted' : 'Select suspected carrier') : 'Voting not open'}
+                  {votePanelLabel}
                 </p>
 
                 {phase === 'voting' && hasVoted && (
@@ -884,7 +962,7 @@ function GamePageInner() {
                         return (
                           <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
                             <span>{name}</span>
-                            <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt !== 1 ? 's' : ''}</span>
+                            <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt === 1 ? '' : 's'}</span>
                           </div>
                         )
                       })}

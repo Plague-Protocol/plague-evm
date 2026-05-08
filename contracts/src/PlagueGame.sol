@@ -762,9 +762,16 @@ contract PlagueGame {
 
         // Queue next-round infection target from the current patient zero's vote.
         // This decouples infection spread from public vote winner selection.
+        // If the current patient zero is eliminated this round, their queued
+        // infection is nullified so the voted target remains clean.
         address pzAtVote = currentPatientZero[roomId];
         address queuedTarget = address(0);
         if (pzAtVote != address(0)) {
+            if (players[roomId][pzAtVote].status != PlayerStatus.Infected) {
+                pendingInfectionTarget[roomId] = address(0);
+                return;
+            }
+
             address votedTarget = players[roomId][pzAtVote].voteTarget;
             PlayerState storage votedState = players[roomId][votedTarget];
             if (

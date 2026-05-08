@@ -1,16 +1,136 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { SiteNav } from '@/components/ui/site-nav'
 
-const topPlayers = [
-  { name: 'CipherCrow', wins: 28, proofs: 119, reputation: 'Verified tactician', delta: '+3', badge: 'Tournament MVP' },
-  { name: 'NovaLatch', wins: 24, proofs: 102, reputation: 'Fastest innocence proofs', delta: '+1', badge: 'Proof Specialist' },
-  { name: 'HexMorrow', wins: 21, proofs: 97, reputation: 'High-pressure closer', delta: '-1', badge: 'Late Game Closer' },
-  { name: 'QuietOrbit', wins: 18, proofs: 83, reputation: 'Consensus builder', delta: '+2', badge: 'Town Anchor' },
-]
+type LeaderboardPlayer = {
+  address: string
+  displayName: string
+  wins: number
+  losses: number
+  draws: number
+  proofs: number
+  gamesPlayed: number
+  winRate: number
+  lastPlayedAt: string | null
+}
 
 const rankColors = ['#f5c518', '#8fa882', '#cd7f32', '#4a5e44']
 const tabs = ['Global', 'Season 0', 'Proof Leaders', 'This Week']
 
 export default function LeaderboardPage() {
+  const [players, setPlayers] = useState<LeaderboardPlayer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const loadLeaderboard = async () => {
+      try {
+        setLoading(true)
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+        const res = await fetch(`${backendUrl}/api/leaderboard`, { signal: controller.signal })
+        if (!res.ok) throw new Error(`Leaderboard request failed: ${res.status}`)
+        const data = await res.json() as { players?: LeaderboardPlayer[] }
+        setPlayers(data.players ?? [])
+        setError(null)
+      } catch (err) {
+        if (controller.signal.aborted) return
+        setError(err instanceof Error ? err.message : 'Failed to load leaderboard.')
+        setPlayers([])
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
+      }
+    }
+
+    void loadLeaderboard()
+    return () => controller.abort()
+  }, [])
+
+  let leaderboardBody: React.ReactNode
+  if (loading) {
+    leaderboardBody = (
+      <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(57,255,20,0.18)', backgroundColor: '#0e180d', color: '#8fa882' }}>
+        Loading leaderboard data…
+      </div>
+    )
+  } else if (error) {
+    leaderboardBody = (
+      <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(230,51,41,0.18)', backgroundColor: '#0e180d', color: '#e63329' }}>
+        {error}
+      </div>
+    )
+  } else if (players.length === 0) {
+    leaderboardBody = (
+      <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(57,255,20,0.18)', backgroundColor: '#0e180d', color: '#8fa882' }}>
+        No completed games yet. Rankings will appear here once rooms finish.
+      </div>
+    )
+  } else {
+    leaderboardBody = (
+      <>
+        {players.map((player, index) => (
+          <div
+            key={player.address}
+            className="rise-in grid gap-6 rounded-xl border p-6 transition-all duration-200 hover:scale-[1.01]"
+            style={{
+              gridTemplateColumns: 'auto 1fr auto auto',
+              borderColor: 'rgba(57,255,20,0.18)',
+              backgroundColor: '#0e180d',
+              animationDelay: `${index * 80}ms`,
+            }}
+          >
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-xl font-display text-xl leading-none"
+              style={{ backgroundColor: `${rankColors[index % rankColors.length]}22`, color: rankColors[index % rankColors.length] }}
+            >
+              {index + 1}
+            </div>
+            <div className="min-w-0">
+              <p className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                {player.displayName}
+              </p>
+              <p className="mt-1 font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>
+                {player.lastPlayedAt ? `Last played ${new Date(player.lastPlayedAt).toLocaleDateString()}` : 'No recent game'}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <span
+                  className="rounded-full px-3 py-0.5 font-mono text-[10px] uppercase"
+                  style={{ backgroundColor: 'rgba(245,197,24,0.12)', color: '#f5c518' }}
+                >
+                  {Math.round(player.winRate * 100)}% win rate
+                </span>
+                <span
+                  className="rounded-full px-3 py-0.5 font-mono text-[10px] uppercase"
+                  style={{
+                    backgroundColor: player.wins >= player.losses ? 'rgba(26,122,74,0.2)' : 'rgba(230,51,41,0.2)',
+                    color: player.wins >= player.losses ? '#1a7a4a' : '#e63329',
+                  }}
+                >
+                  {player.wins}W / {player.losses}L / {player.draws}D
+                </span>
+              </div>
+            </div>
+            <div
+              className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
+              style={{ backgroundColor: 'rgba(57,255,20,0.1)' }}
+            >
+              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Wins</p>
+              <p className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>{player.wins}</p>
+            </div>
+            <div
+              className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
+              style={{ backgroundColor: 'rgba(230,51,41,0.1)' }}
+            >
+              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proofs</p>
+              <p className="font-display text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
+            </div>
+          </div>
+        ))}
+      </>
+    )
+  }
+
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-zombie-portrait.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       {/* Nav */}
@@ -83,66 +203,7 @@ export default function LeaderboardPage() {
               </div>
 
               <div className="space-y-3">
-                {topPlayers.map((player, index) => (
-                  <div
-                    key={player.name}
-                    className="rise-in grid gap-6 rounded-xl border p-6 transition-all duration-200 hover:scale-[1.01]"
-                    style={{
-                      gridTemplateColumns: 'auto 1fr auto auto',
-                      borderColor: 'rgba(57,255,20,0.18)',
-                      backgroundColor: '#0e180d',
-                      animationDelay: `${index * 80}ms`,
-                    }}
-                  >
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-xl font-display text-xl leading-none"
-                      style={{ backgroundColor: `${rankColors[index]}22`, color: rankColors[index] }}
-                    >
-                      {index + 1}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
-                        {player.name}
-                      </p>
-                      <p className="mt-1 font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>
-                        {player.reputation}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <span
-                          className="rounded-full px-3 py-0.5 font-mono text-[10px] uppercase"
-                          style={{ backgroundColor: 'rgba(245,197,24,0.12)', color: '#f5c518' }}
-                        >
-                          {player.badge}
-                        </span>
-                        <span
-                          className="rounded-full px-3 py-0.5 font-mono text-[10px] uppercase"
-                          style={{
-                            backgroundColor: player.delta.startsWith('+')
-                              ? 'rgba(26,122,74,0.2)'
-                              : 'rgba(230,51,41,0.2)',
-                            color: player.delta.startsWith('+') ? '#1a7a4a' : '#e63329',
-                          }}
-                        >
-                          Rank {player.delta}
-                        </span>
-                      </div>
-                    </div>
-                    <div
-                      className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
-                      style={{ backgroundColor: 'rgba(57,255,20,0.1)' }}
-                    >
-                      <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Wins</p>
-                      <p className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>{player.wins}</p>
-                    </div>
-                    <div
-                      className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
-                      style={{ backgroundColor: 'rgba(230,51,41,0.1)' }}
-                    >
-                      <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proofs</p>
-                      <p className="font-display text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
-                    </div>
-                  </div>
-                ))}
+                {leaderboardBody}
               </div>
             </article>
 
@@ -157,9 +218,9 @@ export default function LeaderboardPage() {
                 <p className="mt-3 font-display text-3xl leading-none" style={{ color: '#d4c9b2' }}>Season 0</p>
                 <div className="mt-6 space-y-4">
                   {[
-                    { label: 'Your Rank', value: '#47' },
-                    { label: 'Wins', value: '12' },
-                    { label: 'Proofs', value: '43' },
+                    { label: 'Completed games', value: String(players.reduce((sum, row) => sum + row.gamesPlayed, 0)) },
+                    { label: 'Top rank', value: players.length > 0 ? '#1' : '—' },
+                    { label: 'Tracked players', value: String(players.length) },
                   ].map((s) => (
                     <div
                       key={s.label}

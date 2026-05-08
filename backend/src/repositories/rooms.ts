@@ -109,6 +109,84 @@ export async function deleteRoomRecord(roomId: string): Promise<void> {
   await redis.srem(WAITING_SET_KEY, roomId)
 }
 
+export type CreateGameSummaryInput = {
+  roomId: string
+  chainId: number
+  contractAddress: string
+  outcome: string
+  totalRounds: number
+  totalPot: string
+  potPerWinner: string
+  winnerCount: number
+  endedAt: Date
+  players: Array<{
+    address: string
+    displayNameSnapshot?: string | null
+    result: string
+    proofsSubmittedTotal: number
+    statusAtEnd: string
+    joinedAt?: Date | null
+  }>
+}
+
+export async function upsertGameSummary(input: CreateGameSummaryInput): Promise<void> {
+  await prisma.gameSummary.upsert({
+    where: { roomId: input.roomId },
+    update: {
+      chainId: input.chainId,
+      contractAddress: input.contractAddress,
+      outcome: input.outcome,
+      totalRounds: input.totalRounds,
+      totalPot: input.totalPot,
+      potPerWinner: input.potPerWinner,
+      winnerCount: input.winnerCount,
+      endedAt: input.endedAt,
+      players: {
+        deleteMany: {},
+        create: input.players.map(player => ({
+          address: player.address,
+          displayNameSnapshot: player.displayNameSnapshot ?? null,
+          result: player.result,
+          proofsSubmittedTotal: player.proofsSubmittedTotal,
+          statusAtEnd: player.statusAtEnd,
+          joinedAt: player.joinedAt ?? undefined,
+        })),
+      },
+    },
+    create: {
+      roomId: input.roomId,
+      chainId: input.chainId,
+      contractAddress: input.contractAddress,
+      outcome: input.outcome,
+      totalRounds: input.totalRounds,
+      totalPot: input.totalPot,
+      potPerWinner: input.potPerWinner,
+      winnerCount: input.winnerCount,
+      endedAt: input.endedAt,
+      players: {
+        create: input.players.map(player => ({
+          address: player.address,
+          displayNameSnapshot: player.displayNameSnapshot ?? null,
+          result: player.result,
+          proofsSubmittedTotal: player.proofsSubmittedTotal,
+          statusAtEnd: player.statusAtEnd,
+          joinedAt: player.joinedAt ?? undefined,
+        })),
+      },
+    },
+  })
+}
+
+export async function getLeaderboardSummaries(limit = 100) {
+  return prisma.gameSummary.findMany({
+    orderBy: { endedAt: 'desc' },
+    take: limit,
+    include: {
+      players: true,
+    },
+  })
+}
+
 async function cacheRoom(room: Room): Promise<void> {
   await redis.set(roomKey(room.roomId), JSON.stringify(room), 'EX', 60)
 
