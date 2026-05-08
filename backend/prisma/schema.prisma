@@ -60,3 +60,37 @@ model PlayerNickname {
 
   updatedAt DateTime @updatedAt
 }
+
+model GameSummary {
+  id              String             @id @default(cuid())
+  roomId          String             @unique
+  chainId         Int
+  contractAddress String
+  outcome         String
+  totalRounds     Int
+  totalPot        String
+  potPerWinner    String
+  winnerCount     Int
+  endedAt         DateTime
+
+  players GameSummaryPlayer[]
+
+  @@index([endedAt])
+  @@index([outcome])
+}
+
+model GameSummaryPlayer {
+  id                  String      @id @default(cuid())
+  gameSummary         GameSummary  @relation(fields: [gameSummaryId], references: [id], onDelete: Cascade)
+  gameSummaryId       String
+  address             String
+  displayNameSnapshot String?
+  result              String
+  proofsSubmittedTotal Int         @default(0)
+  statusAtEnd         String
+  joinedAt            DateTime?
+
+  @@unique([gameSummaryId, address])
+  @@index([address])
+  @@index([result])
+}

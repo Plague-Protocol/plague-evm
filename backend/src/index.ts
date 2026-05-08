@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 import { roomRouter } from './routes/rooms'
 import { proveRouter } from './routes/prove'
 import { playerRouter } from './routes/players'
+import { leaderboardRouter } from './routes/leaderboard'
 import {
   setupSocketHandlers,
   startRoomExpiryMonitor,
@@ -32,6 +33,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }))
 app.use('/api/rooms', roomRouter)
 app.use('/api/prove', proveRouter)
 app.use('/api/players', playerRouter)
+app.use('/api/leaderboard', leaderboardRouter)
 
 // ─── Socket.io ──────────────────────────────────────────────────────────────
 
