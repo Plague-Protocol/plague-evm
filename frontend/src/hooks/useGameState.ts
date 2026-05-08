@@ -59,6 +59,15 @@ const PLAYER_STATUS_MAP: Record<number, 'clean' | 'infected' | 'eliminated'> = {
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ELIMINATION_PHASE_DURATION_MS = Number(process.env.NEXT_PUBLIC_ELIMINATION_PHASE_DURATION_MS ?? 6_000)
 const SNAPSHOT_STALE_MS = Number(process.env.NEXT_PUBLIC_SNAPSHOT_STALE_MS ?? 2_000)
+const PLATFORM_FEE_NUMERATOR = 3n
+const PLATFORM_FEE_DENOMINATOR = 1000n
+
+function computeWinnerShare(totalPot: bigint, winnerCount: number): bigint {
+  if (winnerCount <= 0 || totalPot <= 0n) return 0n
+  const fee = (totalPot * PLATFORM_FEE_NUMERATOR) / PLATFORM_FEE_DENOMINATOR
+  const distributable = totalPot - fee
+  return distributable / BigInt(winnerCount)
+}
 
 // ── Map raw on-chain room to Room type ────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -369,29 +378,18 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         appendFeed(`Game over — ${outcome.replaceAll('_', ' ')}`)
         setState(prev => {
           if (!prev.room) return prev
-          const alivePlayers = prev.room.players.filter(pl => !pl.isEliminated)
-          const cleanAlive = alivePlayers.filter(pl => pl.status === 'clean')
-          const infectedAlive = alivePlayers.filter(pl => pl.status === 'infected')
-          let winners: string[] = []
-          let losers: string[] = []
-          if (outcome === 'clean_win') {
-            winners = cleanAlive.map(pl => pl.walletAddress)
-            losers  = infectedAlive.map(pl => pl.walletAddress)
-          } else if (outcome === 'infected_win') {
-            winners = infectedAlive.map(pl => pl.walletAddress)
-            losers  = cleanAlive.map(pl => pl.walletAddress)
-          }
+          const totalPot = prev.room.stakeAmount * BigInt(prev.room.players.length)
           return {
             ...prev,
             room: { ...prev.room, status: 'ended' },
             result: {
               outcome,
-              winners,
-              losers,
-              totalPot: prev.room.stakeAmount * BigInt(prev.room.players.length),
-              potPerWinner: winners.length > 0
-                ? (prev.room.stakeAmount * BigInt(prev.room.players.length)) / BigInt(winners.length)
-                : 0n,
+              // Winners are finalized from PotDrained events and/or chain refresh,
+              // because local role visibility can hide infected identities.
+              winners: prev.result?.winners ?? [],
+              losers: prev.result?.losers ?? [],
+              totalPot,
+              potPerWinner: prev.result?.potPerWinner ?? 0n,
               rounds: prev.currentRound?.number ?? 0,
             },
           }
@@ -483,13 +481,21 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           outcome = 'clean_win'
           winners = cleanAlive
           losers  = infectedAlive
-        } else if (room.currentRound < room.maxRounds && infectedAlive.length >= cleanAlive.length) {
+        } else if (infectedAlive.length === 1 && cleanAlive.length === 1) {
+          outcome = 'max_rounds_draw'
+          winners = [...cleanAlive, ...infectedAlive]
+          losers  = []
+        } else if (infectedAlive.length > cleanAlive.length) {
           outcome = 'infected_win'
           winners = infectedAlive
           losers  = cleanAlive
+        } else if (room.currentRound >= room.maxRounds) {
+          outcome = 'max_rounds_draw'
+          winners = [...cleanAlive, ...infectedAlive]
+          losers  = []
         }
         const totalPot     = room.stakeAmount * BigInt(room.players.length)
-        const potPerWinner = winners.length > 0 ? totalPot / BigInt(winners.length) : 0n
+        const potPerWinner = computeWinnerShare(totalPot, winners.length)
         setState(prev => ({
           ...prev,
           room,

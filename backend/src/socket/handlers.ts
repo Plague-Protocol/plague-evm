@@ -12,7 +12,29 @@ type RawPlayer = Awaited<ReturnType<typeof chainAdapter.getPlayer>>
 // Scope chat keys to contract address so redeployments don't bleed messages
 // between rooms with the same numeric ID.
 const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS ?? 'unknown').toLowerCase()
-const chatKey = (roomId: string) => `chat:${CONTRACT_ADDRESS}:${roomId}`
+const CHAT_KEY_VERSION = 'v2'
+const CHAT_NAMESPACE = (process.env.CHAT_NAMESPACE ?? `${(process.env.NETWORK ?? 'testnet').toLowerCase()}:${CONTRACT_ADDRESS}`)
+  .trim()
+  .toLowerCase()
+const resolvedRoomChatKeys = new Map<string, string>()
+
+function buildChatKey(roomId: string, roomCreatedAt?: number): string {
+  const createdAtPart = roomCreatedAt ? String(roomCreatedAt) : 'na'
+  return `chat:${CHAT_KEY_VERSION}:${CHAT_NAMESPACE}:${roomId}:${createdAtPart}`
+}
+
+function cacheChatKey(roomId: string, rawRoom: RawRoom): string {
+  const key = buildChatKey(roomId, Number(rawRoom.createdAt))
+  resolvedRoomChatKeys.set(roomId, key)
+  return key
+}
+
+async function getChatKeyForRoom(roomId: string): Promise<string> {
+  const cached = resolvedRoomChatKeys.get(roomId)
+  if (cached) return cached
+  const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
+  return cacheChatKey(roomId, rawRoom)
+}
 
 /**
  * Per-room in-progress lock for phase transitions.
@@ -28,6 +50,87 @@ const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.ROLE_COMMIT_TIMEOUT_MS ?? 120_
 const ELIMINATION_PHASE_DURATION_MS = Number(process.env.ELIMINATION_PHASE_DURATION_MS ?? 6_000)
 const ROOM_SNAPSHOT_THROTTLE_MS = Number(process.env.ROOM_SNAPSHOT_THROTTLE_MS ?? 250)
 const LOBBY_REFRESH_THROTTLE_MS = Number(process.env.LOBBY_REFRESH_THROTTLE_MS ?? 400)
+const EARLY_RESOLVE_RETRY_DELAY_MS = Number(process.env.EARLY_RESOLVE_RETRY_DELAY_MS ?? 1_200)
+const EARLY_RESOLVE_MAX_RETRIES = Number(process.env.EARLY_RESOLVE_MAX_RETRIES ?? 3)
+const earlyResolveRetryTimers = new Map<string, NodeJS.Timeout>()
+const earlyResolveRetryAttempts = new Map<string, number>()
+
+function clearEarlyResolveRetry(roomId: string): void {
+  const timer = earlyResolveRetryTimers.get(roomId)
+  if (timer) clearTimeout(timer)
+  earlyResolveRetryTimers.delete(roomId)
+  earlyResolveRetryAttempts.delete(roomId)
+}
+
+function scheduleEarlyResolveRetry(roomId: string): void {
+  if (earlyResolveRetryTimers.has(roomId)) return
+  const attempts = earlyResolveRetryAttempts.get(roomId) ?? 0
+  if (attempts >= EARLY_RESOLVE_MAX_RETRIES) {
+    earlyResolveRetryAttempts.delete(roomId)
+    return
+  }
+
+  const timer = setTimeout(() => {
+    earlyResolveRetryTimers.delete(roomId)
+    earlyResolveRetryAttempts.set(roomId, attempts + 1)
+    void tryEarlyResolveAfterAllVotes(roomId)
+  }, EARLY_RESOLVE_RETRY_DELAY_MS)
+
+  earlyResolveRetryTimers.set(roomId, timer)
+}
+
+async function tryEarlyResolveAfterAllVotes(roomId: string): Promise<void> {
+  try {
+    const id = BigInt(roomId)
+    const rawRoom = await chainAdapter.getRoom(id)
+    // Only act during the Voting phase (phase === 2)
+    if (Number(rawRoom.currentPhase) !== 2) {
+      clearEarlyResolveRetry(roomId)
+      return
+    }
+
+    const playerStates = await Promise.all(
+      rawRoom.players.map(addr => chainAdapter.getPlayer(id, addr))
+    )
+
+    // Check whether any alive player has not yet voted.
+    const aliveNotVoted = playerStates.filter(
+      p => Number(p.status) !== 2 && !p.hasVotedThisRound
+    )
+    if (aliveNotVoted.length > 0) {
+      clearEarlyResolveRetry(roomId)
+      return
+    }
+
+    // All alive players have voted — trigger immediate resolve.
+    if (roomPhaseInProgress.has(id)) {
+      scheduleEarlyResolveRetry(roomId)
+      return
+    }
+
+    roomPhaseInProgress.add(id)
+    let resolveSucceeded = false
+    try {
+      await chainAdapter.resolveRound(id)
+      resolveSucceeded = true
+      logger.info(`[vote-early-resolve] resolveRound for room ${id} (all players voted early)`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (!isExpectedPhaseRevert(message)) {
+        logger.warn(`[vote-early-resolve] resolveRound failed for room ${id}: ${message}`)
+      }
+      // Retry a few times to absorb lock/race conditions and short RPC/event lag.
+      scheduleEarlyResolveRetry(roomId)
+    } finally {
+      roomPhaseInProgress.delete(id)
+      if (resolveSucceeded) clearEarlyResolveRetry(roomId)
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logger.warn(`[vote-early-resolve] check failed for room ${roomId}: ${message}`)
+    scheduleEarlyResolveRetry(roomId)
+  }
+}
 
 /**
  * Retry `getRoom` for newly-created rooms whose block hasn't propagated to
@@ -401,6 +504,12 @@ export function setupSocketHandlers(io: Server) {
       queueRoomSnapshot(io, roomId)
     }
     queueLobbyRefresh(io, roomId)
+
+    // Early voting resolution: if every alive player has voted before the timer
+    // expires, resolve the round immediately instead of waiting for the clock.
+    if (eventName === 'VoteCast') {
+      void tryEarlyResolveAfterAllVotes(roomId)
+    }
   })
 
   io.on('connection', (socket: Socket) => {
@@ -433,6 +542,7 @@ export function setupSocketHandlers(io: Server) {
           BigInt(roomId),
           playerAddress,
         )
+        const roomChatKey = cacheChatKey(roomId, rawRoom)
         socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
         await emitRoomSnapshot(io, roomId, socket.id)
         // Broadcast updated state to all existing room members so they see the new player.
@@ -440,7 +550,7 @@ export function setupSocketHandlers(io: Server) {
 
         // Send persisted chat history so reconnecting clients see previous messages.
         try {
-          const raw = await redis.lrange(chatKey(roomId), 0, -1)
+          const raw = await redis.lrange(roomChatKey, 0, -1)
           if (raw.length > 0) {
             socket.emit('chat_history', raw.map(m => JSON.parse(m)))
           }
@@ -484,6 +594,9 @@ export function setupSocketHandlers(io: Server) {
       socket.leave(roomId)
       if (playerAddress) {
         playerSockets.get(roomId)?.delete(playerAddress.toLowerCase())
+      }
+      if (io.sockets.adapter.rooms.get(roomId)?.size === 0) {
+        resolvedRoomChatKeys.delete(roomId)
       }
     })
 
@@ -716,8 +829,9 @@ export function setupSocketHandlers(io: Server) {
       io.to(roomId).emit('chat_message', chatMsg)
       // Persist to Redis so the history survives reconnects/refreshes (keep last 100).
       try {
-        await redis.rpush(chatKey(roomId), JSON.stringify(chatMsg))
-        await redis.ltrim(chatKey(roomId), -100, -1)
+        const key = await getChatKeyForRoom(roomId)
+        await redis.rpush(key, JSON.stringify(chatMsg))
+        await redis.ltrim(key, -100, -1)
       } catch (redisErr) {
         logger.warn(`[socket] failed to persist chat for room ${roomId}: ${redisErr}`)
       }
@@ -728,6 +842,11 @@ export function setupSocketHandlers(io: Server) {
         for (const [addr, sid] of roomMap) {
           if (sid === socket.id) roomMap.delete(addr)
         }
+      }
+      for (const [roomId, room] of io.sockets.adapter.rooms) {
+        // socket.io room lists include socket IDs; only remove explicit game-room caches.
+        if (roomId === socket.id) continue
+        if (room.size === 0) resolvedRoomChatKeys.delete(roomId)
       }
       logger.info(`Client disconnected: ${socket.id}`)
     })
@@ -745,6 +864,12 @@ export function setupSocketHandlers(io: Server) {
     lobbyRefreshLastEmittedAt = 0
     lobbyRefreshDirty = false
     lobbyRefreshRoomId = null
+    for (const timer of earlyResolveRetryTimers.values()) {
+      clearTimeout(timer)
+    }
+    earlyResolveRetryTimers.clear()
+    earlyResolveRetryAttempts.clear()
+    resolvedRoomChatKeys.clear()
     unwatch()
   })
 }
