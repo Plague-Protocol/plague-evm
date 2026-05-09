@@ -37,18 +37,24 @@ RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/maste
 # ── Copy app ───────────────────────────────────────────────────────────────
 WORKDIR /app
 
-# Monorepo root deps (shared node_modules)
-COPY package.json ./
-COPY node_modules ./node_modules
+# Monorepo workspace manifests (install deps from lockfile — node_modules is
+# gitignored so we never COPY it from the build context)
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+
+# Install backend workspace deps only (skip frontend to keep image lean).
+# --include=dev needed for typescript/prisma at build time; pruned below.
+RUN npm ci --workspace=backend --include-workspace-root --include=dev
 
 # Backend source + build
-COPY backend/package.json ./backend/
 COPY backend/tsconfig.json ./backend/
 COPY backend/prisma.config.ts ./backend/
 COPY backend/prisma ./backend/prisma
 COPY backend/src ./backend/src
 
-RUN cd backend && node ../node_modules/typescript/lib/tsc.js
+RUN cd backend && node ../node_modules/typescript/lib/tsc.js \
+  && cd /app && npx prisma generate --schema backend/prisma/schema.prisma
 
 # ZK circuit artifacts (compiled by `nargo compile`, committed to repo)
 # The prove route resolves: __dirname/../../../zk/target → /app/zk/target
