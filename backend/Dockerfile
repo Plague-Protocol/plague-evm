@@ -53,7 +53,9 @@ COPY backend/prisma.config.ts ./backend/
 COPY backend/prisma ./backend/prisma
 COPY backend/src ./backend/src
 
-RUN cd backend && npx prisma generate --schema ./prisma/schema.prisma && node ../node_modules/typescript/lib/tsc.js
+# Using a dummy DATABASE_URL during build for railway — needed for Prisma Client codegen, but the actual value is injected at runtime by Railway.
+RUN DATABASE_URL="postgresql://user:pass@localhost/db" \
+  && cd backend && npx prisma generate --schema ./prisma/schema.prisma && node ../node_modules/typescript/lib/tsc.js
 
 # ZK circuit artifacts (compiled by `nargo compile`, committed to repo)
 # The prove route resolves: __dirname/../../../zk/target → /app/zk/target
