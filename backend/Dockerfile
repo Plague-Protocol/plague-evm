@@ -53,8 +53,7 @@ COPY backend/prisma.config.ts ./backend/
 COPY backend/prisma ./backend/prisma
 COPY backend/src ./backend/src
 
-RUN cd backend && node ../node_modules/typescript/lib/tsc.js \
-  && cd /app && npx prisma generate --schema backend/prisma/schema.prisma
+RUN cd backend && npx prisma generate --schema ./prisma/schema.prisma && node ../node_modules/typescript/lib/tsc.js
 
 # ZK circuit artifacts (compiled by `nargo compile`, committed to repo)
 # The prove route resolves: __dirname/../../../zk/target → /app/zk/target
