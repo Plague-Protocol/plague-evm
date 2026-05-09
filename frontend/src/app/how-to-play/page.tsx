@@ -185,7 +185,7 @@ export default function HowToPlayPage() {
 
       {/* Hero */}
       <header
-        className="relative overflow-hidden px-6 py-20"
+        className="relative overflow-hidden px-4 sm:px-6 py-10 sm:py-20"
         style={{ borderBottom: '1px solid rgba(57,255,20,0.2)' }}
       >
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
@@ -201,26 +201,26 @@ export default function HowToPlayPage() {
           >
             Rules & Instructions
           </span>
-          <h1 className="mt-6 font-display text-4xl font-bold leading-none sm:text-6xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
+          <h1 className="mt-6 font-display text-3xl font-bold leading-none sm:text-6xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
             HOW TO PLAY
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl font-mono text-base leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#4a5e44' }}>
             Plague Protocol is a social deduction game built on Celo. Stake cUSD, earn your role in secret,
             use zero-knowledge proofs to survive, and outlast the infection — or spread it.
           </p>
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-6xl space-y-20 px-6 py-16">
+      <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-20 px-4 sm:px-6 py-10 sm:py-16">
 
         {/* ── Overview ────────────────────────────────────────────────────── */}
         <section>
           <SectionTitle number="00" title="The Objective" />
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <div className="mt-6 sm:mt-8 grid gap-4 md:grid-cols-3">
             {roles.map((role) => (
               <div
                 key={role.name}
-                className="rounded-xl border p-6"
+                className="rounded-xl border p-4 sm:p-6"
                 style={{ backgroundColor: role.bgColor, borderColor: role.borderColor }}
               >
                 <div className="flex items-center gap-3">
@@ -551,10 +551,10 @@ export default function HowToPlayPage() {
         {/* ── CTA ────────────────────────────────────────────────────────── */}
         <section className="text-center">
           <div
-            className="mx-auto max-w-xl rounded-2xl border p-10"
+            className="mx-auto max-w-xl rounded-2xl border p-6 sm:p-10"
             style={{ borderColor: 'rgba(204,20,20,0.35)', backgroundColor: 'rgba(6,11,6,0.7)' }}
           >
-            <h2 className="font-display text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
+            <h2 className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
             <p className="mt-3 font-mono text-sm" style={{ color: '#4a5e44' }}>
               Connect your wallet, join a room in the lobby, and stake your cUSD.
             </p>
@@ -589,7 +589,7 @@ function SectionTitle({ number, title }: Readonly<{ number: string; title: strin
   return (
     <div className="flex items-baseline gap-4">
       <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#39ff14' }}>{number}</span>
-      <h2 className="font-display text-3xl font-bold sm:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
+      <h2 className="font-display text-2xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
     </div>
   )
 }

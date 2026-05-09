@@ -98,18 +98,18 @@ export default function HomePage() {
           {/* Badge + Heading + CTA */}
           <div className="rise-in flex flex-col items-center gap-8">
             <span
-              className="rounded-full border px-4 py-1.5 font-mono text-xs uppercase tracking-[0.22em]"
+              className="rounded-full border px-3 py-1 sm:px-4 sm:py-1.5 font-mono text-[10px] sm:text-xs uppercase tracking-[0.22em]"
               style={{ borderColor: 'rgba(204,20,20,0.5)', backgroundColor: 'rgba(204,20,20,0.1)', color: '#cc1414' }}
             >
               PlagueProtocol · Celo × EVM × Noir ZK
             </span>
 
             <h1 className="max-w-5xl font-display leading-[0.88]">
-              <span className="block text-5xl sm:text-7xl lg:text-9xl" style={{ color: '#d4c9b2' }}>
+              <span className="block text-4xl sm:text-7xl lg:text-9xl" style={{ color: '#d4c9b2' }}>
                 INFECT THE
               </span>
               <span
-                className="block text-5xl sm:text-7xl lg:text-9xl"
+                className="block text-4xl sm:text-7xl lg:text-9xl"
                 style={{
                   background: 'linear-gradient(135deg, #39ff14, #cc1414)',
                   WebkitBackgroundClip: 'text',
@@ -121,22 +121,22 @@ export default function HomePage() {
               </span>
             </h1>
 
-            <p className="max-w-2xl font-body text-lg leading-relaxed" style={{ color: '#8fa882' }}>
+            <p className="max-w-2xl font-body text-sm sm:text-lg leading-relaxed" style={{ color: '#8fa882' }}>
               A zero-knowledge social deduction game on Celo. Deceive, vote, prove — every action
               is on-chain and verifiable.
             </p>
 
-            <div className="flex flex-wrap justify-center gap-4">
+            <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
               <Link
                 href="/lobby"
-                className="rounded-lg px-8 py-4 font-mono text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
                 style={{ backgroundColor: '#39ff14', color: '#060b06', boxShadow: '4px 4px 0px #cc1414' }}
               >
                 Enter Lobby
               </Link>
               <Link
                 href="/game"
-                className="rounded-lg border px-8 py-4 font-mono text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                className="rounded-lg border px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
                 style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14', boxShadow: '4px 4px 0px rgba(57,255,20,0.2)' }}
               >
                 Watch a Match
@@ -152,11 +152,11 @@ export default function HomePage() {
             {stats.map((stat) => (
               <div
                 key={stat.label}
-                className="flex flex-col items-center gap-3 rounded-2xl border p-8 text-center transition-all hover:scale-[1.02]"
+                className="flex flex-col items-center gap-2 sm:gap-3 rounded-2xl border p-4 sm:p-8 text-center transition-all hover:scale-[1.02]"
                 style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: 'rgba(12,19,9,0.85)' }}
               >
-                <span className="text-5xl">{stat.icon}</span>
-                <span className="font-display text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
+                <span className="text-3xl sm:text-5xl">{stat.icon}</span>
+                <span className="font-display text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
                   {stat.number}
                 </span>
                 <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>
@@ -182,14 +182,14 @@ export default function HomePage() {
       </div>
 
       {/* How It Works */}
-      <section className="px-6 py-24" style={{ backgroundColor: '#060b06' }}>
+      <section className="px-4 sm:px-6 py-12 sm:py-24" style={{ backgroundColor: '#060b06' }}>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-16">
           <div className="flex flex-col items-center gap-6">
             <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
               How It Works
             </span>
             <h2
-              className="max-w-4xl text-center font-display text-4xl leading-none sm:text-6xl sm:text-7xl"
+              className="max-w-4xl text-center font-display text-2xl leading-none sm:text-4xl md:text-6xl lg:text-7xl"
               style={{ color: '#d4c9b2' }}
             >
               THREE PHASES. ONE SURVIVOR.
@@ -204,7 +204,7 @@ export default function HomePage() {
             {features.map((f, i) => (
               <div
                 key={f.title}
-                className="rise-in flex flex-col gap-5 rounded-lg border p-10 transition-all duration-300 hover:scale-[1.02]"
+                className="rise-in flex flex-col gap-4 sm:gap-5 rounded-lg border p-5 sm:p-10 transition-all duration-300 hover:scale-[1.02]"
                 style={{
                   backgroundColor: '#0c1309',
                   borderColor: 'rgba(57,255,20,0.12)',
@@ -232,14 +232,14 @@ export default function HomePage() {
       </section>
 
       {/* Game Mechanics */}
-      <section className="px-6 py-24" style={{ backgroundColor: '#0a100a' }}>
+      <section className="px-4 sm:px-6 py-12 sm:py-24" style={{ backgroundColor: '#0a100a' }}>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-16">
           <div className="flex flex-col items-center gap-6">
             <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#c97a12' }}>
               Game Mechanics
             </span>
             <h2
-              className="max-w-4xl text-center font-display text-4xl leading-none sm:text-6xl sm:text-7xl"
+              className="max-w-4xl text-center font-display text-2xl leading-none sm:text-4xl md:text-6xl lg:text-7xl"
               style={{ color: '#d4c9b2' }}
             >
               BUILT ON CHAIN. PLAYED OFF IT.
@@ -250,7 +250,7 @@ export default function HomePage() {
             {mechanics.map((m, i) => (
               <div
                 key={m.title}
-                className="rise-in flex gap-6 rounded-lg border p-10 transition-all hover:scale-[1.01]"
+                className="rise-in flex gap-4 sm:gap-6 rounded-lg border p-5 sm:p-10 transition-all hover:scale-[1.01]"
                 style={{
                   backgroundColor: '#0e180d',
                   borderColor: 'rgba(57,255,20,0.08)',
@@ -258,7 +258,7 @@ export default function HomePage() {
                 }}
               >
                 <div
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-2xl"
+                  className="flex h-10 w-10 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl text-xl sm:text-2xl"
                   style={{ background: 'linear-gradient(135deg, rgba(57,255,20,0.2), rgba(204,20,20,0.2))' }}
                 >
                   {m.icon}
@@ -279,7 +279,7 @@ export default function HomePage() {
 
       {/* Final CTA */}
       <section
-        className="relative overflow-hidden px-6 py-32"
+        className="relative overflow-hidden px-4 sm:px-6 py-16 sm:py-32"
         style={{
           backgroundImage: 'url(/images/bg-zombie-portrait.jpg)',
           backgroundSize: 'cover',
@@ -300,7 +300,7 @@ export default function HomePage() {
         <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center gap-12">
           <div className="flex flex-col items-center gap-6 text-center">
             <h2
-              className="font-display text-5xl leading-none sm:text-7xl lg:text-9xl"
+              className="font-display text-3xl leading-none sm:text-5xl md:text-7xl lg:text-9xl"
               style={{
                 background: 'linear-gradient(135deg, #39ff14, #cc1414, #c97a12)',
                 WebkitBackgroundClip: 'text',
@@ -310,7 +310,7 @@ export default function HomePage() {
             >
               FIND PATIENT ZERO.
             </h2>
-            <p className="max-w-xl font-body text-xl" style={{ color: '#8fa882' }}>
+            <p className="max-w-xl font-body text-base sm:text-xl" style={{ color: '#8fa882' }}>
               Or become them. Every session is a new social experiment on Celo.
             </p>
           </div>
@@ -322,7 +322,7 @@ export default function HomePage() {
               { n: '99.9%', l: 'Chain Uptime' },
             ].map((s) => (
               <div key={s.l} className="flex flex-col items-center gap-2 text-center">
-                <span className="font-display text-4xl font-bold" style={{ color: '#d4c9b2' }}>
+                <span className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>
                   {s.n}
                 </span>
                 <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>
@@ -334,7 +334,7 @@ export default function HomePage() {
 
           <Link
             href="/lobby"
-            className="rounded-lg px-12 py-6 font-mono text-lg font-bold uppercase tracking-wider transition-all hover:opacity-90"
+            className="rounded-lg px-6 py-3 sm:px-12 sm:py-6 font-mono text-sm sm:text-lg font-bold uppercase tracking-wider transition-all hover:opacity-90"
             style={{
               background: 'linear-gradient(135deg, #39ff14, #cc1414)',
               color: '#060b06',

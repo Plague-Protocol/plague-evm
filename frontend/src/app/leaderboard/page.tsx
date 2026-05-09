@@ -72,7 +72,7 @@ export default function LeaderboardPage() {
         {players.map((player, index) => (
           <div
             key={player.address}
-            className="rise-in grid gap-6 rounded-xl border p-6 transition-all duration-200 hover:scale-[1.01]"
+            className="rise-in flex flex-col sm:grid gap-4 sm:gap-6 rounded-xl border p-4 sm:p-6 transition-all duration-200 hover:scale-[1.01]"
             style={{
               gridTemplateColumns: 'auto 1fr auto auto',
               borderColor: 'rgba(57,255,20,0.18)',
@@ -111,21 +111,23 @@ export default function LeaderboardPage() {
                 </span>
               </div>
             </div>
+            <div className="flex flex-row sm:flex-col gap-3">
             <div
-              className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
+              className="flex flex-col items-center justify-center rounded-xl px-3 py-2 sm:px-4 text-center"
               style={{ backgroundColor: 'rgba(57,255,20,0.1)' }}
             >
               <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Wins</p>
-              <p className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>{player.wins}</p>
+              <p className="font-display text-xl sm:text-2xl leading-none" style={{ color: '#d4c9b2' }}>{player.wins}</p>
             </div>
             <div
-              className="flex flex-col items-center justify-center rounded-xl px-4 py-2 text-center"
+              className="flex flex-col items-center justify-center rounded-xl px-3 py-2 sm:px-4 text-center"
               style={{ backgroundColor: 'rgba(230,51,41,0.1)' }}
             >
               <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proofs</p>
-              <p className="font-display text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
+              <p className="font-display text-xl sm:text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
             </div>
-          </div>
+            </div>
+            </div>
         ))}
       </>
     )
@@ -151,7 +153,7 @@ export default function LeaderboardPage() {
             Season Zero
           </span>
           <h1
-            className="font-display text-6xl font-black leading-none sm:text-7xl lg:text-8xl"
+            className="font-display text-4xl font-black leading-none sm:text-7xl lg:text-8xl"
             style={{
               background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',
@@ -161,14 +163,14 @@ export default function LeaderboardPage() {
           >
             LEADERBOARD
           </h1>
-          <p className="max-w-xl font-body text-lg" style={{ color: '#8fa882' }}>
+          <p className="max-w-xl font-body text-sm sm:text-lg" style={{ color: '#8fa882' }}>
             Global rankings of the deadliest operatives on Celo.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {tabs.map((tab, i) => (
               <button
                 key={tab}
-                className="rounded-full border-2 px-8 py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                className="rounded-full border-2 px-4 py-2 sm:px-8 sm:py-3 font-mono text-xs sm:text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
                 style={{
                   borderColor: i === 0 ? '#39ff14' : 'rgba(57,255,20,0.3)',
                   backgroundColor: i === 0 ? 'rgba(57,255,20,0.15)' : 'transparent',
@@ -211,7 +213,7 @@ export default function LeaderboardPage() {
             <aside className="flex flex-col gap-6">
               {/* Your Stats */}
               <div
-                className="rise-in rounded-lg border p-10"
+                className="rise-in rounded-lg border p-5 sm:p-10"
                 style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', animationDelay: '100ms' }}
               >
                 <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Your Stats</p>
@@ -309,7 +311,7 @@ export default function LeaderboardPage() {
       <section className="px-6 py-24 text-center" style={{ backgroundColor: 'rgba(6,11,6,0.9)' }}>
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-8">
           <h2
-            className="font-display text-6xl font-black leading-none sm:text-7xl lg:text-8xl"
+            className="font-display text-4xl font-black leading-none sm:text-7xl lg:text-8xl"
             style={{
               background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',
@@ -319,12 +321,12 @@ export default function LeaderboardPage() {
           >
             CLAIM YOUR RANK.
           </h2>
-          <p className="font-body text-2xl" style={{ color: '#8fa882' }}>
+          <p className="font-body text-lg sm:text-2xl" style={{ color: '#8fa882' }}>
             Join a match and prove your innocence — or conceal your guilt.
           </p>
           <a
             href="/lobby"
-            className="rounded-lg border px-12 py-6 font-mono text-lg font-bold uppercase tracking-wider transition-all hover:opacity-90"
+            className="rounded-lg border px-6 py-3 sm:px-12 sm:py-6 font-mono text-sm sm:text-lg font-bold uppercase tracking-wider transition-all hover:opacity-90"
             style={{
               background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               borderColor: 'transparent',

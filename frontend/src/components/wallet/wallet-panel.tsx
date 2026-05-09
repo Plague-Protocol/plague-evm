@@ -61,7 +61,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
           <p className={`font-mono text-xs uppercase tracking-[0.2em] ${isDark ? 'text-plague-white/75' : 'text-plague-black/65'}`}>
             Wallet Status
           </p>
-          <h3 className="mt-2 font-display text-4xl leading-none">
+          <h3 className="mt-2 font-display text-2xl sm:text-4xl leading-none">
             {isConnected ? 'Connected' : 'Disconnected'}
           </h3>
         </div>

@@ -355,8 +355,8 @@ export function SplashScreen() {
         display:       'flex',
         flexDirection: 'column',
         alignItems:    'center',
-        gap:           '1.5rem',
-        padding:       '2rem',
+        gap:           '1.25rem',
+        padding:       '1rem',
         maxWidth:      '600px',
         width:         '100%',
         textAlign:     'center',
@@ -365,7 +365,7 @@ export function SplashScreen() {
         {/* Biohazard + title */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
           <div style={{
-            fontSize:  '4rem',
+            fontSize:  'clamp(2.5rem, 10vw, 4rem)',
             lineHeight: 1,
             animation: 'splash-pulse 3s ease-in-out infinite',
             filter:    'drop-shadow(0 0 24px rgba(230,51,41,0.8))',

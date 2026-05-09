@@ -783,13 +783,13 @@ export default function LobbyPage() {
       </div>
 
       {/* Header */}
-      <header className="px-6 py-16">
+      <header className="px-4 sm:px-6 py-8 sm:py-16">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-6 text-center">
           <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
             Game Lobby
           </span>
           <h1
-            className="font-display text-4xl font-bold leading-none sm:text-6xl lg:text-8xl"
+            className="font-display text-3xl font-bold leading-none sm:text-6xl lg:text-8xl"
             style={{
               background: 'linear-gradient(135deg, #cc1414, #39ff14)',
               WebkitBackgroundClip: 'text',
@@ -799,7 +799,7 @@ export default function LobbyPage() {
           >
             ACTIVE ROOMS
           </h1>
-          <p className="max-w-xl font-body text-lg" style={{ color: '#8fa882' }}>
+          <p className="max-w-xl font-body text-sm sm:text-lg" style={{ color: '#8fa882' }}>
             Join a waiting room, stake cUSD, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
           </p>
         </div>
@@ -840,12 +840,12 @@ export default function LobbyPage() {
 
       <div className="px-6 pb-20">
         <div className="mx-auto w-full max-w-6xl">
-          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="grid gap-6 sm:gap-8 lg:grid-cols-[0.9fr_1.1fr]">
 
-            {/* Left column: Create Room */}
-            <div className="flex flex-col gap-6">
+            {/* Left column: Create Room — order-2 on mobile so Join list appears first */}
+            <div className="order-2 lg:order-1 flex flex-col gap-6">
               <article
-                className="rise-in rounded-lg border p-8"
+                className="rise-in rounded-lg border p-5 sm:p-8"
                 style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.3)' }}
               >
                 <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
@@ -1088,9 +1088,9 @@ export default function LobbyPage() {
               </article>
             </div>
 
-            {/* Right column: Room List */}
+            {/* Right column: Room List — order-1 on mobile so it appears first */}
             <article
-              className="rise-in rounded-lg border p-6"
+              className="order-1 lg:order-2 rise-in rounded-lg border p-4 sm:p-6"
               style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', animationDelay: '80ms' }}
             >
               <div className="flex items-end justify-between gap-4">
@@ -1134,7 +1134,7 @@ export default function LobbyPage() {
                 </p>
               )}
 
-              <ul className="mt-6 space-y-4 max-h-[480px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+              <ul className="mt-6 space-y-4 max-h-[320px] sm:max-h-[480px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
                 {rooms
                   .filter(r => r.status !== 'ended')
                   .map((room, i) => (

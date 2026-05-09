@@ -248,7 +248,7 @@ function GamePageInner() { // NOSONAR
     playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Loading players…</p>
   } else if (room?.players?.length) {
     playersPanelBody = (
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {room.players.map((p) => (
           <button
             key={p.walletAddress}
@@ -621,16 +621,16 @@ function GamePageInner() { // NOSONAR
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-6">
-            <h1 className="font-display text-7xl font-bold leading-none sm:text-8xl" style={{ color: '#d4c9b2' }}>
+            <h1 className="font-display text-4xl font-bold leading-none sm:text-7xl md:text-8xl" style={{ color: '#d4c9b2' }}>
               {headerTitle}
             </h1>
             {headerCountdownMs > 0 && (
               <div
-                className="flex flex-col items-center rounded-xl border px-10 py-4"
+                className="flex flex-col items-center rounded-xl border px-5 py-3 sm:px-10 sm:py-4"
                 style={{ borderColor: 'rgba(57,255,20,0.45)', backgroundColor: 'rgba(57,255,20,0.06)' }}
               >
                 <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Time Left</p>
-                <p className="mt-1 font-display text-6xl font-bold leading-none tabular-nums" style={{ color: '#39ff14', textShadow: '0 0 20px rgba(57,255,20,0.5)' }}>
+                <p className="mt-1 font-display text-3xl sm:text-6xl font-bold leading-none tabular-nums" style={{ color: '#39ff14', textShadow: '0 0 20px rgba(57,255,20,0.5)' }}>
                   {formatCountdown(headerCountdownMs)}
                 </p>
               </div>
@@ -672,7 +672,7 @@ function GamePageInner() { // NOSONAR
       {/* Telemetry Strip */}
       <div className="px-6 pt-8">
         <div className="mx-auto w-full max-w-6xl">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {[
               { label: 'POT',          value: `${potCUSD} cUSD`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
@@ -684,7 +684,7 @@ function GamePageInner() { // NOSONAR
                 style={{ backgroundColor: '#0a100a', borderColor: `${stat.accent}33` }}
               >
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>{stat.label}</p>
-                <p className="mt-2 font-display text-3xl leading-none" style={{ color: stat.accent }}>{stat.value}</p>
+                <p className="mt-2 font-display text-xl sm:text-3xl leading-none" style={{ color: stat.accent }}>{stat.value}</p>
               </div>
             ))}
           </div>

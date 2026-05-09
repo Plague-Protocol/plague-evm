@@ -172,6 +172,30 @@
   }
 }
 
+/* ── Mobile-first responsive overrides ── */
+@media (max-width: 480px) {
+  .btn-brutal {
+    min-height: 44px;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    font-size: 0.7rem;
+  }
+
+  .input-brutal {
+    min-height: 44px;
+    font-size: 0.85rem;
+  }
+
+  .player-token {
+    padding: 0.5rem;
+    gap: 0.25rem;
+  }
+
+  .hud-panel {
+    padding: 0.75rem;
+  }
+}
+
 @keyframes rise-in {
   from {
     transform: translateY(12px);
