@@ -47,9 +47,6 @@ COPY frontend/package.json ./frontend/
 # --include=dev needed for typescript/prisma at build time; pruned below.
 RUN npm ci --workspace=backend --include-workspace-root --include=dev
 
-# tsx is required by Prisma 6.x to load prisma.config.ts during migrations
-RUN npm install tsx
-
 # Backend source + build
 COPY backend/tsconfig.json ./backend/
 COPY backend/prisma.config.ts ./backend/
@@ -69,5 +66,5 @@ ENV NODE_ENV=production
 
 EXPOSE 4000
 
-CMD ["node", "backend/dist/index.js"]
+CMD ["sh", "-c", "cd /app/backend && npx prisma migrate deploy && cd /app && node backend/dist/index.js"]
 
