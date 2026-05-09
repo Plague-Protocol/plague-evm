@@ -113,17 +113,17 @@ export default function LeaderboardPage() {
             </div>
             <div className="flex flex-row sm:flex-col gap-3">
             <div
-              className="flex flex-col items-center justify-center rounded-xl px-3 py-2 sm:px-4 text-center"
+              className="flex flex-col items-center justify-center rounded-xl px-3 py-2 sm:px-6 sm:py-3 text-center"
               style={{ backgroundColor: 'rgba(57,255,20,0.1)' }}
             >
-              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Wins</p>
+              <p className="font-mono text-[10px] uppercase sm:hidden" style={{ color: '#4a5e44' }}>Wins</p>
               <p className="font-display text-xl sm:text-2xl leading-none" style={{ color: '#d4c9b2' }}>{player.wins}</p>
             </div>
             <div
-              className="flex flex-col items-center justify-center rounded-xl px-3 py-2 sm:px-4 text-center"
+              className="flex flex-col items-center justify-center rounded-xl px-3 py-2 sm:px-6 sm:py-3 text-center"
               style={{ backgroundColor: 'rgba(230,51,41,0.1)' }}
             >
-              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proofs</p>
+              <p className="font-mono text-[10px] uppercase sm:hidden" style={{ color: '#4a5e44' }}>Proofs</p>
               <p className="font-display text-xl sm:text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
             </div>
             </div>
@@ -195,7 +195,7 @@ export default function LeaderboardPage() {
             >
               {/* Table header */}
               <div
-                className="mb-4 grid gap-6 rounded-xl border-2 p-6"
+                className="mb-4 hidden sm:grid gap-6 rounded-xl border-2 p-6"
                 style={{ gridTemplateColumns: 'auto 1fr auto auto', borderColor: 'rgba(57,255,20,0.35)', backgroundColor: '#0e180d' }}
               >
                 <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>#</span>
@@ -213,7 +213,7 @@ export default function LeaderboardPage() {
             <aside className="flex flex-col gap-6">
               {/* Your Stats */}
               <div
-                className="rise-in rounded-lg border p-5 sm:p-10"
+                className="rise-in rounded-lg border p-6"
                 style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', animationDelay: '100ms' }}
               >
                 <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Your Stats</p>
