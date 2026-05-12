@@ -156,13 +156,10 @@ leaderboardRouter.post('/backfill', async (_req, res) => {
 
 leaderboardRouter.get('/', async (_req, res) => {
   try {
-    // Check if we have any summaries at all; if not, try backfilling from chain.
-    const existingCount = await prisma.gameSummary.count()
-    if (existingCount === 0) {
-      const backfilled = await backfillMissingSummaries()
-      if (backfilled > 0) {
-        logger.info(`[leaderboard] backfilled ${backfilled} game summaries from chain`)
-      }
+    // Always check the chain for missing summaries (function skips already-persisted rooms).
+    const backfilled = await backfillMissingSummaries()
+    if (backfilled > 0) {
+      logger.info(`[leaderboard] backfilled ${backfilled} game summaries from chain`)
     }
 
     const summaries = await prisma.gameSummary.findMany({
