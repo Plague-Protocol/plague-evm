@@ -80,11 +80,14 @@ function getPhaseDescription(
   hasVoted: boolean,
   result: { outcome: string } | null,
   roomStatus?: string,
+  isInfected?: boolean,
 ): string {
-  if (phase === 'infection') return 'Infection spreading — new carrier assigned.'
-  if (phase === 'discussion') return 'Submit innocence proofs now before voting opens.'
-  if (phase === 'voting') return hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Cast your vote to eliminate the suspected carrier.'
-  if (phase === 'reveal') return 'Elimination resolution in progress.'
+  if (phase === 'infection') return isInfected
+    ? 'You are a carrier. Patient Zero is spreading infection to a new target this round.'
+    : 'Patient Zero is spreading the plague. A new carrier is being assigned — stay vigilant.'
+  if (phase === 'discussion') return 'Infection has spread. Submit your innocence proof now before voting opens.'
+  if (phase === 'voting') return hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Vote to eliminate the suspected carrier before more are infected.'
+  if (phase === 'reveal') return 'Votes tallied — elimination is being resolved on-chain.'
   if (result) return `Game over: ${result.outcome.replaceAll('_', ' ')}`
   if (roomStatus === 'waiting') return 'Waiting for players to join.'
   if (roomStatus === 'starting') return 'Waiting for all players to commit their role.'
@@ -189,11 +192,6 @@ function GamePageInner() { // NOSONAR
   const [secretPhrase, setSecretPhrase]           = useState('')
   const [optimisticCommitDone, setOptimisticCommitDone] = useState(false)
 
-  // ── Infection targeting (infected player chooses spread target) ─────────
-  const [selectedInfectionTarget, setSelectedInfectionTarget] = useState<string | null>(null)
-  const [infecting, setInfecting]                             = useState(false)
-  const [optimisticInfected, setOptimisticInfected]           = useState(false)
-
   // ── Start game state (host only, Waiting phase) ──────────────────────────
   const [starting, setStarting]         = useState(false)
   const [startError, setStartError]     = useState<string | null>(null)
@@ -257,7 +255,7 @@ function GamePageInner() { // NOSONAR
     && (phase === 'discussion' || phase === 'voting' || phase === 'reveal')
     && headerCountdownMs <= 0
   const headerTitle = getHeaderTitle(isLoading, round, room?.status)
-  const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status)
+  const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status, localPlayer?.status === 'infected')
   const phaseCardBackground = getPhaseCardBackground(phase)
   const synchronizedFeed = [
     `System sync: Round ${round > 0 ? round : '-'} · ${PHASE_LABEL[phase]} · Infected ${infectedCount}/${Math.max(activePlayers.length, 1)}`,
@@ -311,8 +309,6 @@ function GamePageInner() { // NOSONAR
   useEffect(() => {
     setOptimisticVotedFor(null)
     setOptimisticProofDone(false)
-    setOptimisticInfected(false)
-    setSelectedInfectionTarget(null)
   }, [roundNumber])
 
   // Avoid carrying optimistic commitment state into another room.
@@ -547,29 +543,14 @@ function GamePageInner() { // NOSONAR
     }
   }, [address, roomId, schedulePostTxRefresh, socket])
 
-  const handleAssignInfection = useCallback(() => {
-    if (!socket || !roomId || !selectedInfectionTarget) return
-    setInfecting(true)
-    socket.emit('assign_infection', { roomId, round, target: selectedInfectionTarget })
-    // Request immediate phase advance so the game doesn't stall waiting for the monitor
-    socket.emit('request_phase_advance', { roomId })
-    setOptimisticInfected(true)
-    setSelectedInfectionTarget(null)
-    setInfecting(false)
-    toast.success('Infection assigned. Await the next phase.')
-  }, [socket, roomId, round, selectedInfectionTarget])
-
   // ── Phase advance ticker ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket || !roomId || room?.status !== 'active') return
-    // During infection phase, give the infected player time to choose their target
-    // rather than rushing auto-assignment via repeated client nudges.
-    if (phase === 'infection' && localPlayer?.status === 'infected' && !optimisticInfected) return
     const id = setInterval(() => {
       socket.emit('request_phase_advance', { roomId })
     }, 2_000)
     return () => clearInterval(id)
-  }, [socket, roomId, room?.status, phase, localPlayer?.status, optimisticInfected])
+  }, [socket, roomId, room?.status])
 
   // When the local timer reaches zero, proactively request phase advancement
   // once per round+phase to avoid UI stalling until the next monitor tick.
@@ -759,6 +740,34 @@ function GamePageInner() { // NOSONAR
                   className="rise-in rounded-lg border p-5"
                   style={{ backgroundColor: phaseCardBackground, borderColor: `${PHASE_COLOR[phase]}4d` }}
                 >
+                  {/* Round phase sequence indicator */}
+                  {room?.status === 'active' && (
+                    <div className="mb-4 flex items-center gap-1 flex-wrap">
+                      {((['infection', 'discussion', 'voting', 'reveal'] as RoundPhase[])).map((p, i) => {
+                        const phases: RoundPhase[] = ['infection', 'discussion', 'voting', 'reveal']
+                        const currentIdx = phases.indexOf(phase)
+                        const thisIdx = i
+                        const isCurrent = p === phase
+                        const isPast = thisIdx < currentIdx
+                        const shortLabel: Record<string, string> = { infection: 'INFECT', discussion: 'DISCUSS', voting: 'VOTE', reveal: 'ELIMINATE' }
+                        return (
+                          <span key={p} className="flex items-center gap-1">
+                            <span
+                              className="font-mono text-[9px] uppercase tracking-[0.12em]"
+                              style={{
+                                color: isCurrent ? PHASE_COLOR[phase] : isPast ? '#2a3a24' : '#2a3a24',
+                                fontWeight: isCurrent ? 700 : 400,
+                                textDecoration: isPast ? 'line-through' : 'none',
+                              }}
+                            >
+                              {shortLabel[p]}
+                            </span>
+                            {i < 3 && <span className="font-mono text-[9px]" style={{ color: '#2a3a24' }}>→</span>}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Current Phase</p>
                   <p className="mt-2 font-display text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>{PHASE_LABEL[phase]}</p>
                   <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{phaseCardDescription}</p>
@@ -825,46 +834,6 @@ function GamePageInner() { // NOSONAR
               {/* Action panels — Game tab (mobile) / always (desktop) */}
               {showOnTab('game') && (
                 <>
-                  {/* Infection targeting — only visible to the infected player */}
-                  {phase === 'infection' && localPlayer?.status === 'infected' && !localPlayer.isEliminated && !optimisticInfected && (
-                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.5)', backgroundColor: 'rgba(230,51,41,0.1)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>☣ Spread the Plague</p>
-                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#ff6b6b' }}>
-                        Choose your next target. Act discreetly — no one will know it was you.
-                      </p>
-                      <div className="mt-4 space-y-2">
-                        {activePlayers
-                          .filter(p => p.walletAddress.toLowerCase() !== (address ?? '').toLowerCase())
-                          .map(p => (
-                            <button
-                              key={p.walletAddress}
-                              onClick={() => setSelectedInfectionTarget(p.walletAddress === selectedInfectionTarget ? null : p.walletAddress)}
-                              className="flex w-full items-center justify-between rounded-lg border px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] transition-all hover:opacity-90"
-                              style={{
-                                borderColor: selectedInfectionTarget === p.walletAddress ? '#e63329' : 'rgba(230,51,41,0.3)',
-                                backgroundColor: selectedInfectionTarget === p.walletAddress ? 'rgba(230,51,41,0.2)' : 'rgba(230,51,41,0.05)',
-                                color: '#d4c9b2',
-                              }}
-                            >
-                              {p.displayName}
-                            </button>
-                          ))}
-                      </div>
-                      <button
-                        onClick={handleAssignInfection}
-                        disabled={!selectedInfectionTarget || infecting}
-                        className="mt-4 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                        style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#fff' }}
-                      >
-                        {infecting ? 'Infecting…' : 'Assign Infection'}
-                      </button>
-                    </div>
-                  )}
-
-                  {phase === 'infection' && localPlayer?.status === 'infected' && optimisticInfected && (
-                    <p className="font-mono text-xs" style={{ color: '#e63329' }}>☣ Infection assigned. Awaiting phase transition…</p>
-                  )}
-
                   {room?.status === 'waiting' && isHost && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
