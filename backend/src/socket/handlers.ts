@@ -588,6 +588,10 @@ export function setupSocketHandlers(io: Server) {
     // (including the newly joined one) see the same roster without delay.
     if (eventName === 'PlayerJoined') {
       void flushRoomSnapshot(io, roomId)
+    } else if (['PhaseChanged', 'RoundStarted', 'GameEnded', 'GameStarted'].includes(eventName)) {
+      // Delay snapshot by 500ms for phase-changing events so the RPC
+      // has time to reflect the new on-chain state before we read it.
+      setTimeout(() => queueRoomSnapshot(io, roomId), 500)
     } else {
       queueRoomSnapshot(io, roomId)
     }
@@ -749,41 +753,53 @@ export function setupSocketHandlers(io: Server) {
     })
 
     /**
-     * Infection assignment — system assigns each round, NOT player-chosen.
+     * Infection assignment — the infected player may choose a target.
      *
-     * Normal case:
-     *   target = eligible_clean_alive_players[
-     *     hash(roomId, round, prevTxHash) % count
-     *   ]
+     * If `target` is provided and is a valid clean-alive address, it is used.
+     * Otherwise the system falls back to deterministic hash-based selection so
+     * that the phase always advances even if the player idles or picks wrong.
      *
-     * Only the infected player receives the private 'infection_assigned' event.
-     * No event reveals who caused the infection.
+     * Only the newly infected player receives the private 'infection_assigned' event.
+     * No event reveals who triggered the spread.
      */
-    socket.on('assign_infection', async ({ roomId, round }: { roomId: string; round: number }) => {
+    socket.on('assign_infection', async ({ roomId, round, target: requestedTarget }: {
+      roomId: string
+      round: number
+      target?: string
+    }) => {
       try {
         const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
 
-        // Active + Infection only
+        // Active + Infection phase only
         if (rawRoom.status !== 2 || rawRoom.currentPhase !== 0) return
 
-        const playerAddrs = rawRoom.players
         const playerStates = await Promise.all(
-          playerAddrs.map(addr => chainAdapter.getPlayer(BigInt(roomId), addr))
+          rawRoom.players.map(addr => chainAdapter.getPlayer(BigInt(roomId), addr))
         )
 
         const cleanAlive: `0x${string}`[] = []
-        for (let i = 0; i < playerAddrs.length; i++) {
-          if (playerStates[i].status === 0) cleanAlive.push(playerAddrs[i])
+        for (let i = 0; i < rawRoom.players.length; i++) {
+          if (playerStates[i].status === 0) cleanAlive.push(rawRoom.players[i])
         }
         if (cleanAlive.length === 0) return
 
-        const patientZero = await chainAdapter.getCurrentPatientZero(BigInt(roomId))
-        const patientZeroSeed = (patientZero ?? ZERO_ADDRESS).toLowerCase()
-        const blockHash = await chainAdapter.getLatestBlockHash()
-        const seed = `${roomId}:${round}:${patientZeroSeed}:${blockHash}`
-        const h = BigInt(keccak256(toBytes(seed)))
-        const idx = Number(h % BigInt(cleanAlive.length))
-        const target = cleanAlive[idx]
+        // Use player-chosen target if it is a valid clean-alive address
+        const normalized = requestedTarget?.toLowerCase()
+        const chosen = normalized
+          ? cleanAlive.find(a => a.toLowerCase() === normalized)
+          : undefined
+
+        let target: `0x${string}`
+        if (chosen) {
+          target = chosen
+        } else {
+          const patientZero = await chainAdapter.getCurrentPatientZero(BigInt(roomId))
+          const patientZeroSeed = (patientZero ?? ZERO_ADDRESS).toLowerCase()
+          const blockHash = await chainAdapter.getLatestBlockHash()
+          const seed = `${roomId}:${round}:${patientZeroSeed}:${blockHash}`
+          const h = BigInt(keccak256(toBytes(seed)))
+          target = cleanAlive[Number(h % BigInt(cleanAlive.length))]
+        }
 
         await chainAdapter.assignInfection(BigInt(roomId), target)
       } catch (err) {

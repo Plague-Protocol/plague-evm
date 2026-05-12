@@ -481,7 +481,7 @@ function RoomCard({
 
 export default function LobbyPage() {
   const router = useRouter()
-  const { isConnected, address, chainId, connect } = useWallet()
+  const { isConnected, address, chainId, connect, switchToCelo } = useWallet()
   const { muted } = useSound()
   useSoundscape('lobby', muted)
 
@@ -503,7 +503,38 @@ export default function LobbyPage() {
   const [savedNickname, setSavedNickname] = useState<string | null>(null)
   const [savingNickname, setSavingNickname] = useState(false)
   const [editingNickname, setEditingNickname] = useState(false)
+  const [nicknameAvailable, setNicknameAvailable] = useState<boolean | null>(null)
+  const [checkingNickname, setCheckingNickname] = useState(false)
   const lobbyRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const nicknameCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Debounced nickname availability check ─────────────────────────────────
+  useEffect(() => {
+    if (nicknameCheckTimerRef.current) clearTimeout(nicknameCheckTimerRef.current)
+    const trimmed = nicknameInput.trim()
+    if (!trimmed || trimmed.length < 1 || trimmed === savedNickname) {
+      setNicknameAvailable(null)
+      setCheckingNickname(false)
+      return
+    }
+    setCheckingNickname(true)
+    nicknameCheckTimerRef.current = setTimeout(async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+        const params = new URLSearchParams({ nickname: trimmed })
+        if (address) params.set('address', address)
+        const res = await fetch(`${backendUrl}/api/players/check-nickname?${params}`)
+        if (res.ok) {
+          const data = await res.json() as { available: boolean }
+          setNicknameAvailable(data.available)
+        }
+      } catch { /* silently ignore */ }
+      setCheckingNickname(false)
+    }, 400)
+    return () => {
+      if (nicknameCheckTimerRef.current) clearTimeout(nicknameCheckTimerRef.current)
+    }
+  }, [nicknameInput, savedNickname, address])
 
   // ── Join state ─────────────────────────────────────────────────────────────
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
@@ -565,6 +596,16 @@ export default function LobbyPage() {
   // ── Claim test cUSD ────────────────────────────────────────────────────────
   const handleClaim = async () => {
     if (!isConnected || !address || !faucetAddr) return
+    // Ensure user is on Celo Sepolia before claiming
+    const knownCeloChains = [42220, 44787, 11142220]
+    if (chainId && !knownCeloChains.includes(chainId)) {
+      try {
+        await switchToCelo('testnet')
+      } catch {
+        toast.error('Please switch to Celo Sepolia to claim test tokens.')
+        return
+      }
+    }
     const fc = createFaucetClient({ faucetAddress: faucetAddr, network: 'testnet' })
     setClaiming(true)
     try {
@@ -604,9 +645,16 @@ export default function LobbyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address, nickname: trimmed }),
       })
+      if (res.status === 409) {
+        const data = await res.json() as { error: string }
+        toast.error(data.error || 'This display name is already taken.')
+        setNicknameAvailable(false)
+        return
+      }
       if (!res.ok) throw new Error('Failed to save')
       setSavedNickname(trimmed)
       setEditingNickname(false)
+      setNicknameAvailable(null)
       toast.success(`Nickname saved: ${trimmed}`)
     } catch {
       toast.error('Could not save nickname. Try again.')
@@ -995,14 +1043,17 @@ export default function LobbyPage() {
                               placeholder="Anonymous"
                               value={nicknameInput}
                               onChange={e => setNicknameInput(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handleSaveNickname()}
+                              onKeyDown={e => e.key === 'Enter' && nicknameAvailable !== false && handleSaveNickname()}
                               autoFocus
                               className="min-w-0 flex-1 rounded border bg-transparent px-3 py-2 font-mono text-xs focus:outline-none placeholder:opacity-30"
-                              style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                              style={{
+                                borderColor: nicknameAvailable === false ? 'rgba(230,51,41,0.5)' : 'rgba(57,255,20,0.4)',
+                                color: '#d4c9b2',
+                              }}
                             />
                             <button
                               onClick={handleSaveNickname}
-                              disabled={savingNickname || !nicknameInput.trim()}
+                              disabled={savingNickname || !nicknameInput.trim() || nicknameAvailable === false}
                               className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                               style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14' }}
                             >
@@ -1010,7 +1061,7 @@ export default function LobbyPage() {
                             </button>
                             {savedNickname && (
                               <button
-                                onClick={() => setEditingNickname(false)}
+                                onClick={() => { setEditingNickname(false); setNicknameAvailable(null) }}
                                 className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90"
                                 style={{ borderColor: 'rgba(212,201,178,0.2)', color: '#8fa882' }}
                               >
@@ -1018,6 +1069,14 @@ export default function LobbyPage() {
                               </button>
                             )}
                           </div>
+                          {/* Availability feedback */}
+                          {nicknameInput.trim() && nicknameInput.trim() !== savedNickname && (
+                            <p className="mt-1 font-mono text-[10px]" style={{
+                              color: checkingNickname ? '#4a5e44' : nicknameAvailable === true ? '#39ff14' : nicknameAvailable === false ? '#e63329' : '#4a5e44',
+                            }}>
+                              {checkingNickname ? 'Checking…' : nicknameAvailable === true ? '✓ Available' : nicknameAvailable === false ? '✗ Already taken' : ''}
+                            </p>
+                          )}
                         </>
                       )}
                     </div>

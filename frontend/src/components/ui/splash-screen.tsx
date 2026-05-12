@@ -1,5 +1,4 @@
 'use client'
-'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 
@@ -141,7 +140,7 @@ const PARTICLES: Particle[] = Array.from({ length: 24 }, (_, i) => ({
 }))
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function SplashScreen() {
+export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   const [visible,      setVisible]      = useState(false)
   const [exiting,      setExiting]      = useState(false)
   const [finaleStatic, setFinaleStatic] = useState(false)
@@ -158,7 +157,12 @@ export function SplashScreen() {
   // ── First-time visitor: show on initial page load if never seen before ──────
   useEffect(() => {
     const seen = globalThis.window !== undefined && sessionStorage.getItem('plague_intro_seen')
-    if (!seen) setVisible(true)
+    if (!seen) {
+      setVisible(true)
+    } else {
+      // Already seen — resolve immediately so page content becomes visible
+      onResolved?.()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -242,7 +246,7 @@ export function SplashScreen() {
     sting.play().catch(() => {})
     setTimeout(() => setExiting(true), 260)
     if (ambientRef.current) { ambientRef.current.pause(); ambientRef.current.currentTime = 0 }
-    setTimeout(() => { setVisible(false); setFinaleStatic(false); setTitleSlam(false) }, 900)
+    setTimeout(() => { setVisible(false); setFinaleStatic(false); setTitleSlam(false); onResolved?.() }, 900)
   }, [exiting, finaleStatic])
 
   // ── Keyboard dismiss ─────────────────────────────────────────────────────

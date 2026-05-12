@@ -123,13 +123,42 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = (await window.ethereum.request({ method: 'eth_requestAccounts' })) as string[]
       if (!accounts.length) throw new Error('No accounts returned from wallet.')
       const rawChainId = (await window.ethereum.request({ method: 'eth_chainId' })) as string
+      const parsedChainId = parseInt(rawChainId, 16)
       setState({
         isConnected: true,
         address: getAddress(accounts[0]),
-        chainId: parseInt(rawChainId, 16),
+        chainId: parsedChainId,
         isLoading: false,
         error: null,
       })
+      // Auto-switch to Celo if user is on an unsupported network.
+      // This also adds the Celo chain to wallets that don't have it yet.
+      const knownCeloChains = [42220, 44787, 11142220]
+      if (!knownCeloChains.includes(parsedChainId)) {
+        const network = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'mainnet' | 'testnet'
+        const chain = CELO_CHAINS[network]
+        const chainHex = `0x${chain.id.toString(16)}`
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: chainHex }],
+          })
+        } catch (switchErr: unknown) {
+          if (typeof switchErr === 'object' && switchErr !== null && 'code' in switchErr && (switchErr as { code: number }).code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: chainHex,
+                chainName: chain.name,
+                nativeCurrency: chain.nativeCurrency,
+                rpcUrls: chain.rpcUrls.default.http,
+                blockExplorerUrls: chain.blockExplorers ? [chain.blockExplorers.default.url] : [],
+              }],
+            })
+          }
+          // If user rejects, that's okay — they can switch later
+        }
+      }
     } catch (err) {
       setState(prev => ({
         ...prev,

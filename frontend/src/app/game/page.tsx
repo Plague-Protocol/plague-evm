@@ -9,6 +9,7 @@ import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
+import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import type { RoundPhase } from '@/types/game'
 import { toast } from 'sonner'
 
@@ -188,6 +189,11 @@ function GamePageInner() { // NOSONAR
   const [secretPhrase, setSecretPhrase]           = useState('')
   const [optimisticCommitDone, setOptimisticCommitDone] = useState(false)
 
+  // ── Infection targeting (infected player chooses spread target) ─────────
+  const [selectedInfectionTarget, setSelectedInfectionTarget] = useState<string | null>(null)
+  const [infecting, setInfecting]                             = useState(false)
+  const [optimisticInfected, setOptimisticInfected]           = useState(false)
+
   // ── Start game state (host only, Waiting phase) ──────────────────────────
   const [starting, setStarting]         = useState(false)
   const [startError, setStartError]     = useState<string | null>(null)
@@ -199,10 +205,33 @@ function GamePageInner() { // NOSONAR
   const chatEndRef = useRef<HTMLDivElement>(null)
   const phaseAdvanceNudgeKeyRef = useRef<string>('')
 
+  // ── Mobile tab navigation ───────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<GameTab>('game')
+  const [unreadChat, setUnreadChat] = useState(0)
+  const [isMobile, setIsMobile] = useState(false)
+  // Refs to expose current values inside socket-handler closures without re-registering
+  const activeTabRef = useRef<GameTab>('game')
+  const isMobileRef  = useRef(false)
+  useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+  useEffect(() => { isMobileRef.current  = isMobile  }, [isMobile])
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  // Clear unread when switching to chat tab
+  const handleTabChange = useCallback((tab: GameTab) => {
+    setActiveTab(tab)
+    if (tab === 'chat') setUnreadChat(0)
+  }, [])
+
   const schedulePostTxRefresh = useCallback(() => {
     socket?.emit('request_room_refresh', { roomId })
     // Safety fallback in case socket delivery is delayed.
-    setTimeout(() => refresh(), 2_500)
+    setTimeout(() => refresh(), 1_500)
   }, [refresh, roomId, socket])
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -269,6 +298,9 @@ function GamePageInner() { // NOSONAR
     playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Waiting for players…</p>
   }
 
+  // Mobile tab visibility helper — on desktop everything shows
+  const showOnTab = (tab: GameTab) => !isMobile || activeTab === tab
+
   // ── Soundscape ───────────────────────────────────────────────────────────
   const { muted } = useSound()
   const soundScene = room?.status === 'ended' ? 'ended' : phase
@@ -279,6 +311,8 @@ function GamePageInner() { // NOSONAR
   useEffect(() => {
     setOptimisticVotedFor(null)
     setOptimisticProofDone(false)
+    setOptimisticInfected(false)
+    setSelectedInfectionTarget(null)
   }, [roundNumber])
 
   // Avoid carrying optimistic commitment state into another room.
@@ -309,6 +343,10 @@ function GamePageInner() { // NOSONAR
     if (!socket) return
     const msgHandler = (msg: { sender: string; displayName: string; message: string; timestamp: number }) => {
       setChatMessages(prev => [...prev.slice(-199), msg])
+      // Increment unread if not viewing chat tab on mobile
+      if (isMobileRef.current && activeTabRef.current !== 'chat') {
+        setUnreadChat(prev => prev + 1)
+      }
     }
     const historyHandler = (history: { sender: string; displayName: string; message: string; timestamp: number }[]) => {
       setChatMessages(history.slice(-200))
@@ -509,14 +547,29 @@ function GamePageInner() { // NOSONAR
     }
   }, [address, roomId, schedulePostTxRefresh, socket])
 
+  const handleAssignInfection = useCallback(() => {
+    if (!socket || !roomId || !selectedInfectionTarget) return
+    setInfecting(true)
+    socket.emit('assign_infection', { roomId, round, target: selectedInfectionTarget })
+    // Request immediate phase advance so the game doesn't stall waiting for the monitor
+    socket.emit('request_phase_advance', { roomId })
+    setOptimisticInfected(true)
+    setSelectedInfectionTarget(null)
+    setInfecting(false)
+    toast.success('Infection assigned. Await the next phase.')
+  }, [socket, roomId, round, selectedInfectionTarget])
+
   // ── Phase advance ticker ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket || !roomId || room?.status !== 'active') return
+    // During infection phase, give the infected player time to choose their target
+    // rather than rushing auto-assignment via repeated client nudges.
+    if (phase === 'infection' && localPlayer?.status === 'infected' && !optimisticInfected) return
     const id = setInterval(() => {
       socket.emit('request_phase_advance', { roomId })
     }, 2_000)
     return () => clearInterval(id)
-  }, [socket, roomId, room?.status])
+  }, [socket, roomId, room?.status, phase, localPlayer?.status, optimisticInfected])
 
   // When the local timer reaches zero, proactively request phase advancement
   // once per round+phase to avoid UI stalling until the next monitor tick.
@@ -586,7 +639,7 @@ function GamePageInner() { // NOSONAR
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
-      <div className="relative" style={{ zIndex: 1 }}>
+      <div className="relative game-tab-content" style={{ zIndex: 1 }}>
       {/* Nav */}
       <div className="px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
@@ -594,7 +647,9 @@ function GamePageInner() { // NOSONAR
         </div>
       </div>
 
-      {/* Game Header */}
+      {/* Game Header + Telemetry — visible on Game tab (mobile) or always (desktop) */}
+      {showOnTab('game') && (
+      <>
       <header
         className="relative overflow-hidden px-6 py-12"
         style={{ borderBottom: '1px solid rgba(57,255,20,0.2)' }}
@@ -663,9 +718,6 @@ function GamePageInner() { // NOSONAR
             </button>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
           </div>
-          <p className="mt-2 font-mono text-xs font-bold uppercase tracking-[0.12em]" style={{ color: '#f5c518' }}>
-            Important: tap Sync regularly to stay aligned with live phase changes and eliminations.
-          </p>
         </div>
       </header>
 
@@ -690,409 +742,402 @@ function GamePageInner() { // NOSONAR
           </div>
         </div>
       </div>
+      </>
+      )}
 
-      {/* Main Board + Right Sidebar */}
+      {/* Main Board */}
       <div className="px-6 py-8">
         <div className="mx-auto w-full max-w-6xl">
           <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
 
-            {/* Containment Board */}
+            {/* ── LEFT COLUMN ── */}
             <div className="flex flex-col gap-6">
-              <article
-                className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)' }}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Containment Board</h2>
-                  <span
-                    className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]"
-                    style={{ borderColor: 'rgba(57,255,20,0.35)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}
-                  >
-                    {activePlayers.length} alive
-                  </span>
-                </div>
 
-                {/* Player Grid */}
+              {/* Phase card — Game tab (mobile) / always (desktop) */}
+              {showOnTab('game') && (
                 <div
-                  className="mt-6 rounded-lg border p-5"
-                  style={{ backgroundColor: '#0c1309', borderColor: 'rgba(57,255,20,0.15)' }}
+                  className="rise-in rounded-lg border p-5"
+                  style={{ backgroundColor: phaseCardBackground, borderColor: `${PHASE_COLOR[phase]}4d` }}
                 >
-                  {playersPanelBody}
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Current Phase</p>
+                  <p className="mt-2 font-display text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>{PHASE_LABEL[phase]}</p>
+                  <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{phaseCardDescription}</p>
+                  {localPlayer?.isEliminated && (
+                    <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>⊘ You have been eliminated — spectator only.</p>
+                  )}
+                  {!localPlayer?.isEliminated && localPlayer?.status === 'infected' && (
+                    <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#e63329' }}>
+                      {localPlayer.role === 'patient_zero' ? '☣ You are Patient Zero' : '⚠ You are Infected'}
+                    </p>
+                  )}
+                  {isSpectator && (
+                    <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#f5c518' }}>👁 Spectator mode — observe only.</p>
+                  )}
                 </div>
+              )}
 
-                {/* Role awareness banners — private, only shown to the local player */}
-                {localPlayer?.isEliminated && (
-                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(74,94,68,0.5)', backgroundColor: 'rgba(74,94,68,0.1)' }}>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>⊘ YOU HAVE BEEN ELIMINATED</p>
-                    <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>You can observe but can no longer vote or submit proofs.</p>
+              {/* Containment Board — Board tab (mobile) / always (desktop) */}
+              {showOnTab('board') && (
+                <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)' }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Containment Board</h2>
+                    <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(57,255,20,0.35)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}>
+                      {activePlayers.length} alive
+                    </span>
                   </div>
-                )}
-                {!localPlayer?.isEliminated && localPlayer?.status === 'infected' && (
-                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.6)', backgroundColor: 'rgba(230,51,41,0.12)' }}>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>
-                      {localPlayer.role === 'patient_zero' ? '☣ YOU ARE PATIENT ZERO' : '⚠ YOU HAVE BEEN INFECTED'}
-                    </p>
-                    <p className="mt-2 font-mono text-xs" style={{ color: '#ff6b6b' }}>
-                      {localPlayer.role === 'patient_zero'
-                        ? 'The infected depends on you. Lead the infected faction to parity.'
-                        : 'Spread the plague. Avoid suspicion. Infected players cannot submit innocence proofs.'}
-                    </p>
+                  <div className="mt-6 rounded-lg border p-5" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(57,255,20,0.15)' }}>
+                    {playersPanelBody}
                   </div>
-                )}
-
-                {/* Spectator mode banner — shown to anyone who didn't join before the game started */}
-                {isSpectator && (
-                  <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.45)', backgroundColor: 'rgba(245,197,24,0.07)' }}>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>👁 SPECTATOR MODE</p>
-                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      This game was already in progress when you arrived. You can watch but cannot vote, prove innocence, or affect the outcome.
-                    </p>
-                  </div>
-                )}
-
-                {/* Phase + Proof panel */}
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div
-                    className="rounded-lg border p-5"
-                    style={{ backgroundColor: '#0e180d', borderColor: 'rgba(57,255,20,0.18)' }}
-                  >
-                    <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Live Feed</p>
-                    <ul className="mt-3 space-y-2 font-mono text-xs max-h-32 overflow-y-auto" style={{ color: '#8fa882' }}>
-                      {synchronizedFeed.length > 0 ? synchronizedFeed.map((msg) => (
-                        <li key={msg} className="flex gap-2">
-                          <span style={{ color: '#4a5e44' }}>→</span> {msg}
-                        </li>
-                      )) : (
-                        <li className="text-gray-500">No recent events yet. Press Sync to fetch latest state.</li>
-                      )}
-                    </ul>
-                  </div>
-                  <div
-                    className="rounded-lg border p-5"
-                    style={{ backgroundColor: phaseCardBackground, borderColor: `${PHASE_COLOR[phase]}4d` }}
-                  >
-                    <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Phase</p>
-                    <p className="mt-2 font-display text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>
-                      {PHASE_LABEL[phase]}
-                    </p>
-                    <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      {phaseCardDescription}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Start Game panel (host only, Waiting phase) */}
-                {room?.status === 'waiting' && isHost && (
-                  <div
-                    className="mt-5 rounded-lg border p-5"
-                    style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}
-                  >
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
-                      Host Controls
-                    </p>
-                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      {hostPlayerCountLabel}
-                    </p>
-                    {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
-                    <button
-                      onClick={handleStartGame}
-                      disabled={starting || totalPlayers < (room?.minPlayers ?? 3)}
-                      className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
-                    >
-                      {starting ? 'Starting…' : 'Start Game'}
-                    </button>
-                    {totalPlayers < (room?.minPlayers ?? 3) && (
-                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
-                    )}
-                  </div>
-                )}
-
-                {/* Role Commitment panel (Starting phase) */}
-                {room?.status === 'starting' && (
-                  <div
-                    className="mt-5 rounded-lg border p-5"
-                    style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}
-                  >
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>
-                      Submit Role Commitment
-                    </p>
-                    {commitDone ? (
-                      <p className="mt-3 font-mono text-xs" style={{ color: '#39ff14' }}>
-                        ✓ Commitment submitted. Waiting for all players…
+                  {localPlayer?.isEliminated && (
+                    <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(74,94,68,0.5)', backgroundColor: 'rgba(74,94,68,0.1)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>⊘ YOU HAVE BEEN ELIMINATED</p>
+                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>You can observe but can no longer vote or submit proofs.</p>
+                    </div>
+                  )}
+                  {!localPlayer?.isEliminated && localPlayer?.status === 'infected' && (
+                    <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.6)', backgroundColor: 'rgba(230,51,41,0.12)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>
+                        {localPlayer.role === 'patient_zero' ? '☣ YOU ARE PATIENT ZERO' : '⚠ YOU HAVE BEEN INFECTED'}
                       </p>
-                    ) : (
-                      <>
-                        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                          Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
-                        </p>
-                        <p className="mt-1 font-mono text-[11px]" style={{ color: '#84cc16' }}>
-                          Commit deadline: {formatCountdown(Math.max(0, startCommitEndsAt - now))}
-                        </p>
-                        <input
-                          type="password"
-                          placeholder="My secret phrase…"
-                          value={secretPhrase}
-                          onChange={e => setSecretPhrase(e.target.value)}
-                          className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                          style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
-                        />
-                        {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
-                        <button
-                          onClick={handleCommitRole}
-                          disabled={!canCommit || !secretPhrase}
-                          className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
-                        >
-                          {committing ? 'Generating ZK Proof…' : 'Commit Role'}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Proof Submission panel (Discussion phase) — only for active participants */}
-                {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
-                  <div
-                    className="mt-5 rounded-lg border p-5"
-                    style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}
-                  >
-                    <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>
-                      Submit Innocence Proof
+                      <p className="mt-2 font-mono text-xs" style={{ color: '#ff6b6b' }}>
+                        {localPlayer.role === 'patient_zero'
+                          ? 'The infected depends on you. Lead the infected faction to parity.'
+                          : 'Spread the plague. Avoid suspicion. Infected players cannot submit innocence proofs.'}
+                      </p>
+                    </div>
+                  )}
+                  {isSpectator && (
+                    <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.45)', backgroundColor: 'rgba(245,197,24,0.07)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>👁 SPECTATOR MODE</p>
+                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                        This game was already in progress when you arrived. You can watch but cannot vote, prove innocence, or affect the outcome.
+                      </p>
+                    </div>
+                  )}
+                  {localPlayer && (
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                      You: {localPlayer.displayName}{localPlayer.role !== 'unknown' ? ` · ${localPlayer.role}` : ''}
                     </p>
-                    <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                      Prove you are clean before voting opens. Your first proof is free.
-                      {localPlayer?.freeProofUsed && ' (Free proof used — fee will be charged.)'}
-                    </p>
-                    <input
-                      type="password"
-                      placeholder="Your secret phrase…"
-                      value={secretPhrase}
-                      onChange={e => setSecretPhrase(e.target.value)}
-                      className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
-                    />
-                    {proofError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{proofError}</p>}
-                    <button
-                      onClick={handleSubmitProof}
-                      disabled={!canProve || !secretPhrase}
-                      className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
-                    >
-                      {proving ? 'Generating ZK Proof…' : 'Submit Innocence Proof'}
-                    </button>
-                  </div>
-                )}
-
-                {phase === 'discussion' && hasProofThisRound && (
-                  <p className="mt-4 font-mono text-xs" style={{ color: '#84cc16' }}>
-                    ✓ Innocence proof submitted on-chain.
-                  </p>
-                )}
-              </article>
-
-              {/* Game Result */}
-              {result && (
-                <article
-                  className="rise-in rounded-lg border p-6"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.3)' }}
-                >
-                  <h3 className="font-display text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
-                  <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>
-                    {getResultLabel(result.outcome)}
-                  </p>
-                  <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>
-                    Pot per winner: {potPerWinnerDisplay} cUSD
-                  </p>
-                  <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                    Winners: {result.winners.map(w => {
-                      const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())
-                      return p?.displayName ?? `${w.slice(0, 6)}…`
-                    }).join(', ') || '—'}
-                  </p>
+                  )}
                 </article>
               )}
+
+              {/* Action panels — Game tab (mobile) / always (desktop) */}
+              {showOnTab('game') && (
+                <>
+                  {/* Infection targeting — only visible to the infected player */}
+                  {phase === 'infection' && localPlayer?.status === 'infected' && !localPlayer.isEliminated && !optimisticInfected && (
+                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.5)', backgroundColor: 'rgba(230,51,41,0.1)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>☣ Spread the Plague</p>
+                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#ff6b6b' }}>
+                        Choose your next target. Act discreetly — no one will know it was you.
+                      </p>
+                      <div className="mt-4 space-y-2">
+                        {activePlayers
+                          .filter(p => p.walletAddress.toLowerCase() !== (address ?? '').toLowerCase())
+                          .map(p => (
+                            <button
+                              key={p.walletAddress}
+                              onClick={() => setSelectedInfectionTarget(p.walletAddress === selectedInfectionTarget ? null : p.walletAddress)}
+                              className="flex w-full items-center justify-between rounded-lg border px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] transition-all hover:opacity-90"
+                              style={{
+                                borderColor: selectedInfectionTarget === p.walletAddress ? '#e63329' : 'rgba(230,51,41,0.3)',
+                                backgroundColor: selectedInfectionTarget === p.walletAddress ? 'rgba(230,51,41,0.2)' : 'rgba(230,51,41,0.05)',
+                                color: '#d4c9b2',
+                              }}
+                            >
+                              {p.displayName}
+                            </button>
+                          ))}
+                      </div>
+                      <button
+                        onClick={handleAssignInfection}
+                        disabled={!selectedInfectionTarget || infecting}
+                        className="mt-4 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                        style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#fff' }}
+                      >
+                        {infecting ? 'Infecting…' : 'Assign Infection'}
+                      </button>
+                    </div>
+                  )}
+
+                  {phase === 'infection' && localPlayer?.status === 'infected' && optimisticInfected && (
+                    <p className="font-mono text-xs" style={{ color: '#e63329' }}>☣ Infection assigned. Awaiting phase transition…</p>
+                  )}
+
+                  {room?.status === 'waiting' && isHost && (
+                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
+                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{hostPlayerCountLabel}</p>
+                      {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
+                      <button
+                        onClick={handleStartGame}
+                        disabled={starting || totalPlayers < (room?.minPlayers ?? 3)}
+                        className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                        style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
+                      >
+                        {starting ? 'Starting…' : 'Start Game'}
+                      </button>
+                      {totalPlayers < (room?.minPlayers ?? 3) && (
+                        <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {room?.status === 'starting' && (
+                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Submit Role Commitment</p>
+                      {commitDone ? (
+                        <p className="mt-3 font-mono text-xs" style={{ color: '#39ff14' }}>✓ Commitment submitted. Waiting for all players…</p>
+                      ) : (
+                        <>
+                          <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                            Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
+                          </p>
+                          <p className="mt-1 font-mono text-[11px]" style={{ color: '#84cc16' }}>
+                            Commit deadline: {formatCountdown(Math.max(0, startCommitEndsAt - now))}
+                          </p>
+                          <input
+                            type="password"
+                            placeholder="My secret phrase…"
+                            value={secretPhrase}
+                            onChange={e => setSecretPhrase(e.target.value)}
+                            className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
+                            style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                          />
+                          {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
+                          <button
+                            onClick={handleCommitRole}
+                            disabled={!canCommit || !secretPhrase}
+                            className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
+                          >
+                            {committing ? 'Generating ZK Proof…' : 'Commit Role'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
+                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Submit Innocence Proof</p>
+                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                        Prove you are clean before voting opens. Your first proof is free.
+                        {localPlayer?.freeProofUsed && ' (Free proof used — fee will be charged.)'}
+                      </p>
+                      <input
+                        type="password"
+                        placeholder="Your secret phrase…"
+                        value={secretPhrase}
+                        onChange={e => setSecretPhrase(e.target.value)}
+                        className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
+                        style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                      />
+                      {proofError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{proofError}</p>}
+                      <button
+                        onClick={handleSubmitProof}
+                        disabled={!canProve || !secretPhrase}
+                        className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                        style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
+                      >
+                        {proving ? 'Generating ZK Proof…' : 'Submit Innocence Proof'}
+                      </button>
+                    </div>
+                  )}
+
+                  {phase === 'discussion' && hasProofThisRound && (
+                    <p className="font-mono text-xs" style={{ color: '#84cc16' }}>✓ Innocence proof submitted on-chain.</p>
+                  )}
+
+                  {result && (
+                    <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.3)' }}>
+                      <h3 className="font-display text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
+                      <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>{getResultLabel(result.outcome)}</p>
+                      <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} cUSD</p>
+                      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                        Winners: {result.winners.map(w => {
+                          const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())
+                          return p?.displayName ?? `${w.slice(0, 6)}…`
+                        }).join(', ') || '—'}
+                      </p>
+                    </article>
+                  )}
+                </>
+              )}
+
+              {/* Live Feed — Feed tab (mobile) / always (desktop) */}
+              {showOnTab('feed') && (
+                <div className="rise-in rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.15)' }}>
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#39ff14' }}>Live Feed</p>
+                  <ul
+                    className="space-y-2 font-mono text-xs overflow-y-auto"
+                    style={{ color: '#8fa882', maxHeight: isMobile ? 'calc(100vh - 260px)' : '24rem', scrollbarWidth: 'thin' }}
+                  >
+                    {synchronizedFeed.length > 0 ? synchronizedFeed.map((msg, i) => (
+                      <li key={`${msg}-${i}`} className="flex gap-2">
+                        <span style={{ color: '#4a5e44' }}>→</span> {msg}
+                      </li>
+                    )) : (
+                      <li style={{ color: '#4a5e44' }}>No recent events yet.</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
             </div>
 
-            {/* Right Sidebar */}
+            {/* ── RIGHT SIDEBAR ── */}
             <aside className="flex flex-col gap-6">
 
-              {/* Vote Panel */}
-              <div
-                className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}
-              >
-                <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
-                <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>
-                  {votePanelLabel}
-                </p>
+              {/* Vote Panel — Board tab (mobile) / always (desktop) */}
+              {showOnTab('board') && (
+                <div className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
+                  <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
+                  <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>{votePanelLabel}</p>
 
-                {phase === 'voting' && hasVoted && (
-                  <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(57,255,20,0.3)', backgroundColor: 'rgba(57,255,20,0.06)' }}>
-                    <p className="font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
-                    {myVotedTarget && (
-                      <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
-                        You voted for{' '}
-                        <span style={{ color: '#f5c518' }}>
-                          {room?.players?.find(p => p.walletAddress.toLowerCase() === myVotedTarget.toLowerCase())?.displayName ?? `${myVotedTarget.slice(0, 6)}…`}
-                        </span>
-                      </p>
+                  {phase === 'voting' && hasVoted && (
+                    <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(57,255,20,0.3)', backgroundColor: 'rgba(57,255,20,0.06)' }}>
+                      <p className="font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
+                      {myVotedTarget && (
+                        <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
+                          You voted for{' '}
+                          <span style={{ color: '#f5c518' }}>
+                            {room?.players?.find(p => p.walletAddress.toLowerCase() === myVotedTarget.toLowerCase())?.displayName ?? `${myVotedTarget.slice(0, 6)}…`}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {phase === 'voting' && canVote && (
+                    <div className="mt-4 space-y-2">
+                      {activePlayers
+                        .filter(p => p.walletAddress !== address)
+                        .map((p) => (
+                          <button
+                            key={p.walletAddress}
+                            onClick={() => setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
+                            className="flex w-full items-center justify-between rounded-lg border px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] transition-all hover:opacity-90"
+                            style={{
+                              borderColor: selectedVote === p.walletAddress ? '#f5c518' : 'rgba(230,51,41,0.35)',
+                              backgroundColor: selectedVote === p.walletAddress ? 'rgba(245,197,24,0.1)' : 'rgba(230,51,41,0.1)',
+                              color: '#d4c9b2',
+                            }}
+                          >
+                            <span>{p.displayName}</span>
+                            {voteTally[p.walletAddress] ? (
+                              <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(230,51,41,0.25)', color: '#ff6b6b' }}>
+                                {voteTally[p.walletAddress]}
+                              </span>
+                            ) : null}
+                          </button>
+                        ))}
+                      {voteError && <p className="font-mono text-xs" style={{ color: '#e63329' }}>{voteError}</p>}
+                      <button
+                        onClick={handleCastVote}
+                        disabled={!selectedVote || voting || !canVote}
+                        className="mt-2 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                        style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#d4c9b2' }}
+                      >
+                        {voting ? 'Submitting…' : 'Cast Vote'}
+                      </button>
+                    </div>
+                  )}
+
+                  {phase === 'voting' && !canVote && !hasVoted && (
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#8fa882' }}>Voting is available only to alive room participants.</p>
+                  )}
+
+                  {phase !== 'voting' && currentRound?.votes.length ? (
+                    <div className="mt-4 space-y-1">
+                      {Object.entries(voteTally)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([addr, cnt]) => {
+                          const name = room?.players?.find(p => p.walletAddress.toLowerCase() === addr.toLowerCase())?.displayName ?? `${addr.slice(0, 8)}…`
+                          return (
+                            <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
+                              <span>{name}</span>
+                              <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt === 1 ? '' : 's'}</span>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Chat — Chat tab (mobile) / always (desktop) */}
+              {showOnTab('chat') && (
+                <div className="rise-in rounded-lg border p-4" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.15)', animationDelay: '160ms' }}>
+                  <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Room Chat</p>
+                  <div
+                    className="mt-3 overflow-y-auto space-y-2 pr-1"
+                    style={{ height: isMobile ? 'calc(100vh - 260px)' : '16rem', scrollbarWidth: 'thin' }}
+                  >
+                    {chatMessages.length === 0 ? (
+                      <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
+                    ) : (
+                      chatMessages.map((m, i) => (
+                        <div key={`${m.timestamp}-${m.sender}-${i}`} className="font-mono text-[11px] leading-snug break-words">
+                          <span style={{ color: m.sender.toLowerCase() === address?.toLowerCase() ? '#39ff14' : '#f5c518' }}>
+                            {m.displayName}
+                          </span>
+                          <span style={{ color: '#4a5e44' }}>: </span>
+                          <span style={{ color: '#d4c9b2' }}>{m.message}</span>
+                        </div>
+                      ))
                     )}
+                    <div ref={chatEndRef} />
                   </div>
-                )}
-
-                {phase === 'voting' && canVote && (
-                  <div className="mt-4 space-y-2">
-                    {activePlayers
-                      .filter(p => p.walletAddress !== address)
-                      .map((p) => (
-                        <button
-                          key={p.walletAddress}
-                          onClick={() => setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
-                          className="flex w-full items-center justify-between rounded-lg border px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] transition-all hover:opacity-90"
-                          style={{
-                            borderColor: selectedVote === p.walletAddress ? '#f5c518' : 'rgba(230,51,41,0.35)',
-                            backgroundColor: selectedVote === p.walletAddress ? 'rgba(245,197,24,0.1)' : 'rgba(230,51,41,0.1)',
-                            color: '#d4c9b2',
-                          }}
-                        >
-                          <span>{p.displayName}</span>
-                          {voteTally[p.walletAddress] ? (
-                            <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(230,51,41,0.25)', color: '#ff6b6b' }}>
-                              {voteTally[p.walletAddress]}
-                            </span>
-                          ) : null}
-                        </button>
-                      ))}
-
-                    {voteError && <p className="font-mono text-xs" style={{ color: '#e63329' }}>{voteError}</p>}
-
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      placeholder={chatBlockedReason ?? 'Say something…'}
+                      value={chatInput}
+                      maxLength={256}
+                      onChange={e => setChatInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSendChat() }}
+                      disabled={!canChat}
+                      className="flex-1 rounded border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
+                      style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#d4c9b2' }}
+                    />
                     <button
-                      onClick={handleCastVote}
-                      disabled={!selectedVote || voting || !canVote}
-                      className="mt-2 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#d4c9b2' }}
+                      onClick={handleSendChat}
+                      disabled={!chatInput.trim() || !canChat}
+                      className="rounded border px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                      style={{ borderColor: '#39ff14', color: '#39ff14' }}
                     >
-                      {voting ? 'Submitting…' : 'Cast Vote'}
+                      Send
                     </button>
                   </div>
-                )}
-
-                {phase === 'voting' && !canVote && !hasVoted && (
-                  <p className="mt-4 font-mono text-xs" style={{ color: '#8fa882' }}>
-                    Voting is available only to alive room participants.
-                  </p>
-                )}
-
-                {phase !== 'voting' && currentRound?.votes.length ? (
-                  <div className="mt-4 space-y-1">
-                    {Object.entries(voteTally)
-                      .sort(([, a], [, b]) => b - a)
-                      .map(([addr, cnt]) => {
-                        const name = room?.players?.find(p => p.walletAddress.toLowerCase() === addr.toLowerCase())?.displayName ?? `${addr.slice(0, 8)}…`
-                        return (
-                          <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
-                            <span>{name}</span>
-                            <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt === 1 ? '' : 's'}</span>
-                          </div>
-                        )
-                      })}
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Player Roster */}
-              <div
-                className="rise-in rounded-lg border p-6"
-                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '160ms' }}
-              >
-                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>Roster</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {room?.players?.map((p) => {
-                    const num = /^Player (\d+)$/.exec(p.displayName)?.[1]
-                    return (
-                      <div
-                        key={p.walletAddress}
-                        className="flex h-10 w-10 items-center justify-center rounded-full font-mono text-[10px] font-bold uppercase"
-                        style={playerStyle(visibleStatus(p, address))}
-                      >
-                        {num ? `P${num}` : p.displayName.slice(0, 4)}
-                      </div>
-                    )
-                  }) ?? null}
-                </div>
-                {localPlayer && (
-                  <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                    You: {localPlayer.displayName}
-                    {localPlayer.role !== 'unknown' && ` · ${localPlayer.role}`}
-                  </p>
-                )}
-              </div>
-
-              {/* Chat Panel */}
-              <div
-                className="rise-in rounded-lg border p-4"
-                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.15)', animationDelay: '220ms' }}
-              >
-                <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Room Chat</p>
-                <div
-                  className="mt-3 h-44 overflow-y-auto space-y-2 pr-1"
-                  style={{ scrollbarWidth: 'thin' }}
-                >
-                  {chatMessages.length === 0 ? (
-                    <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
-                  ) : (
-                    chatMessages.map((m, i) => (
-                      <div key={`${m.timestamp}-${m.sender}-${i}`} className="font-mono text-[11px] leading-snug break-words">
-                        <span style={{ color: m.sender.toLowerCase() === address?.toLowerCase() ? '#39ff14' : '#f5c518' }}>
-                          {m.displayName}
-                        </span>
-                        <span style={{ color: '#4a5e44' }}>: </span>
-                        <span style={{ color: '#d4c9b2' }}>{m.message}</span>
-                      </div>
-                    ))
+                  {chatBlockedReason && (
+                    <p className="mt-2 font-mono text-[11px]" style={{ color: '#f5c518' }}>{chatBlockedReason}</p>
                   )}
-                  <div ref={chatEndRef} />
                 </div>
-                <div className="mt-3 flex gap-2">
-                  <input
-                    type="text"
-                    placeholder={chatBlockedReason ?? 'Say something…'}
-                    value={chatInput}
-                    maxLength={256}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSendChat() }}
-                    disabled={!canChat}
-                    className="flex-1 rounded border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
-                    style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#d4c9b2' }}
-                  />
-                  <button
-                    onClick={handleSendChat}
-                    disabled={!chatInput.trim() || !canChat}
-                    className="rounded border px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                    style={{ borderColor: '#39ff14', color: '#39ff14' }}
-                  >
-                    Send
-                  </button>
-                </div>
-                {chatBlockedReason && (
-                  <p className="mt-2 font-mono text-[11px]" style={{ color: '#f5c518' }}>{chatBlockedReason}</p>
-                )}
-              </div>
+              )}
 
-              {/* Back to Lobby */}
-              <Link
-                href="/lobby"
-                className="rise-in rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
-                style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14', display: 'block', animationDelay: '300ms' }}
-              >
-                ← Back to Lobby
-              </Link>
+              {/* Back to Lobby — Feed tab (mobile) / always (desktop) */}
+              {showOnTab('feed') && (
+                <Link
+                  href="/lobby"
+                  className="rise-in rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
+                  style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14', display: 'block', animationDelay: '300ms' }}
+                >
+                  ← Back to Lobby
+                </Link>
+              )}
+
             </aside>
           </div>
         </div>
       </div>
       </div>
+
+      {/* Mobile Tab Bar */}
+      {isMobile && (
+        <GameTabNav activeTab={activeTab} onTabChange={handleTabChange} unreadChat={unreadChat} />
+      )}
     </main>
   )
 }

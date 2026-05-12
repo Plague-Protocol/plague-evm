@@ -59,6 +59,8 @@ model PlayerNickname {
   nickname String
 
   updatedAt DateTime @updatedAt
+
+  @@unique([nickname])
 }
 
 model GameSummary {

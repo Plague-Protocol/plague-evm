@@ -196,6 +196,84 @@
   }
 }
 
+/* ── Mobile font swap — readable alternatives ── */
+@media (max-width: 640px) {
+  .font-display,
+  h1, h2, h3, h4 {
+    font-family: var(--font-display-mobile), 'Rajdhani', sans-serif !important;
+    letter-spacing: 0.02em;
+  }
+
+  .font-mono,
+  code, pre, kbd, samp,
+  input, button, label,
+  [class*="font-mono"] {
+    font-family: var(--font-mono-mobile), 'Share Tech Mono', monospace !important;
+    font-size: max(0.75rem, 1em);
+  }
+
+  /* Slightly boost small mono text on mobile for legibility */
+  .text-\[10px\], .text-\[11px\] {
+    font-size: 0.7rem !important;
+  }
+
+  .text-xs {
+    font-size: 0.75rem !important;
+  }
+}
+
+/* ── Game tab bar (mobile) ── */
+.game-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(6, 11, 6, 0.92);
+  border-top: 1px solid rgba(57, 255, 20, 0.2);
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .game-tab-bar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .game-tab-content {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+}
+
+.game-tab-content {
+  padding-bottom: 60px;
+}
+
+/* Hide tab bar on desktop */
+@media (min-width: 769px) {
+  .game-tab-bar {
+    display: none;
+  }
+  .game-tab-content {
+    padding-bottom: 0;
+  }
+}
+
+/* Tab panel slide transition */
+.tab-panel-enter {
+  animation: tab-slide-in 0.2s ease-out;
+}
+
+@keyframes tab-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes rise-in {
   from {
     transform: translateY(12px);
