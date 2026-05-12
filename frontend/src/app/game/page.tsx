@@ -280,7 +280,8 @@ function GamePageInner() { // NOSONAR
           <button
             key={p.walletAddress}
             onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
-            className="rounded-lg py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
+            title={p.displayName}
+            className="truncate rounded-lg px-2 py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
             style={{
               ...playerStyle(visibleStatus(p, address)),
               boxShadow: selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
