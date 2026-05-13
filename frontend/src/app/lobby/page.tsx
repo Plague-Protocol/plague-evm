@@ -181,11 +181,14 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     const trimmedName = roomNameInput.trim()
     if (trimmedName) {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
-      await fetch(`${backendUrl}/api/rooms/${newId.toString()}/name`, {
+      const nameRes = await fetch(`${backendUrl}/api/rooms/${newId.toString()}/name`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: trimmedName }),
-      }).catch(() => { /* non-fatal */ })
+      }).catch(() => null)
+      if (nameRes?.status === 409) {
+        toast.error(`"${trimmedName}" is already taken by an active room. Your room was created as Room #${newId.toString()}.`)
+      }
     }
     await loadRooms()
     pushToGame(newId)

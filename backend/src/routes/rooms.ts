@@ -116,14 +116,48 @@ roomRouter.put('/:id/name', async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() })
   }
   const roomId = req.params.id
+  const name = parsed.data.name
   try {
-    const room = await prisma.room.update({
+    // Reject if another active room already has this name
+    const conflict = await prisma.room.findFirst({
+      where: { name, status: { not: 'ended' }, NOT: { roomId } },
+      select: { roomId: true },
+    })
+    if (conflict) {
+      return res.status(409).json({ error: `A room named "${name}" is already active.` })
+    }
+
+    // Try update first (room already in DB)
+    const existing = await prisma.room.findUnique({ where: { roomId }, select: { id: true } })
+    if (existing) {
+      const room = await prisma.room.update({ where: { roomId }, data: { name } })
+      return res.json({ name: room.name })
+    }
+
+    // Room was created directly on-chain — fetch its data and upsert
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onChain = await chainAdapter.getRoom(BigInt(roomId)) as any
+    const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 44787
+    const contractAddress = process.env.CONTRACT_ADDRESS ?? ''
+    const room = await prisma.room.upsert({
       where: { roomId },
-      data: { name: parsed.data.name },
+      update: { name },
+      create: {
+        roomId,
+        name,
+        hostAddress: onChain.host as string,
+        maxPlayers: Number(onChain.config.maxPlayers),
+        stakeAmount: onChain.config.stakeAmount.toString(),
+        proofFee: onChain.config.proofFee.toString(),
+        expiresAt: new Date(Number(onChain.expiresAt) * 1000),
+        chainId,
+        contractAddress,
+      },
     })
     res.json({ name: room.name })
-  } catch {
-    res.status(404).json({ error: `Room ${roomId} not found` })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(404).json({ error: message })
   }
 })
 
