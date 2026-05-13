@@ -146,6 +146,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   const [finaleStatic, setFinaleStatic] = useState(false)
   const [titleSlam,    setTitleSlam]    = useState(false)
   const [audioArmed,   setAudioArmed]   = useState(false)
+  const [splashMuted,  setSplashMuted]  = useState(false)
   const [bgIndex,      setBgIndex]      = useState(0)
   const generation = 0
 
@@ -183,18 +184,18 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
 
   // ── Heartbeat — rate-limited to max once per 1.4 s ───────────────────────
   useEffect(() => {
-    if (!visible) return
+    if (!visible || splashMuted) return
     const now = Date.now()
     if (now - lastHeartbeatRef.current < 1400) return
     lastHeartbeatRef.current = now
     const beat = new Audio('/sounds/heartbeat.mp3')
     beat.volume = 0.18
     beat.play().catch(() => {})
-  }, [activeLine, visible])
+  }, [activeLine, visible, splashMuted])
 
   // ── Scream — fires at Act I climax (line 2 "Day 7…"), echoes out over 4 s ─
   useEffect(() => {
-    if (!visible || activeLine !== 2) return
+    if (!visible || activeLine !== 2 || splashMuted) return
     const fire = setTimeout(() => {
       const scream = new Audio(SCREAM_TRACK)
       scream.volume = 0.24
@@ -208,22 +209,37 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
       }, 200)
     }, 500)
     return () => clearTimeout(fire)
-  }, [activeLine, visible, generation])
+  }, [activeLine, visible, splashMuted, generation])
 
   // ── Ambient audio ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!visible) return
     const audio = new Audio(AMBIENT_TRACK)
     audio.loop   = true
-    audio.volume = 0.28
+    audio.volume = splashMuted ? 0 : 0.28
     ambientRef.current = audio
-    audio.play().catch(() => setAudioArmed(true))
+    if (!splashMuted) {
+      audio.play().catch(() => setAudioArmed(true))
+    }
     return () => { audio.pause(); audio.currentTime = 0; ambientRef.current = null }
-  }, [visible, generation])
+  }, [visible, generation]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Arm audio on first user gesture ──────────────────────────────────────
+  // ── Respond to mute toggle on existing ambient audio ──────────────────────
   useEffect(() => {
-    if (!visible || !audioArmed || !ambientRef.current) return
+    const audio = ambientRef.current
+    if (!audio) return
+    if (splashMuted) {
+      audio.pause()
+      setAudioArmed(false)
+    } else {
+      audio.volume = 0.28
+      audio.play().then(() => setAudioArmed(false)).catch(() => setAudioArmed(true))
+    }
+  }, [splashMuted])
+
+  // ── Arm audio on first user gesture (when browser blocks autoplay) ────────
+  useEffect(() => {
+    if (!visible || !audioArmed || !ambientRef.current || splashMuted) return
     const resume = () =>
       ambientRef.current?.play().then(() => setAudioArmed(false)).catch(() => {})
     globalThis.addEventListener('pointerdown', resume, { once: true })
@@ -232,7 +248,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
       globalThis.removeEventListener('pointerdown', resume)
       globalThis.removeEventListener('keydown',     resume)
     }
-  }, [visible, audioArmed])
+  }, [visible, audioArmed, splashMuted])
 
   // ── Dismiss / finale ─────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
@@ -241,13 +257,15 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     if (globalThis.window !== undefined) sessionStorage.setItem('plague_intro_seen', '1')
     setFinaleStatic(true)
     setTitleSlam(true)
-    const sting = new Audio('/sounds/reveal-sting.mp3')
-    sting.volume = 0.35
-    sting.play().catch(() => {})
+    if (!splashMuted) {
+      const sting = new Audio('/sounds/reveal-sting.mp3')
+      sting.volume = 0.35
+      sting.play().catch(() => {})
+    }
     setTimeout(() => setExiting(true), 260)
     if (ambientRef.current) { ambientRef.current.pause(); ambientRef.current.currentTime = 0 }
     setTimeout(() => { setVisible(false); setFinaleStatic(false); setTitleSlam(false); onResolved?.() }, 900)
-  }, [exiting, finaleStatic])
+  }, [exiting, finaleStatic, splashMuted])
 
   // ── Keyboard dismiss ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -287,6 +305,51 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           : 'splash-enter 0.6s ease-out both',
       }}
     >
+      {/* Mute toggle — top-right corner */}
+      <button
+        onClick={() => setSplashMuted(m => !m)}
+        aria-label={splashMuted ? 'Unmute intro audio' : 'Mute intro audio'}
+        style={{
+          position:        'absolute',
+          top:             '1rem',
+          right:           '1rem',
+          zIndex:          10,
+          display:         'flex',
+          alignItems:      'center',
+          gap:             '0.4rem',
+          background:      'rgba(6,11,6,0.7)',
+          border:          '1px solid rgba(57,255,20,0.35)',
+          borderRadius:    '6px',
+          padding:         '0.4rem 0.75rem',
+          cursor:          'pointer',
+          fontFamily:      'var(--font-mono)',
+          fontSize:        '0.65rem',
+          letterSpacing:   '0.14em',
+          color:           splashMuted ? '#4a5e44' : '#39ff14',
+          backdropFilter:  'blur(8px)',
+        }}
+      >
+        <span style={{ fontSize: '1rem', lineHeight: 1 }}>{splashMuted ? '🔇' : '🔊'}</span>
+        <span>{splashMuted ? 'MUTED' : 'SOUND ON'}</span>
+      </button>
+      {/* Autoplay blocked hint — only shown when browser needs a gesture */}
+      {audioArmed && !splashMuted && (
+        <div style={{
+          position:      'absolute',
+          bottom:        '5rem',
+          left:          '50%',
+          transform:     'translateX(-50%)',
+          zIndex:        10,
+          fontFamily:    'var(--font-mono)',
+          fontSize:      '0.62rem',
+          letterSpacing: '0.14em',
+          color:         '#f5c518',
+          textAlign:     'center',
+          pointerEvents: 'none',
+        }}>
+          Tap anywhere to enable audio
+        </div>
+      )}
       {/* Background layers — stacked, crossfade via opacity transition */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
         {BG_FRAMES.map((src, i) => (
@@ -480,17 +543,6 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           Press ENTER or SPACE to continue
         </p>
 
-        {audioArmed && (
-          <p style={{
-            margin:        0,
-            fontFamily:    'var(--font-mono)',
-            fontSize:      '0.65rem',
-            letterSpacing: '0.14em',
-            color:         '#f5c518',
-          }}>
-            Tap anywhere to enable intro audio
-          </p>
-        )}
       </div>
     </dialog>
   )

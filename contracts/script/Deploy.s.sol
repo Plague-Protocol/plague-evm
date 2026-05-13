@@ -3,8 +3,9 @@ pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
+import {FeeManager}  from "../src/FeeManager.sol";
+import {PotEscrow}   from "../src/PotEscrow.sol";
 import {ZKVerifier} from "../src/ZKVerifier.sol";
-import {StubZKVerifier} from "../src/StubZKVerifier.sol";
 import {RoleCommitmentVerifier} from "../src/RoleCommitmentVerifier.sol";
 import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
 
@@ -13,26 +14,24 @@ import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
  * @notice Foundry deployment script for the Plague Protocol on Celo.
  *
  * ── Required env vars ─────────────────────────────────────────────────────────
- *   PRIVATE_KEY        Deployer private key (hex, no 0x prefix)
+ *   PRIVATE_KEY        Deployer private key (hex, with 0x prefix)
  *   BACKEND_SIGNER     Address of the off-chain game server wallet
  *   PLATFORM_RECEIVER  Address to receive proof fees + 0.3% pot fees
  *   CUSD_TOKEN         cUSD ERC-20 address for the target network
- *                       Celo Sepolia: 0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80 (StableToken / cUSD)
- *                       Mainnet  : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
+ *                       Celo Sepolia: 0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1
+ *                       Mainnet     : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
  *
  * ── Optional env vars ─────────────────────────────────────────────────────────
  *   ZK_VERIFIER_ADDR              If set, uses this IZKVerifier address directly (skip all ZK deployment)
  *   ROLE_COMMITMENT_VERIFIER_ADDR Address of an already-deployed role_commitment Honk verifier
  *   INNOCENCE_PROOF_VERIFIER_ADDR Address of an already-deployed innocence_proof Honk verifier
- *   ZK_BYPASS_ENABLED             Set to "true" to deploy StubZKVerifier (testnet dev only)
  *
  * ── ZK deployment priority ────────────────────────────────────────────────────
- *   1. ZK_VERIFIER_ADDR set                  → use as-is
- *   2. Both VERIFIER_ADDR env vars set        → wrap in ZKVerifier adapter
- *   3. Neither, ZK_BYPASS_ENABLED != "true"  → deploy RoleCommitmentVerifier +
- *                                               InnocenceProofVerifier from source,
- *                                               then wrap in ZKVerifier adapter
- *   4. ZK_BYPASS_ENABLED=true                → deploy StubZKVerifier (dev only)
+ *   1. ZK_VERIFIER_ADDR set               → use as-is
+ *   2. Both VERIFIER_ADDR env vars set     → wrap in ZKVerifier adapter
+ *   3. Neither                            → deploy RoleCommitmentVerifier +
+ *                                           InnocenceProofVerifier from source,
+ *                                           then wrap in ZKVerifier adapter
  *
  * ── Predeployment (for ZK from source) ───────────────────────────────────────
  *   Circuits are compiled and verifier contracts are already generated at:
@@ -47,17 +46,12 @@ import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
  *     # then rename HonkVerifier → RoleCommitmentVerifier / InnocenceProofVerifier in both files
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
- *   # Celo Sepolia testnet — full ZK (deploys verifiers from source)
+ *   # Celo Sepolia testnet — using existing ZK verifier
  *   forge script contracts/script/Deploy.s.sol \
  *     --rpc-url https://forno.celo-sepolia.celo-testnet.org \
  *     --broadcast
  *
- *   # Celo Sepolia testnet — bypass ZK (dev shortcut, no real proofs)
- *   ZK_BYPASS_ENABLED=true forge script contracts/script/Deploy.s.sol \
- *     --rpc-url https://forno.celo-sepolia.celo-testnet.org \
- *     --broadcast
- *
- *   # Mainnet — full ZK
+ *   # Mainnet — full ZK from source
  *   forge script contracts/script/Deploy.s.sol \
  *     --rpc-url https://forno.celo.org \
  *     --broadcast \
@@ -70,7 +64,6 @@ contract DeployScript is Script {
         address platformReceiver = vm.envAddress("PLATFORM_RECEIVER");
         address cUsdToken        = vm.envAddress("CUSD_TOKEN");
 
-        // Deployer address derived from the key
         address deployer = vm.addr(deployerKey);
         console.log("Deployer           :", deployer);
         console.log("Backend signer     :", backendSigner);
@@ -83,16 +76,15 @@ contract DeployScript is Script {
         // Priority order:
         //   1. ZK_VERIFIER_ADDR set            → use it directly
         //   2. Both Noir verifier addrs set    → deploy ZKVerifier adapter
-        //   3. Neither                         → deploy dev bypass stub
+        //   3. Neither                         → deploy both Honk verifiers from source, then wrap
         address zkVerifierAddr;
         try vm.envAddress("ZK_VERIFIER_ADDR") returns (address existing) {
-            // Option 1: caller already has a fully deployed adapter.
             zkVerifierAddr = existing;
             console.log("Using existing IZKVerifier:", zkVerifierAddr);
         } catch {
             address roleVerifier;
             address innocenceVerifier;
-            bool hasRoleVerifier     = false;
+            bool hasRoleVerifier      = false;
             bool hasInnocenceVerifier = false;
 
             try vm.envAddress("ROLE_COMMITMENT_VERIFIER_ADDR") returns (address a) {
@@ -106,43 +98,23 @@ contract DeployScript is Script {
             } catch {}
 
             if (hasRoleVerifier && hasInnocenceVerifier) {
-                // Option 2: deploy the production adapter pointing at the two
-                // Noir-generated verifiers that were already deployed.
-                ZKVerifier adapter = new ZKVerifier(
-                    roleVerifier,
-                    innocenceVerifier
-                );
+                ZKVerifier adapter = new ZKVerifier(roleVerifier, innocenceVerifier);
                 zkVerifierAddr = address(adapter);
                 console.log("ZKVerifier adapter       :", zkVerifierAddr);
                 console.log("  role_commitment verifier :", roleVerifier);
                 console.log("  innocence_proof verifier :", innocenceVerifier);
             } else {
-                // Decide: full ZK from source, or bypass stub?
-                bool bypassEnabled = false;
-                try vm.envBool("ZK_BYPASS_ENABLED") returns (bool b) {
-                    bypassEnabled = b;
-                } catch {}
-
                 require(
-                    !(block.chainid == 42220 && bypassEnabled),
-                    "Refusing bypass-enabled verifier on Celo mainnet"
+                    block.chainid != 42220,
+                    "Refusing to deploy ZK verifiers from source on Celo mainnet without explicit addresses"
                 );
-
-                if (bypassEnabled) {
-                    // Option 4: stub (dev/testnet only)
-                    StubZKVerifier stub = new StubZKVerifier(true);
-                    zkVerifierAddr      = address(stub);
-                    console.log("StubZKVerifier (bypass)  :", zkVerifierAddr);
-                } else {
-                    // Option 3: deploy both Honk verifiers from source, then wrap.
-                    RoleCommitmentVerifier roleV = new RoleCommitmentVerifier();
-                    InnocenceProofVerifier innocV = new InnocenceProofVerifier();
-                    ZKVerifier adapter = new ZKVerifier(address(roleV), address(innocV));
-                    zkVerifierAddr = address(adapter);
-                    console.log("RoleCommitmentVerifier   :", address(roleV));
-                    console.log("InnocenceProofVerifier   :", address(innocV));
-                    console.log("ZKVerifier adapter       :", zkVerifierAddr);
-                }
+                RoleCommitmentVerifier roleV  = new RoleCommitmentVerifier();
+                InnocenceProofVerifier innocV = new InnocenceProofVerifier();
+                ZKVerifier adapter = new ZKVerifier(address(roleV), address(innocV));
+                zkVerifierAddr = address(adapter);
+                console.log("RoleCommitmentVerifier   :", address(roleV));
+                console.log("InnocenceProofVerifier   :", address(innocV));
+                console.log("ZKVerifier adapter       :", zkVerifierAddr);
             }
         }
 
@@ -150,6 +122,16 @@ contract DeployScript is Script {
         PlagueGame game = new PlagueGame();
         game.initialize(deployer, backendSigner, zkVerifierAddr, platformReceiver, cUsdToken);
         console.log("PlagueGame deployed       :", address(game));
+
+        // ── FeeManager ───────────────────────────────────────────────────────────
+        FeeManager feeManager = new FeeManager(deployer, address(game), cUsdToken);
+        game.setFeeManager(address(feeManager));
+        console.log("FeeManager deployed       :", address(feeManager));
+
+        // ── PotEscrow ────────────────────────────────────────────────────────────
+        PotEscrow potEscrow = new PotEscrow(deployer, address(game), cUsdToken);
+        game.setPotEscrow(address(potEscrow));
+        console.log("PotEscrow deployed        :", address(potEscrow));
 
         vm.stopBroadcast();
     }

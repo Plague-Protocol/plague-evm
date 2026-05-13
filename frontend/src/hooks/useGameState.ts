@@ -300,7 +300,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'game_started':
-        appendFeed('Game started — submit your role commitment.')
+        appendFeed('Game started — set your Shield Password to begin.')
         setState(prev => prev.room ? { ...prev, room: { ...prev.room, status: 'starting', startedAt: event.timestamp } } : prev)
         break
 
@@ -355,7 +355,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
           const playerAddr = String(p.player).toLowerCase()
           const playerName = prev.room?.players.find(pl => pl.walletAddress.toLowerCase() === playerAddr)?.displayName
           const label = playerName ?? `${playerAddr.slice(0, 6)}…${playerAddr.slice(-4)}`
-          appendFeed(`${label} submitted an innocence proof.`)
+          appendFeed(`${label} activated their Shield.`)
           return prev
         })
         break
@@ -492,11 +492,11 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         break
 
       case 'proof_window_open':
-        appendFeed('Proof submission window OPEN — Discussion phase.')
+        appendFeed('Shield activation window OPEN — Discussion phase.')
         break
 
       case 'proof_window_closed':
-        appendFeed('Proof submission window CLOSED — Voting phase starting.')
+        appendFeed('Shield activation window CLOSED — Voting phase starting.')
         break
 
       default:

@@ -85,7 +85,7 @@ function getPhaseDescription(
   if (phase === 'infection') return isInfected
     ? 'You are a carrier. Patient Zero is spreading infection to a new target this round.'
     : 'Patient Zero is spreading the plague. A new carrier is being assigned — stay vigilant.'
-  if (phase === 'discussion') return 'Infection has spread. Submit your innocence proof now before voting opens.'
+  if (phase === 'discussion') return 'Infection has spread. Activate your Shield now before voting opens.'
   if (phase === 'voting') return hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Vote to eliminate the suspected carrier before more are infected.'
   if (phase === 'reveal') return 'Votes tallied — elimination is being resolved on-chain.'
   if (result) return `Game over: ${result.outcome.replaceAll('_', ' ')}`
@@ -130,7 +130,7 @@ const CONTRACT_ERROR_MAP: Record<string, string> = {
   NotAlive:              'You are no longer alive in this game and cannot take this action.',
   WrongPhase:            'This action is not available in the current phase.',
   AlreadyVoted:          'You have already voted this round.',
-  AlreadyProvedThisRound:'You have already submitted an innocence proof this round.',
+  AlreadyProvedThisRound:'Your Shield is already active this round.',
   NullifierUsed:         'This proof nullifier has already been used. Try a different secret.',
   InvalidProof:          'ZK proof verification failed. Check your secret phrase and try again.',
   NotParticipant:        'You are not a participant in this room.',
@@ -226,10 +226,28 @@ function GamePageInner() { // NOSONAR
     if (tab === 'chat') setUnreadChat(0)
   }, [])
 
+  // Auto-switch tab on mobile when the game phase changes so players always land
+  // on the relevant panel without having to hunt for it manually.
+  //   starting           → Game tab  (Set Shield Password action is there)
+  //   discussion         → Game tab  (Activate Shield action is there)
+  //   infection / voting / reveal → Vote tab (Area 51 grid + vote panel)
+  useEffect(() => {
+    if (!isMobile) return
+    const status   = room?.status
+    const phaseNow = currentRound?.phase ?? 'ended'
+    if (status === 'starting') {
+      setActiveTab('game')
+    } else if (status === 'active') {
+      setActiveTab(phaseNow === 'discussion' ? 'game' : 'board')
+    }
+  }, [room?.status, currentRound?.phase, isMobile])
+
   const schedulePostTxRefresh = useCallback(() => {
     socket?.emit('request_room_refresh', { roomId })
-    // Safety fallback in case socket delivery is delayed.
-    setTimeout(() => refresh(), 1_500)
+    // Retry refreshes at 1.5 s, 3.5 s, and 6 s to handle RPC propagation lag.
+    setTimeout(() => { refresh(); socket?.emit('request_room_refresh', { roomId }) }, 1_500)
+    setTimeout(() => { refresh(); socket?.emit('request_room_refresh', { roomId }) }, 3_500)
+    setTimeout(() => { refresh() }, 6_000)
   }, [refresh, roomId, socket])
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -276,21 +294,34 @@ function GamePageInner() { // NOSONAR
   } else if (room?.players?.length) {
     playersPanelBody = (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {room.players.map((p) => (
-          <button
-            key={p.walletAddress}
-            onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
-            title={p.displayName}
-            className="truncate rounded-lg px-2 py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
-            style={{
-              ...playerStyle(visibleStatus(p, address)),
-              boxShadow: selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
-              cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
-            }}
-          >
-            {p.displayName}
-          </button>
-        ))}
+        {room.players.map((p) => {
+          const isMe = p.walletAddress.toLowerCase() === address?.toLowerCase()
+          return (
+            <button
+              key={p.walletAddress}
+              onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
+              title={isMe ? `${p.displayName} (You)` : p.displayName}
+              className="relative truncate rounded-lg px-2 py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
+              style={{
+                ...playerStyle(visibleStatus(p, address)),
+                boxShadow: isMe
+                  ? '0 0 0 2px #39ff14, 0 0 12px rgba(57,255,20,0.35)'
+                  : selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
+                cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
+              }}
+            >
+              {isMe && (
+                <span
+                  className="absolute -top-1.5 -right-1.5 rounded-full px-1.5 py-0.5 font-mono text-[8px] uppercase leading-none tracking-wider"
+                  style={{ backgroundColor: '#39ff14', color: '#060b06', fontWeight: 800 }}
+                >
+                  YOU
+                </span>
+              )}
+              {p.displayName}
+            </button>
+          )
+        })}
       </div>
     )
   } else {
@@ -468,7 +499,7 @@ function GamePageInner() { // NOSONAR
       await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
       setOptimisticProofDone(true)
       socket?.emit('request_room_refresh', { roomId })
-      toast.success('Innocence proof submitted!')
+      toast.success('Shield activated!')
       schedulePostTxRefresh()
     } catch (err) {
       const msg = parseContractError(err)
@@ -505,7 +536,7 @@ function GamePageInner() { // NOSONAR
       setOptimisticCommitDone(true)
       setSecretPhrase('')
       socket?.emit('request_room_refresh', { roomId })
-      toast.success('Role committed!')
+      toast.success('Shield Password set!')
       schedulePostTxRefresh()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Role commitment failed.'
@@ -544,14 +575,17 @@ function GamePageInner() { // NOSONAR
     }
   }, [address, roomId, schedulePostTxRefresh, socket])
 
-  // ── Phase advance ticker ─────────────────────────────────────────────────
+  // ── Phase advance ticker — accelerates when timer is nearly expired ─────
+  const nearPhaseEnd = room?.status === 'active' && headerCountdownMs <= 8_000 && headerCountdownMs > 0
   useEffect(() => {
     if (!socket || !roomId || room?.status !== 'active') return
+    // Tick faster (1 s) in the last 8 seconds so transition feels instant.
+    const interval = nearPhaseEnd ? 1_000 : 2_000
     const id = setInterval(() => {
       socket.emit('request_phase_advance', { roomId })
-    }, 2_000)
+    }, interval)
     return () => clearInterval(id)
-  }, [socket, roomId, room?.status])
+  }, [socket, roomId, room?.status, nearPhaseEnd])
 
   // When the local timer reaches zero, proactively request phase advancement
   // once per round+phase to avoid UI stalling until the next monitor tick.
@@ -570,7 +604,22 @@ function GamePageInner() { // NOSONAR
     phaseAdvanceNudgeKeyRef.current = key
     socket.emit('request_phase_advance', { roomId })
     socket.emit('request_room_refresh', { roomId })
+    // Burst refresh: emit again after short delays to ensure propagation.
+    const t1 = setTimeout(() => { socket.emit('request_phase_advance', { roomId }); socket.emit('request_room_refresh', { roomId }) }, 1_500)
+    const t2 = setTimeout(() => { socket.emit('request_phase_advance', { roomId }); socket.emit('request_room_refresh', { roomId }) }, 3_500)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [socket, roomId, room?.status, headerCountdownMs, phase, round])
+
+  // ── Periodic sync for waiting/starting rooms (pick up game-start quickly) ─
+  useEffect(() => {
+    if (!socket || !roomId) return
+    const status = room?.status
+    if (status !== 'waiting' && status !== 'starting') return
+    const id = setInterval(() => {
+      socket.emit('request_room_refresh', { roomId })
+    }, 2_500)
+    return () => clearInterval(id)
+  }, [socket, roomId, room?.status])
 
   // ── Periodic full refresh — only when socket is offline ─────────────────
   useEffect(() => {
@@ -643,12 +692,19 @@ function GamePageInner() { // NOSONAR
 
         <div className="relative mx-auto w-full max-w-6xl">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span
-              className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.25em]"
-              style={{ borderColor: 'rgba(230,51,41,0.5)', backgroundColor: 'rgba(230,51,41,0.12)', color: '#e63329' }}
-            >
-              {room?.name ?? `Room #${roomId}`}
-            </span>
+            {/* Room name — prominent display */}
+            <div className="flex flex-col gap-1">
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Room</p>
+              <span
+                className="font-display text-lg sm:text-2xl leading-none"
+                style={{ color: '#e63329', textShadow: '0 0 12px rgba(230,51,41,0.4)' }}
+              >
+                {room?.name ?? `Room #${roomId}`}
+              </span>
+              {room?.name && (
+                <span className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>#{roomId}</span>
+              )}
+            </div>
             <span
               className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.2em]"
               style={{ borderColor: `${PHASE_COLOR[phase]}44`, backgroundColor: `${PHASE_COLOR[phase]}18`, color: PHASE_COLOR[phase] }}
@@ -683,8 +739,8 @@ function GamePageInner() { // NOSONAR
             </div>
           )}
 
-          {/* Connection status */}
-          <div className="mt-3 flex items-center gap-3">
+          {/* Connection status + player identity */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <span className={`inline-block h-2 w-2 rounded-full ${socketOn ? 'bg-green-400' : 'bg-yellow-400'}`} />
             <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
               {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
@@ -699,6 +755,20 @@ function GamePageInner() { // NOSONAR
               {isLoading ? '…' : '↺ Sync'}
             </button>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
+            {/* Prominent player identity badge */}
+            {localPlayer && (
+              <span
+                className="ml-auto rounded-lg border px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-[0.18em]"
+                style={{
+                  borderColor: 'rgba(57,255,20,0.6)',
+                  backgroundColor: 'rgba(57,255,20,0.12)',
+                  color: '#39ff14',
+                  boxShadow: '0 0 10px rgba(57,255,20,0.2)',
+                }}
+              >
+                You: <span style={{ color: '#d4c9b2' }}>{localPlayer.displayName}</span>
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -710,7 +780,7 @@ function GamePageInner() { // NOSONAR
             {[
               { label: 'POT',          value: `${potCUSD} cUSD`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
-              { label: 'PROOF WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#39ff14' },
+              { label: 'SHIELD WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#39ff14' },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -790,7 +860,7 @@ function GamePageInner() { // NOSONAR
               {showOnTab('board') && (
                 <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)' }}>
                   <div className="flex items-center justify-between gap-4">
-                    <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Containment Board</h2>
+                    <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
                     <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(57,255,20,0.35)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}>
                       {activePlayers.length} alive
                     </span>
@@ -856,20 +926,20 @@ function GamePageInner() { // NOSONAR
 
                   {room?.status === 'starting' && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Submit Role Commitment</p>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Set Shield Password</p>
                       {commitDone ? (
-                        <p className="mt-3 font-mono text-xs" style={{ color: '#39ff14' }}>✓ Commitment submitted. Waiting for all players…</p>
+                        <p className="mt-3 font-mono text-xs" style={{ color: '#39ff14' }}>✓ Shield Password set. Waiting for all players…</p>
                       ) : (
                         <>
                           <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                            Enter a private secret phrase. This generates your ZK commitment — keep the phrase safe.
+                            Enter your Shield Password. Keep it secret — you&apos;ll need it to activate your Shield later.
                           </p>
                           <p className="mt-1 font-mono text-[11px]" style={{ color: '#84cc16' }}>
-                            Commit deadline: {formatCountdown(Math.max(0, startCommitEndsAt - now))}
+                            Password deadline: {formatCountdown(Math.max(0, startCommitEndsAt - now))}
                           </p>
                           <input
                             type="password"
-                            placeholder="My secret phrase…"
+                            placeholder="My Shield Password…"
                             value={secretPhrase}
                             onChange={e => setSecretPhrase(e.target.value)}
                             className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
@@ -878,11 +948,11 @@ function GamePageInner() { // NOSONAR
                           {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
                           <button
                             onClick={handleCommitRole}
-                            disabled={!canCommit || !secretPhrase}
+                            disabled={!canCommit || !secretPhrase || committing}
                             className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                             style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
                           >
-                            {committing ? 'Generating ZK Proof…' : 'Commit Role'}
+                            {committing ? 'Activating Shield…' : 'Set Shield Password'}
                           </button>
                         </>
                       )}
@@ -891,14 +961,14 @@ function GamePageInner() { // NOSONAR
 
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Submit Innocence Proof</p>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Activate Shield</p>
                       <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                        Prove you are clean before voting opens. Your first proof is free.
-                        {localPlayer?.freeProofUsed && ' (Free proof used — fee will be charged.)'}
+                        Activate your Shield to prove innocence before voting opens. Your first Shield activation is free.
+                        {localPlayer?.freeProofUsed && ' (Free activation used — fee will be charged.)'}
                       </p>
                       <input
                         type="password"
-                        placeholder="Your secret phrase…"
+                        placeholder="Your Shield Password…"
                         value={secretPhrase}
                         onChange={e => setSecretPhrase(e.target.value)}
                         className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
@@ -907,17 +977,17 @@ function GamePageInner() { // NOSONAR
                       {proofError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{proofError}</p>}
                       <button
                         onClick={handleSubmitProof}
-                        disabled={!canProve || !secretPhrase}
+                        disabled={!canProve || !secretPhrase || proving}
                         className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                         style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
                       >
-                        {proving ? 'Generating ZK Proof…' : 'Submit Innocence Proof'}
+                        {proving ? 'Activating Shield…' : 'Activate Shield'}
                       </button>
                     </div>
                   )}
 
                   {phase === 'discussion' && hasProofThisRound && (
-                    <p className="font-mono text-xs" style={{ color: '#84cc16' }}>✓ Innocence proof submitted on-chain.</p>
+                    <p className="font-mono text-xs" style={{ color: '#84cc16' }}>✓ Shield activated on-chain.</p>
                   )}
 
                   {result && (
@@ -1039,11 +1109,19 @@ function GamePageInner() { // NOSONAR
 
               {/* Chat — Chat tab (mobile) / always (desktop) */}
               {showOnTab('chat') && (
-                <div className="rise-in rounded-lg border p-4" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.15)', animationDelay: '160ms' }}>
-                  <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Room Chat</p>
+                <div
+                  className="rise-in rounded-lg border p-4 flex flex-col"
+                  style={{
+                    backgroundColor: '#0a100a',
+                    borderColor: 'rgba(57,255,20,0.15)',
+                    animationDelay: '160ms',
+                    ...(isMobile ? { height: 'calc(100svh - 180px)', maxHeight: 'calc(100svh - 180px)' } : {}),
+                  }}
+                >
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] flex-shrink-0" style={{ color: '#39ff14' }}>Room Chat</p>
                   <div
-                    className="mt-3 overflow-y-auto space-y-2 pr-1"
-                    style={{ height: isMobile ? 'calc(100vh - 260px)' : '16rem', scrollbarWidth: 'thin' }}
+                    className="mt-3 overflow-y-auto space-y-2 pr-1 flex-1 min-h-0"
+                    style={{ height: isMobile ? undefined : '16rem', scrollbarWidth: 'thin' }}
                   >
                     {chatMessages.length === 0 ? (
                       <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
@@ -1060,7 +1138,7 @@ function GamePageInner() { // NOSONAR
                     )}
                     <div ref={chatEndRef} />
                   </div>
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex gap-2 flex-shrink-0">
                     <input
                       type="text"
                       placeholder={chatBlockedReason ?? 'Say something…'}

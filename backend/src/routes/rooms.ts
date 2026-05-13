@@ -135,8 +135,7 @@ roomRouter.get('/:id/name', async (req, res) => {
   const roomId = req.params.id
   try {
     const room = await prisma.room.findUnique({ where: { roomId }, select: { name: true } })
-    if (!room) return res.status(404).json({ error: `Room ${roomId} not found` })
-    res.json({ name: room.name ?? null })
+    res.json({ name: room?.name ?? null })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: message })

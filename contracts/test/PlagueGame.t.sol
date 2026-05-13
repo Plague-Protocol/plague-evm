@@ -3,7 +3,19 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {PlagueGame} from "../src/PlagueGame.sol";
-import {StubZKVerifier} from "../src/StubZKVerifier.sol";
+import {IZKVerifier} from "../src/interfaces/IZKVerifier.sol";
+
+/// @dev Always-pass ZK verifier for tests — replaces deleted StubZKVerifier.
+contract MockZKVerifier is IZKVerifier {
+    function verifyRoleCommitment(bytes32, bytes calldata) external pure returns (bool) { return true; }
+    function verifyInnocenceProof(bytes32, bytes32, bytes calldata) external pure returns (bool) { return true; }
+}
+
+/// @dev Always-reject ZK verifier used to simulate bypass-off behaviour.
+contract RejectZKVerifier is IZKVerifier {
+    function verifyRoleCommitment(bytes32, bytes calldata) external pure returns (bool) { return false; }
+    function verifyInnocenceProof(bytes32, bytes32, bytes calldata) external pure returns (bool) { return false; }
+}
 
 /// @dev Minimal ERC-20 mock used by tests in place of real cUSD.
 contract MockERC20 {
@@ -42,7 +54,7 @@ contract MockERC20 {
 
 contract PlagueGameTest is Test {
     PlagueGame  game;
-    StubZKVerifier  zkVerifier;
+    MockZKVerifier  zkVerifier;
     MockERC20   token;
 
     address admin    = makeAddr("admin");
@@ -71,7 +83,7 @@ contract PlagueGameTest is Test {
 
         // Deploy with bypass ZK verifier so tests don't need real Noir proofs
         vm.startPrank(admin);
-        zkVerifier = new StubZKVerifier(true);
+        zkVerifier = new MockZKVerifier();
         game       = new PlagueGame();
         game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
@@ -995,11 +1007,12 @@ contract PlagueGameTest is Test {
         vm.prank(backend);
         game.assignInfection(1, players[0]);
 
-        // NOW disable bypass — subsequent proof submissions must be real.
+        // Swap to a reject-all verifier to simulate real ZK validation.
+        RejectZKVerifier rejectV = new RejectZKVerifier();
         vm.prank(admin);
-        zkVerifier.setBypass(false);
+        game.setZkVerifier(address(rejectV));
 
-        // Empty innocence proof should be rejected when bypass is off.
+        // Empty innocence proof should be rejected when verifier rejects.
         vm.prank(players[1]);
         vm.expectRevert(PlagueGame.InvalidProof.selector);
         game.submitInnocenceProof(1, keccak256("comm-1"), keccak256("nullifier"), "");
@@ -1053,7 +1066,7 @@ contract PlagueGameTest is Test {
 
 contract PlagueGameExtendedTest is Test {
     PlagueGame  game;
-    StubZKVerifier  zkVerifier;
+    MockZKVerifier  zkVerifier;
     MockERC20   token;
 
     address admin    = makeAddr("admin");
@@ -1076,7 +1089,7 @@ contract PlagueGameExtendedTest is Test {
             token.mint(p, MINT);
         }
         vm.startPrank(admin);
-        zkVerifier = new StubZKVerifier(true);
+        zkVerifier = new MockZKVerifier();
         game       = new PlagueGame();
         game.initialize(admin, backend, address(zkVerifier), platform, address(token));
         vm.stopPrank();
@@ -1159,7 +1172,7 @@ contract PlagueGameExtendedTest is Test {
     }
 
     function test_SetZkVerifier_UpdatesValue() public {
-        StubZKVerifier newV = new StubZKVerifier(true);
+        MockZKVerifier newV = new MockZKVerifier();
         vm.prank(admin);
         game.setZkVerifier(address(newV));
         assertEq(address(game.zkVerifier()), address(newV));

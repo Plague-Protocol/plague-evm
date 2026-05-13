@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IZKVerifier} from "./interfaces/IZKVerifier.sol";
-import {IERC20}      from "./interfaces/IERC20.sol";
+import {IZKVerifier}  from "./interfaces/IZKVerifier.sol";
+import {IERC20}       from "./interfaces/IERC20.sol";
+import {IFeeManager}  from "./interfaces/IFeeManager.sol";
+import {IPotEscrow}   from "./interfaces/IPotEscrow.sol";
 
 /**
  * @title PlagueGame
@@ -54,7 +56,7 @@ import {IERC20}      from "./interfaces/IERC20.sol";
  *  At game end: platform takes 0.3% of pot, remainder split among winners.
  */
 contract PlagueGame {
-    uint64 public constant ROLE_COMMIT_TIMEOUT_SECS = 120;
+    uint64 public constant ROLE_COMMIT_TIMEOUT_SECS = 180;
 
     // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -139,6 +141,12 @@ contract PlagueGame {
     /// @dev cUSD token contract. Celo Sepolia: 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1
     ///      Mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
     IERC20  public cUsdToken;
+    /// @dev Separate fee-manager contract. When set, proof fees and pot fees are
+    ///      forwarded here instead of being accumulated in platformFees.
+    IFeeManager public feeManager;
+    /// @dev Separate pot-escrow contract. When set, player stakes are forwarded here
+    ///      on deposit and released from here on payout/refund.
+    IPotEscrow  public potEscrow;
     bool private _initialized;
     bool private _entered;
 
@@ -314,6 +322,7 @@ contract PlagueGame {
         // Auto-join: host is always the first player.
         // Caller must have approved this contract for at least stakeAmount cUSD.
         _safeTransferFrom(msg.sender, address(this), stakeAmount);
+        _potDeposit(roomId, stakeAmount);
 
         r.players.push(msg.sender);
         r.pot += stakeAmount;
@@ -352,6 +361,7 @@ contract PlagueGame {
 
         uint256 stake = r.config.stakeAmount;
         _safeTransferFrom(msg.sender, address(this), stake);
+        _potDeposit(roomId, stake);
 
         r.players.push(msg.sender);
         r.pot += stake;
@@ -501,7 +511,7 @@ contract PlagueGame {
                     PlayerState storage p = players[roomId][all[i]];
                     uint256 refund = p.staked;
                     if (refund == 0) continue;
-                    _safeTransfer(all[i], refund);
+                    _potRelease(roomId, all[i], refund);
                     emit PotDrained(roomId, all[i], refund);
                 }
             } else {
@@ -516,7 +526,7 @@ contract PlagueGame {
                         payout += dust;
                         dustPaid = true;
                     }
-                    _safeTransfer(all[i], payout);
+                    _potRelease(roomId, all[i], payout);
                     emit PotDrained(roomId, all[i], payout);
                 }
             }
@@ -660,8 +670,7 @@ contract PlagueGame {
         if (p.freeProofUsed) {
             uint256 fee = r.config.proofFee;
             if (fee > 0) {
-                _safeTransferFrom(msg.sender, address(this), fee);
-                platformFees += fee;
+                _routeFee(msg.sender, fee);
             }
         } else {
             p.freeProofUsed = true;
@@ -871,7 +880,7 @@ contract PlagueGame {
             if (refund == 0) continue;
             p.staked = 0;
             r.pot   -= refund;
-            _safeTransfer(playerList[i], refund);
+            _potRelease(roomId, playerList[i], refund);
         }
 
         emit RoomExpired(roomId);
@@ -903,8 +912,30 @@ contract PlagueGame {
     }
 
     /**
+     * @notice Point to an external FeeManager contract for future fee routing.
+     *         Once set, new proof fees and pot fees are forwarded there directly
+     *         rather than accumulated in platformFees.
+     *         Set to address(0) to revert to in-contract accumulation.
+     */
+    function setFeeManager(address _feeManager) external onlyAdmin {
+        feeManager = IFeeManager(_feeManager);
+    }
+
+    /**
+     * @notice Point to an external PotEscrow contract for player stake custody.
+     *         Once set, stakes deposited during createRoom/joinRoom are forwarded
+     *         there, and all pot payouts/refunds are released from there.
+     *         Set to address(0) to revert to in-contract custody.
+     */
+    function setPotEscrow(address _potEscrow) external onlyAdmin {
+        potEscrow = IPotEscrow(_potEscrow);
+    }
+
+    /**
      * @notice Withdraw accumulated platform fees (proof fees + 0.3% of pots).
      *         Only callable by admin. Sent to platformReceiver.
+     *         Only applies to fees accumulated before a FeeManager was configured;
+     *         fees routed to FeeManager are withdrawn via FeeManager.withdrawAll().
      */
     function withdrawPlatformFees() external onlyAdmin nonReentrant {
         require(platformReceiver != address(0), "platformReceiver not set");
@@ -1116,6 +1147,57 @@ contract PlagueGame {
     }
 
     /**
+     * @dev Forward a stake deposit into PotEscrow if configured.
+     *      Tokens are already held by this contract at the time of this call.
+     */
+    function _potDeposit(uint256 roomId, uint256 amount) internal {
+        IPotEscrow pe = potEscrow;
+        if (address(pe) != address(0)) {
+            cUsdToken.approve(address(pe), amount);
+            pe.deposit(roomId, amount);
+        }
+        // When no escrow is configured, tokens remain in PlagueGame as before.
+    }
+
+    /**
+     * @dev Release pot funds to `to` — from PotEscrow if configured, else direct.
+     */
+    function _potRelease(uint256 roomId, address to, uint256 amount) internal {
+        IPotEscrow pe = potEscrow;
+        if (address(pe) != address(0)) {
+            pe.release(roomId, to, amount);
+        } else {
+            _safeTransfer(to, amount);
+        }
+    }
+
+    /**
+     * @dev Pull a proof fee from `payer` and route it to the FeeManager (if set)
+     *      or accumulate in platformFees otherwise.
+     */
+    function _routeFee(address payer, uint256 fee) internal {
+        _safeTransferFrom(payer, address(this), fee);
+        _accumulateFee(fee);
+    }
+
+    /**
+     * @dev Add `amount` to the platform fee counter — or, when a FeeManager is
+     *      configured, approve-and-deposit directly into it.
+     *      Funds are already held by this contract at the time of this call.
+     */
+    function _accumulateFee(uint256 amount) internal {
+        if (amount == 0) return;
+        IFeeManager fm = feeManager;
+        if (address(fm) != address(0)) {
+            // Approve the FeeManager to pull the tokens, then trigger the deposit.
+            cUsdToken.approve(address(fm), amount);
+            fm.depositFee(amount);
+        } else {
+            platformFees += amount;
+        }
+    }
+
+    /**
      * @dev Distribute pot to alive players of the winning faction.
      *      Called automatically by resolveRound — never called externally.
      */
@@ -1145,7 +1227,7 @@ contract PlagueGame {
         if (winnerCount == 0) {
             // Safety valve: if no winners can be resolved, route all escrow to fees
             // instead of leaving untracked funds in contract balance.
-            platformFees += potBeforeFee;
+            _accumulateFee(potBeforeFee);
             r.pot = 0;
             return;
         }
@@ -1155,11 +1237,11 @@ contract PlagueGame {
         uint256 dust = potAfterFee - distributed;
 
         // Account for exact value conservation: platform fee + payout remainder dust.
-        platformFees += platformFee + dust;
+        _accumulateFee(platformFee + dust);
         r.pot = 0;
 
         for (uint256 i = 0; i < winnerCount; i++) {
-            _safeTransfer(winners[i], share);
+            _potRelease(roomId, winners[i], share);
             emit PotDrained(roomId, winners[i], share);
         }
     }
