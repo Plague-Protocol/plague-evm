@@ -415,7 +415,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             textShadow:    '0 0 30px rgba(230,51,41,0.5)',
             margin:        0,
           }}>
-            PLAGUE PROTOCOL
+            ZOMBIE PLAGUE
           </h1>
 
           <button
@@ -453,7 +453,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             color:         '#4a5e44',
             margin:        0,
           }}>
-            CLICK TO BEGIN · AUDIO ENABLED
+            {/* CLICK TO BEGIN · AUDIO ENABLED */}
           </p>
         </div>
       )}
