@@ -205,7 +205,7 @@ export default function HowToPlayPage() {
             HOW TO PLAY
           </h1>
           <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#4a5e44' }}>
-            Plague Protocol is a social deduction game built on Celo. Stake cUSD, earn your role in secret,
+            Zombie Plague is a social deduction game built on Celo. Stake cUSD, earn your role in secret,
             use zero-knowledge proofs to survive, and outlast the infection — or spread it.
           </p>
         </div>

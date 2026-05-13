@@ -87,7 +87,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
 
       {isWrongNetwork && (
         <p className="mt-3 font-mono text-xs text-red-400">
-          Switch to Celo to use Plague Protocol.
+          Switch to Celo to use Zombie Plague.
         </p>
       )}
 

@@ -269,7 +269,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   return (
     <dialog
       open
-      aria-label="Plague Protocol intro"
+      aria-label="Zombie Plague intro"
       style={{
         position:        'fixed',
         inset:           0,
@@ -493,7 +493,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               transform:     titleSlam ? 'scale(1.12) skewX(-2deg)' : 'scale(1)',
               transition:    'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
             }}>
-              PLAGUE PROTOCOL
+              ZOMBIE PLAGUE
             </h1>
           </div>
 

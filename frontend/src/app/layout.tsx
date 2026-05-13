@@ -36,12 +36,17 @@ const monoMobileFont = Share_Tech_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'PlagueProtocol — On-Chain Social Deduction',
+  title: 'Zombie Plague — On-Chain Social Deduction',
   description:
     'A decentralised social deduction game powered by ZK proofs and Celo EVM smart contracts.',
+  icons: {
+    icon: '/z-plague-icon.png',
+    apple: '/z-plague-icon.png',
+  },
   openGraph: {
-    title: 'PlagueProtocol',
+    title: 'Zombie Plague',
     description: 'Can you find Patient Zero before the infection spreads?',
+    images: [{ url: '/images/z-plague-image.png', width: 1200, height: 630 }],
   },
 }
 

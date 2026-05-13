@@ -378,7 +378,7 @@ export default function LeaderboardPage() {
                   </p>
                   <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                     {activeTab === 'global'  && 'All-time rankings sorted by total wins, then proof count.'}
-                    {activeTab === 'season0' && 'Season 0 standings — the inaugural Plague Protocol season.'}
+                    {activeTab === 'season0' && 'Season 0 standings — the inaugural Zombie Plague season.'}
                     {activeTab === 'proofs'  && 'Ranked by total innocence proofs submitted on-chain.'}
                     {activeTab === 'week'    && 'Players active in the last 7 days, ranked by wins.'}
                   </p>

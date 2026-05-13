@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
 import { ConnectButton } from './connect-button'
@@ -28,15 +29,16 @@ export function SiteNav({ currentPath }: SiteNavProps) {
       >
         {/* Logo */}
         <Link href="/" className="flex flex-shrink-0 items-center gap-3" onClick={() => setMenuOpen(false)}>
-          <div
-            className="flex h-9 w-9 items-center justify-center rounded-lg font-display text-xl"
-            style={{ background: 'linear-gradient(135deg, #39ff14, #cc1414)', color: '#060b06' }}
-          >
-            P
-          </div>
-          <div className="hidden sm:block">
-            <p className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>PlagueProtocol</p>
-            <p className="font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>
+          <Image
+            src="/z-plague-image.png"
+            alt="Zombie Plague"
+            width={36}
+            height={36}
+            className="rounded-lg"
+          />
+          <div>
+            <p className="font-display text-base sm:text-xl leading-none" style={{ color: '#d4c9b2' }}>Zombie Plague</p>
+            <p className="hidden sm:block font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>
               social deduction on celo
             </p>
           </div>

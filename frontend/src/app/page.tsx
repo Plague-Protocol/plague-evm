@@ -101,7 +101,7 @@ export default function HomePage() {
               className="rounded-full border px-3 py-1 sm:px-4 sm:py-1.5 font-mono text-[10px] sm:text-xs uppercase tracking-[0.22em]"
               style={{ borderColor: 'rgba(204,20,20,0.5)', backgroundColor: 'rgba(204,20,20,0.1)', color: '#cc1414' }}
             >
-              PlagueProtocol · Celo × EVM × Noir ZK
+              Zombie Plague · Celo × EVM × Noir ZK
             </span>
 
             <h1 className="max-w-5xl font-display leading-[0.88]">
