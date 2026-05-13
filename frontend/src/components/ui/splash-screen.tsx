@@ -38,14 +38,14 @@ const ACT_PAUSE_MS     = 2000  // total pause (fade + settle) before next act ty
 
 // ── Per-line render state ─────────────────────────────────────────────────────
 interface LineState {
-  text:      string       // currently displayed partial / full text
-  full:      string       // the complete target string
-  opacity:   number       // 1 = visible, 0 = fading out
-  collapsed: boolean      // true after fade completes → max-height collapses to 0
+  text:      string
+  full:      string
+  opacity:   number
+  collapsed: boolean
   act:       1 | 2 | 3
 }
 
-// ── Pure state-updater factories (module-scope reduces nesting depth) ─────────
+// ── Pure state-updater factories ──────────────────────────────────────────────
 function fadeAct(act: Act) {
   return (prev: LineState[]) => prev.map(l => l.act === act ? { ...l, opacity: 0 } : l)
 }
@@ -68,13 +68,14 @@ function completeLine(i: number, text: string) {
     prev.map((l, idx) => idx === i ? { ...l, text } : l)
 }
 
-// ── Async typewriter — clean loop, no double-setState, resets on generation ──
-function useStoryTypewriter(generation: number) {
+// ── Async typewriter — only runs once active is true ──────────────────────────
+function useStoryTypewriter(active: boolean) {
   const [lines, setLines]           = useState<LineState[]>([])
   const [activeLine, setActiveLine] = useState(0)
   const [done, setDone]             = useState(false)
 
   useEffect(() => {
+    if (!active) return
     setLines([])
     setActiveLine(0)
     setDone(false)
@@ -82,34 +83,30 @@ function useStoryTypewriter(generation: number) {
     let cancelled = false
     const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
-    // Fade out the previous act then pause before the next act starts typing.
     async function transitionAct(fadingAct: Act) {
       setLines(fadeAct(fadingAct))
       setTimeout(() => { if (!cancelled) setLines(collapseAct(fadingAct)) }, ACT_FADE_MS + 100)
       await wait(ACT_PAUSE_MS)
     }
 
-    // Type a single story line character by character.
     async function typeLine(i: number, text: string, act: Act) {
       setActiveLine(i)
       setLines(startLine(i, text, act))
-      await wait(MS_PER_CHAR)  // brief pause before first character appears
+      await wait(MS_PER_CHAR)
       for (let c = 1; c <= text.length; c++) {
         if (cancelled) return
         setLines(updateChar(i, text, c))
         if (c < text.length) await wait(MS_PER_CHAR)
       }
-      if (!cancelled) setLines(completeLine(i, text))  // safety-net full string
+      if (!cancelled) setLines(completeLine(i, text))
       await wait(MS_BETWEEN_LINES)
     }
 
     async function run() {
       let prevAct: number | null = null
-
       for (let i = 0; i < STORY.length; i++) {
         if (cancelled) return
         const { text, act } = STORY[i]
-
         if (prevAct !== null && act !== prevAct) {
           await transitionAct(prevAct as Act)
           if (cancelled) return
@@ -117,13 +114,12 @@ function useStoryTypewriter(generation: number) {
         await typeLine(i, text, act)
         prevAct = act
       }
-
       if (!cancelled) setDone(true)
     }
 
     run()
     return () => { cancelled = true }
-  }, [generation])
+  }, [active])
 
   return { lines, activeLine, done }
 }
@@ -145,62 +141,93 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   const [exiting,      setExiting]      = useState(false)
   const [finaleStatic, setFinaleStatic] = useState(false)
   const [titleSlam,    setTitleSlam]    = useState(false)
-  const [audioArmed,   setAudioArmed]   = useState(false)
   const [splashMuted,  setSplashMuted]  = useState(false)
   const [bgIndex,      setBgIndex]      = useState(0)
-  const generation = 0
+  // gate = logo screen requiring a click; story = typewriter + audio running
+  const [phase,        setPhase]        = useState<'gate' | 'story'>('gate')
 
   const ambientRef       = useRef<HTMLAudioElement | null>(null)
   const lastHeartbeatRef = useRef(0)
 
-  const { lines, activeLine, done } = useStoryTypewriter(generation)
+  const { lines, activeLine, done } = useStoryTypewriter(phase === 'story')
 
-  // ── First-time visitor: show on initial page load if never seen before ──────
+  // ── First-time visitor ───────────────────────────────────────────────────────
   useEffect(() => {
     const seen = globalThis.window !== undefined && sessionStorage.getItem('plague_intro_seen')
     if (!seen) {
       setVisible(true)
     } else {
-      // Already seen — resolve immediately so page content becomes visible
       onResolved?.()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Lock body scroll while splash is open ────────────────────────────────
+  // ── Lock body scroll while splash is open ────────────────────────────────────
   useEffect(() => {
     document.body.style.overflow = visible ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [visible])
 
-  // ── Background crossfade — independent 4.5 s timer ───────────────────────
+  // ── Background crossfade — independent 4.5 s timer ───────────────────────────
   useEffect(() => {
     if (!visible) return
     setBgIndex(0)
     const id = setInterval(() =>
       setBgIndex(i => Math.min(BG_FRAMES.length - 1, i + 1)), 4500)
     return () => clearInterval(id)
-  }, [visible, generation])
+  }, [visible])
 
-  // ── Heartbeat — rate-limited to max once per 1.4 s ───────────────────────
+  // ── Gate click — starts audio synchronously inside the user gesture ──────────
+  const beginStory = useCallback(() => {
+    if (phase !== 'gate') return
+    if (!splashMuted) {
+      const audio = new Audio(AMBIENT_TRACK)
+      audio.loop   = true
+      audio.volume = 0.28
+      ambientRef.current = audio
+      audio.play().catch(() => {})
+    }
+    setPhase('story')
+  }, [phase, splashMuted])
+
+  // ── Cleanup ambient on visible reset ─────────────────────────────────────────
   useEffect(() => {
-    if (!visible || splashMuted) return
+    if (visible) return
+    ambientRef.current?.pause()
+    if (ambientRef.current) ambientRef.current.currentTime = 0
+    ambientRef.current = null
+  }, [visible])
+
+  // ── Respond to mute toggle on existing ambient audio ─────────────────────────
+  useEffect(() => {
+    const audio = ambientRef.current
+    if (!audio) return
+    if (splashMuted) {
+      audio.pause()
+    } else {
+      audio.volume = 0.28
+      audio.play().catch(() => {})
+    }
+  }, [splashMuted])
+
+  // ── Heartbeat — rate-limited to max once per 1.4 s ───────────────────────────
+  useEffect(() => {
+    if (!visible || splashMuted || phase !== 'story') return
     const now = Date.now()
     if (now - lastHeartbeatRef.current < 1400) return
     lastHeartbeatRef.current = now
     const beat = new Audio('/sounds/heartbeat.mp3')
     beat.volume = 0.18
     beat.play().catch(() => {})
-  }, [activeLine, visible, splashMuted])
+  }, [activeLine, visible, splashMuted, phase])
 
-  // ── Scream — fires at Act I climax (line 2 "Day 7…"), echoes out over 4 s ─
+  // ── Scream — fires at Act I climax (line 2 "Day 7…"), echoes out over 4 s ────
   useEffect(() => {
-    if (!visible || activeLine !== 2 || splashMuted) return
+    if (!visible || activeLine !== 2 || splashMuted || phase !== 'story') return
     const fire = setTimeout(() => {
       const scream = new Audio(SCREAM_TRACK)
       scream.volume = 0.24
       scream.play().catch(() => {})
-      // 20 steps × 200 ms = 4 s fade-out
       let step = 0
       const fade = setInterval(() => {
         step++
@@ -209,51 +236,11 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
       }, 200)
     }, 500)
     return () => clearTimeout(fire)
-  }, [activeLine, visible, splashMuted, generation])
+  }, [activeLine, visible, splashMuted, phase])
 
-  // ── Ambient audio ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!visible) return
-    const audio = new Audio(AMBIENT_TRACK)
-    audio.loop   = true
-    audio.volume = splashMuted ? 0 : 0.28
-    ambientRef.current = audio
-    if (!splashMuted) {
-      audio.play().catch(() => setAudioArmed(true))
-    }
-    return () => { audio.pause(); audio.currentTime = 0; ambientRef.current = null }
-  }, [visible, generation]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Respond to mute toggle on existing ambient audio ──────────────────────
-  useEffect(() => {
-    const audio = ambientRef.current
-    if (!audio) return
-    if (splashMuted) {
-      audio.pause()
-      setAudioArmed(false)
-    } else {
-      audio.volume = 0.28
-      audio.play().then(() => setAudioArmed(false)).catch(() => setAudioArmed(true))
-    }
-  }, [splashMuted])
-
-  // ── Arm audio on first user gesture (when browser blocks autoplay) ────────
-  useEffect(() => {
-    if (!visible || !audioArmed || !ambientRef.current || splashMuted) return
-    const resume = () =>
-      ambientRef.current?.play().then(() => setAudioArmed(false)).catch(() => {})
-    globalThis.addEventListener('pointerdown', resume, { once: true })
-    globalThis.addEventListener('keydown',     resume, { once: true })
-    return () => {
-      globalThis.removeEventListener('pointerdown', resume)
-      globalThis.removeEventListener('keydown',     resume)
-    }
-  }, [visible, audioArmed, splashMuted])
-
-  // ── Dismiss / finale ─────────────────────────────────────────────────────
+  // ── Dismiss / finale ─────────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
     if (exiting || finaleStatic) return
-    // Mark as seen so page refreshes don't replay for returning users.
     if (globalThis.window !== undefined) sessionStorage.setItem('plague_intro_seen', '1')
     setFinaleStatic(true)
     setTitleSlam(true)
@@ -267,15 +254,15 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     setTimeout(() => { setVisible(false); setFinaleStatic(false); setTitleSlam(false); onResolved?.() }, 900)
   }, [exiting, finaleStatic, splashMuted])
 
-  // ── Keyboard dismiss ─────────────────────────────────────────────────────
+  // ── Keyboard dismiss (only during story) ─────────────────────────────────────
   useEffect(() => {
-    if (!visible) return
+    if (!visible || phase !== 'story') return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') dismiss()
     }
     globalThis.addEventListener('keydown', onKey)
     return () => globalThis.removeEventListener('keydown', onKey)
-  }, [visible, dismiss])
+  }, [visible, dismiss, phase])
 
   if (!visible) return null
 
@@ -305,51 +292,36 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           : 'splash-enter 0.6s ease-out both',
       }}
     >
-      {/* Mute toggle — top-right corner */}
-      <button
-        onClick={() => setSplashMuted(m => !m)}
-        aria-label={splashMuted ? 'Unmute intro audio' : 'Mute intro audio'}
-        style={{
-          position:        'absolute',
-          top:             '1rem',
-          right:           '1rem',
-          zIndex:          10,
-          display:         'flex',
-          alignItems:      'center',
-          gap:             '0.4rem',
-          background:      'rgba(6,11,6,0.7)',
-          border:          '1px solid rgba(57,255,20,0.35)',
-          borderRadius:    '6px',
-          padding:         '0.4rem 0.75rem',
-          cursor:          'pointer',
-          fontFamily:      'var(--font-mono)',
-          fontSize:        '0.65rem',
-          letterSpacing:   '0.14em',
-          color:           splashMuted ? '#4a5e44' : '#39ff14',
-          backdropFilter:  'blur(8px)',
-        }}
-      >
-        <span style={{ fontSize: '1rem', lineHeight: 1 }}>{splashMuted ? '🔇' : '🔊'}</span>
-        <span>{splashMuted ? 'MUTED' : 'SOUND ON'}</span>
-      </button>
-      {/* Autoplay blocked hint — only shown when browser needs a gesture */}
-      {audioArmed && !splashMuted && (
-        <div style={{
-          position:      'absolute',
-          bottom:        '5rem',
-          left:          '50%',
-          transform:     'translateX(-50%)',
-          zIndex:        10,
-          fontFamily:    'var(--font-mono)',
-          fontSize:      '0.62rem',
-          letterSpacing: '0.14em',
-          color:         '#f5c518',
-          textAlign:     'center',
-          pointerEvents: 'none',
-        }}>
-          Tap anywhere to enable audio
-        </div>
+      {/* Mute toggle — only shown once story is running */}
+      {phase === 'story' && (
+        <button
+          onClick={() => setSplashMuted(m => !m)}
+          aria-label={splashMuted ? 'Unmute intro audio' : 'Mute intro audio'}
+          style={{
+            position:        'absolute',
+            top:             '1rem',
+            right:           '1rem',
+            zIndex:          10,
+            display:         'flex',
+            alignItems:      'center',
+            gap:             '0.4rem',
+            background:      'rgba(6,11,6,0.7)',
+            border:          '1px solid rgba(57,255,20,0.35)',
+            borderRadius:    '6px',
+            padding:         '0.4rem 0.75rem',
+            cursor:          'pointer',
+            fontFamily:      'var(--font-mono)',
+            fontSize:        '0.65rem',
+            letterSpacing:   '0.14em',
+            color:           splashMuted ? '#4a5e44' : '#39ff14',
+            backdropFilter:  'blur(8px)',
+          }}
+        >
+          <span style={{ fontSize: '1rem', lineHeight: 1 }}>{splashMuted ? '🔇' : '🔊'}</span>
+          <span>{splashMuted ? 'MUTED' : 'SOUND ON'}</span>
+        </button>
       )}
+
       {/* Background layers — stacked, crossfade via opacity transition */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
         {BG_FRAMES.map((src, i) => (
@@ -415,27 +387,23 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
         background:    'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.7) 100%), radial-gradient(ellipse at center, transparent 35%, rgba(180,0,0,0.22) 100%)',
       }} />
 
-      {/* ── Content ────────────────────────────────────────────────────────── */}
-      <div style={{
-        position:      'relative',
-        zIndex:        2,
-        display:       'flex',
-        flexDirection: 'column',
-        alignItems:    'center',
-        gap:           '1.25rem',
-        padding:       '1rem',
-        maxWidth:      '600px',
-        width:         '100%',
-        textAlign:     'center',
-      }}>
-
-        {/* Biohazard + title */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+      {/* ── Gate phase — click to unlock audio + begin story ─────────────────── */}
+      {phase === 'gate' && (
+        <div style={{
+          position:      'relative',
+          zIndex:        2,
+          display:       'flex',
+          flexDirection: 'column',
+          alignItems:    'center',
+          gap:           '1.5rem',
+          padding:       '1rem',
+          textAlign:     'center',
+        }}>
           <div style={{
-            fontSize:  'clamp(2.5rem, 10vw, 4rem)',
+            fontSize:   'clamp(2.5rem, 10vw, 4rem)',
             lineHeight: 1,
-            animation: 'splash-pulse 3s ease-in-out infinite',
-            filter:    'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
+            animation:  'splash-pulse 3s ease-in-out infinite',
+            filter:     'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
           }}>☣</div>
 
           <h1 style={{
@@ -446,104 +414,179 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             letterSpacing: '0.06em',
             textShadow:    '0 0 30px rgba(230,51,41,0.5)',
             margin:        0,
-            transform:     titleSlam ? 'scale(1.12) skewX(-2deg)' : 'scale(1)',
-            transition:    'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
           }}>
             PLAGUE PROTOCOL
           </h1>
-        </div>
 
-        {/* Story lines — fade+collapse between acts */}
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          {lines.map((line, i) => {
-            const isAct3   = line.act === 3
-            const isClimax = isAct3 && i === STORY.length - 1 && done
-            let fontSize = '0.82rem'
-            if (isAct3) fontSize = i === STORY.length - 1 ? '1.15rem' : '0.95rem'
-            let marginBottom: string | number = isAct3 ? '0.55rem' : '0.32rem'
-            if (line.collapsed) marginBottom = 0
-            let textColor = '#7a8c74'
-            if (isAct3) textColor = '#d4c9b2'
-            if (isClimax) textColor = '#e63329'
-            const cursor = i === activeLine && !done
-              ? { borderRight: '2px solid #39ff14', paddingRight: '4px' }
-              : {}
-            return (
-              <div key={line.full} style={{
-                opacity:      line.opacity,
-                maxHeight:    line.collapsed ? '0px' : '3rem',
-                overflow:     'hidden',
-                transition:   `opacity ${ACT_FADE_MS}ms ease, max-height ${ACT_FADE_MS + 200}ms ease, margin-bottom ${ACT_FADE_MS + 200}ms ease`,
-                marginBottom,
-                width:        '100%',
-                textAlign:    'center',
-              }}>
-                <p style={{
-                  margin:        0,
-                  fontFamily:    'var(--font-mono)',
-                  fontSize,
-                  letterSpacing: isAct3 ? '0.04em' : '0.06em',
-                  // paddingRight compensates for trailing letter-spacing that
-                  // browsers visually clip at the text content-box edge
-                  paddingRight:  '0.12em',
-                  color:      textColor,
-                  textShadow: isClimax ? '0 0 14px rgba(230,51,41,0.75)' : 'none',
-                  fontWeight: isAct3 ? 600 : 400,
-                  ...cursor,
-                }}>
-                  {line.text}
-                </p>
-              </div>
-            )
-          })}
-        </div>
+          <button
+            onClick={beginStory}
+            style={{
+              marginTop:       '0.5rem',
+              padding:         '0.75rem 2.5rem',
+              fontFamily:      'var(--font-mono)',
+              fontSize:        '1rem',
+              letterSpacing:   '0.28em',
+              textTransform:   'uppercase',
+              fontWeight:      700,
+              color:           '#060b06',
+              backgroundColor: '#39ff14',
+              border:          '2px solid #39ff14',
+              borderRadius:    '6px',
+              cursor:          'pointer',
+              boxShadow:       '0 0 24px rgba(57,255,20,0.6)',
+              animation:       'splash-pulse 2s ease-in-out infinite',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)'
+            }}
+          >
+            DARE TO ENTER
+          </button>
 
-        {/* ENTER button — appears when story finishes */}
-        <button
-          onClick={dismiss}
-          disabled={exiting || finaleStatic}
-          style={{
-            marginTop:     '0.25rem',
-            padding:       '0.75rem 2.5rem',
+          <p style={{
             fontFamily:    'var(--font-mono)',
-            fontSize:      '1rem',
-            letterSpacing: '0.28em',
-            textTransform: 'uppercase',
-            fontWeight:    700,
-            color:         '#060b06',
-            backgroundColor: '#39ff14',
-            border:        '2px solid #39ff14',
-            borderRadius:  '6px',
-            cursor:        'pointer',
-            boxShadow:     '0 0 24px rgba(57,255,20,0.6)',
-            opacity:       done ? 1 : 0,
-            transform:     done ? 'translateY(0)' : 'translateY(8px)',
-            transition:    'opacity 0.6s ease, transform 0.6s ease, box-shadow 0.2s',
-            pointerEvents: done && !exiting && !finaleStatic ? 'auto' : 'none',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)'
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)'
-          }}
-        >
-          ENTER
-        </button>
+            fontSize:      '0.62rem',
+            letterSpacing: '0.14em',
+            color:         '#4a5e44',
+            margin:        0,
+          }}>
+            CLICK TO BEGIN · AUDIO ENABLED
+          </p>
+        </div>
+      )}
 
-        <p style={{
-          fontFamily:    'var(--font-mono)',
-          fontSize:      '0.65rem',
-          letterSpacing: '0.15em',
-          color:         '#4a5e44',
-          margin:        0,
-          opacity:       done ? 0.7 : 0,
-          transition:    'opacity 0.8s 0.3s',
+      {/* ── Story phase — typewriter + enter button ───────────────────────────── */}
+      {phase === 'story' && (
+        <div style={{
+          position:      'relative',
+          zIndex:        2,
+          display:       'flex',
+          flexDirection: 'column',
+          alignItems:    'center',
+          gap:           '1.25rem',
+          padding:       '1rem',
+          maxWidth:      '600px',
+          width:         '100%',
+          textAlign:     'center',
         }}>
-          Press ENTER or SPACE to continue
-        </p>
 
-      </div>
+          {/* Biohazard + title */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+            <div style={{
+              fontSize:  'clamp(2.5rem, 10vw, 4rem)',
+              lineHeight: 1,
+              animation: 'splash-pulse 3s ease-in-out infinite',
+              filter:    'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
+            }}>☣</div>
+
+            <h1 style={{
+              fontFamily:    'var(--font-display)',
+              fontSize:      'clamp(2.4rem, 7vw, 4.2rem)',
+              lineHeight:    1,
+              color:         '#d4c9b2',
+              letterSpacing: '0.06em',
+              textShadow:    '0 0 30px rgba(230,51,41,0.5)',
+              margin:        0,
+              transform:     titleSlam ? 'scale(1.12) skewX(-2deg)' : 'scale(1)',
+              transition:    'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+            }}>
+              PLAGUE PROTOCOL
+            </h1>
+          </div>
+
+          {/* Story lines — fade+collapse between acts */}
+          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {lines.map((line, i) => {
+              const isAct3   = line.act === 3
+              const isClimax = isAct3 && i === STORY.length - 1 && done
+              let fontSize = '0.82rem'
+              if (isAct3) fontSize = i === STORY.length - 1 ? '1.15rem' : '0.95rem'
+              let marginBottom: string | number = isAct3 ? '0.55rem' : '0.32rem'
+              if (line.collapsed) marginBottom = 0
+              let textColor = '#7a8c74'
+              if (isAct3) textColor = '#d4c9b2'
+              if (isClimax) textColor = '#e63329'
+              const cursor = i === activeLine && !done
+                ? { borderRight: '2px solid #39ff14', paddingRight: '4px' }
+                : {}
+              return (
+                <div key={line.full} style={{
+                  opacity:      line.opacity,
+                  maxHeight:    line.collapsed ? '0px' : '3rem',
+                  overflow:     'hidden',
+                  transition:   `opacity ${ACT_FADE_MS}ms ease, max-height ${ACT_FADE_MS + 200}ms ease, margin-bottom ${ACT_FADE_MS + 200}ms ease`,
+                  marginBottom,
+                  width:        '100%',
+                  textAlign:    'center',
+                }}>
+                  <p style={{
+                    margin:        0,
+                    fontFamily:    'var(--font-mono)',
+                    fontSize,
+                    letterSpacing: isAct3 ? '0.04em' : '0.06em',
+                    paddingRight:  '0.12em',
+                    color:      textColor,
+                    textShadow: isClimax ? '0 0 14px rgba(230,51,41,0.75)' : 'none',
+                    fontWeight: isAct3 ? 600 : 400,
+                    ...cursor,
+                  }}>
+                    {line.text}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* ENTER button — appears when story finishes */}
+          <button
+            onClick={dismiss}
+            disabled={exiting || finaleStatic}
+            style={{
+              marginTop:     '0.25rem',
+              padding:       '0.75rem 2.5rem',
+              fontFamily:    'var(--font-mono)',
+              fontSize:      '1rem',
+              letterSpacing: '0.28em',
+              textTransform: 'uppercase',
+              fontWeight:    700,
+              color:         '#060b06',
+              backgroundColor: '#39ff14',
+              border:        '2px solid #39ff14',
+              borderRadius:  '6px',
+              cursor:        'pointer',
+              boxShadow:     '0 0 24px rgba(57,255,20,0.6)',
+              opacity:       done ? 1 : 0,
+              transform:     done ? 'translateY(0)' : 'translateY(8px)',
+              transition:    'opacity 0.6s ease, transform 0.6s ease, box-shadow 0.2s',
+              pointerEvents: done && !exiting && !finaleStatic ? 'auto' : 'none',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)'
+            }}
+          >
+            ENTER
+          </button>
+
+          <p style={{
+            fontFamily:    'var(--font-mono)',
+            fontSize:      '0.65rem',
+            letterSpacing: '0.15em',
+            color:         '#4a5e44',
+            margin:        0,
+            opacity:       done ? 0.7 : 0,
+            transition:    'opacity 0.8s 0.3s',
+          }}>
+            Press ENTER or SPACE to continue
+          </p>
+
+        </div>
+      )}
     </dialog>
   )
 }
