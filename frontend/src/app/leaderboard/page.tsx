@@ -120,11 +120,14 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
   )
 }
 
+const PAGE_SIZE = 10
+
 export default function LeaderboardPage() {
   const [data, setData] = useState<LeaderboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('global')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -152,6 +155,13 @@ export default function LeaderboardPage() {
     if (!data) return []
     return filterAndSort(data.players, activeTab)
   }, [data, activeTab])
+
+  // Reset to page 1 whenever tab or data changes
+  useEffect(() => { setPage(1) }, [activeTab, data])
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  const pageSlice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const pageOffset = (page - 1) * PAGE_SIZE
 
   const totalProofs = useMemo(() => data?.players.reduce((s, p) => s + p.proofs, 0) ?? 0, [data])
   const thisWeekTop = useMemo(() => data ? getThisWeekTop(data.players) : null, [data])
@@ -266,10 +276,35 @@ export default function LeaderboardPage() {
                         : 'No completed games yet. Rankings will appear once rooms finish.'}
                     </div>
                   )}
-                  {sorted.map((player, i) => (
-                    <PlayerRow key={player.address} player={player} rank={i + 1} />
+                  {pageSlice.map((player, i) => (
+                    <PlayerRow key={player.address} player={player} rank={pageOffset + i + 1} />
                   ))}
                 </div>
+
+                {/* Pagination */}
+                {!loading && !error && totalPages > 1 && (
+                  <div className="mt-5 flex items-center justify-between border-t pt-4" style={{ borderColor: 'rgba(57,255,20,0.12)' }}>
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      className="rounded-lg border px-4 py-2 font-mono text-xs uppercase tracking-wider transition-all disabled:opacity-30"
+                      style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14', backgroundColor: 'transparent' }}
+                    >
+                      ← Prev
+                    </button>
+                    <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+                      Page {page} / {totalPages} &nbsp;·&nbsp; {sorted.length} operatives
+                    </span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      className="rounded-lg border px-4 py-2 font-mono text-xs uppercase tracking-wider transition-all disabled:opacity-30"
+                      style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14', backgroundColor: 'transparent' }}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
               </article>
 
               {/* Sidebar */}
