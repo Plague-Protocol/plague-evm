@@ -916,8 +916,9 @@ function GamePageInner() { // NOSONAR
                 </span>
               )}
             </div>
-            <p className="font-mono text-xs font-medium tracking-wide" style={{ color: '#8fa882' }}>
-              Tap ↺ Sync periodically to get the latest game state.
+            <p className="font-mono text-xs font-bold tracking-wide" style={{ color: '#f59e0b' }}>
+              <span className="inline-block animate-pulse">↺</span>
+              {' Sync periodically to get the latest game state.'}
             </p>
           </div>
         </div>
