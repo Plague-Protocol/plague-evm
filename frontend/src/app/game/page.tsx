@@ -885,12 +885,12 @@ function GamePageInner() { // NOSONAR
           )}
 
           {/* Connection status + player identity */}
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className={`inline-block h-2 w-2 rounded-full ${socketOn ? 'bg-green-400' : 'bg-yellow-400'}`} />
-            <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
-              {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
-            </span>
-            <div className="flex flex-col gap-1">
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`inline-block h-2 w-2 rounded-full ${socketOn ? 'bg-green-400' : 'bg-yellow-400'}`} />
+              <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+                {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
+              </span>
               <button
                 onClick={() => refresh()}
                 disabled={isLoading}
@@ -900,25 +900,25 @@ function GamePageInner() { // NOSONAR
               >
                 {isLoading ? '…' : '↺ Sync'}
               </button>
-              <span className="font-mono text-xs font-semibold" style={{ color: '#39ff14' }}>
-                Sync periodically for latest state.
-              </span>
+              {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
+              {/* Prominent player identity badge */}
+              {localPlayer && (
+                <span
+                  className="ml-auto rounded-lg border px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-[0.18em]"
+                  style={{
+                    borderColor: 'rgba(57,255,20,0.6)',
+                    backgroundColor: 'rgba(57,255,20,0.12)',
+                    color: '#39ff14',
+                    boxShadow: '0 0 10px rgba(57,255,20,0.2)',
+                  }}
+                >
+                  You: <span style={{ color: '#d4c9b2' }}>{localPlayer.displayName}</span>
+                </span>
+              )}
             </div>
-            {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
-            {/* Prominent player identity badge */}
-            {localPlayer && (
-              <span
-                className="ml-auto rounded-lg border px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-[0.18em]"
-                style={{
-                  borderColor: 'rgba(57,255,20,0.6)',
-                  backgroundColor: 'rgba(57,255,20,0.12)',
-                  color: '#39ff14',
-                  boxShadow: '0 0 10px rgba(57,255,20,0.2)',
-                }}
-              >
-                You: <span style={{ color: '#d4c9b2' }}>{localPlayer.displayName}</span>
-              </span>
-            )}
+            <p className="font-mono text-xs font-medium tracking-wide" style={{ color: '#8fa882' }}>
+              Tap ↺ Sync periodically to get the latest game state.
+            </p>
           </div>
         </div>
       </header>

@@ -10,6 +10,7 @@ build/
 contracts/out/
 cache/
 contracts/cache/
+contracts/deployment.log
 # contracts/lib/ is tracked — forge-std is a git submodule
 contracts/lib/*/target/
 

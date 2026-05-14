@@ -768,7 +768,7 @@ export function setupSocketHandlers(io: Server) {
           // RoomStatus.Active = 2 → let processActiveRoom decide (handles early
           // voting resolve when every alive player has voted; otherwise no-op).
           if (rawRoom.status === 2) {
-            await processActiveRoom(id, rawRoom, Date.now())
+            await processActiveRoom(io, id, rawRoom, Date.now())
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
@@ -1265,7 +1265,7 @@ function isExpectedPhaseRevert(message: string): boolean {
   )
 }
 
-async function handleInfectionPhase(id: bigint, rawRoom: RawRoom): Promise<void> {
+async function handleInfectionPhase(io: Server, id: bigint, rawRoom: RawRoom): Promise<void> {
   if (roomPhaseInProgress.has(id)) return
   roomPhaseInProgress.add(id)
   try {
@@ -1286,6 +1286,9 @@ async function handleInfectionPhase(id: bigint, rawRoom: RawRoom): Promise<void>
     const target = cleanAlive[Number(h % BigInt(cleanAlive.length))]
     await chainAdapter.assignInfection(id, target)
     logger.info(`[phase-advance-monitor] assignInfection succeeded for room ${id} round ${round} patientZero=${patientZeroSeed} target ${target}`)
+    // Push snapshot immediately — don't wait for the chain watcher's poll cycle
+    // (http transport polls every ~4s, which adds visible lag on the Infection→Discussion transition).
+    queueRoomSnapshot(io, id.toString())
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message) && !message.includes('InvalidInfectionTarget')) {
@@ -1363,15 +1366,15 @@ async function handleEliminationPhase(id: bigint, rawRoom: RawRoom, now: number)
   }
 }
 
-async function processActiveRoom(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
+async function processActiveRoom(io: Server, id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phase = Number(rawRoom.currentPhase)
-  if (phase === 0) await handleInfectionPhase(id, rawRoom)
+  if (phase === 0) await handleInfectionPhase(io, id, rawRoom)
   else if (phase === 1) await handleDiscussionPhase(id, rawRoom, now)
   else if (phase === 2) await handleVotingPhase(id, rawRoom, now)
   else if (phase === 3) await handleEliminationPhase(id, rawRoom, now)
 }
 
-export function startPhaseAdvanceMonitor(_io: Server, intervalMs = Number(process.env.PHASE_ADVANCE_INTERVAL_MS ?? 2_000)): NodeJS.Timeout {
+export function startPhaseAdvanceMonitor(io: Server, intervalMs = Number(process.env.PHASE_ADVANCE_INTERVAL_MS ?? 2_000)): NodeJS.Timeout {
   return setInterval(async () => {
     if (phaseAdvanceTickInProgress) return
     phaseAdvanceTickInProgress = true
@@ -1382,7 +1385,7 @@ export function startPhaseAdvanceMonitor(_io: Server, intervalMs = Number(proces
         const rawRoom = await chainAdapter.getRoom(id)
         // RoomStatus.Active = 2
         if (rawRoom.status !== 2) continue
-        await processActiveRoom(id, rawRoom, now)
+        await processActiveRoom(io, id, rawRoom, now)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
