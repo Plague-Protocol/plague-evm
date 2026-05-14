@@ -188,6 +188,8 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
       }).catch(() => null)
       if (nameRes?.status === 409) {
         toast.error(`"${trimmedName}" is already taken by an active room. Your room was created as Room #${newId.toString()}.`)
+      } else if (!nameRes?.ok) {
+        toast.error(`Room created (#${newId.toString()}) but the name "${trimmedName}" could not be saved. You can set it from the game page.`)
       }
     }
     await loadRooms()

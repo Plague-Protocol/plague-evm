@@ -58,7 +58,7 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
   11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD)
   42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
 }
-const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_ROLE_COMMIT_TIMEOUT_MS ?? 120_000)
+const ROLE_COMMIT_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_ROLE_COMMIT_TIMEOUT_MS ?? 180_000)
 
 function getHeaderTitle(isLoading: boolean, round: number, roomStatus?: string): string {
   if (isLoading) return 'LOADING…'
@@ -196,6 +196,10 @@ function GamePageInner() { // NOSONAR
   const [starting, setStarting]         = useState(false)
   const [startError, setStartError]     = useState<string | null>(null)
 
+  // ── Room name editor (host only, when name is null) ─────────────────────
+  const [roomNameEditing, setRoomNameEditing] = useState(false)
+  const [pendingRoomName, setPendingRoomName] = useState('')
+
   // ── Chat state ───────────────────────────────────────────────────────────
   type ChatMsg = { sender: string; displayName: string; message: string; timestamp: number }
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
@@ -310,14 +314,6 @@ function GamePageInner() { // NOSONAR
                 cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
               }}
             >
-              {isMe && (
-                <span
-                  className="absolute -top-1.5 -right-1.5 rounded-full px-1.5 py-0.5 font-mono text-[8px] uppercase leading-none tracking-wider"
-                  style={{ backgroundColor: '#39ff14', color: '#060b06', fontWeight: 800 }}
-                >
-                  YOU
-                </span>
-              )}
               {p.displayName}
             </button>
           )
@@ -355,6 +351,28 @@ function GamePageInner() { // NOSONAR
     if (room?.status === 'ended' && !result) refresh()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room?.status])
+
+  // While the timer has elapsed but the next phase hasn't landed yet, poll the
+  // chain every 4s so a slow tx / RPC lag eventually unsticks the UI without
+  // requiring the user to refresh manually.
+  const [syncWaitMs, setSyncWaitMs] = useState(0)
+  useEffect(() => {
+    if (!isPhaseSyncing) {
+      setSyncWaitMs(0)
+      return
+    }
+    const start = Date.now()
+    setSyncWaitMs(0)
+    const tick = () => {
+      setSyncWaitMs(Date.now() - start)
+      refresh()
+      socket?.emit('request_room_refresh', { roomId })
+    }
+    tick()
+    const id = setInterval(tick, 4_000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPhaseSyncing, roomId])
 
   // Play game-over sting once when result arrives
   useEffect(() => {
@@ -695,14 +713,82 @@ function GamePageInner() { // NOSONAR
             {/* Room name — prominent display */}
             <div className="flex flex-col gap-1">
               <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Room</p>
-              <span
-                className="font-display text-lg sm:text-2xl leading-none"
-                style={{ color: '#e63329', textShadow: '0 0 12px rgba(230,51,41,0.4)' }}
-              >
-                {room?.name ?? `Room #${roomId}`}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className="font-display text-lg sm:text-2xl leading-none"
+                  style={{ color: '#e63329', textShadow: '0 0 12px rgba(230,51,41,0.4)' }}
+                >
+                  {room?.name ? room.name : `Room #${roomId}`}
+                </span>
+                {isHost && !room?.name && room?.status !== 'ended' && (
+                  <button
+                    onClick={() => setRoomNameEditing(true)}
+                    className="rounded border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
+                    style={{ borderColor: 'rgba(57,255,20,0.5)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.08)' }}
+                  >
+                    + Set name
+                  </button>
+                )}
+              </div>
               {room?.name && (
                 <span className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>#{roomId}</span>
+              )}
+              {roomNameEditing && (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    const trimmed = pendingRoomName.trim()
+                    if (!trimmed) { setRoomNameEditing(false); return }
+                    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+                    try {
+                      const res = await fetch(`${backendUrl}/api/rooms/${roomId}/name`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: trimmed }),
+                      })
+                      if (res.status === 409) {
+                        toast.error(`"${trimmed}" is already taken by another active room.`)
+                        return
+                      }
+                      if (!res.ok) {
+                        toast.error(`Could not save room name. (${res.status})`)
+                        return
+                      }
+                      setRoomNameEditing(false)
+                      setPendingRoomName('')
+                      refresh()
+                    } catch (err) {
+                      toast.error(`Failed to save name: ${err instanceof Error ? err.message : String(err)}`)
+                    }
+                  }}
+                  className="mt-1 flex items-center gap-2"
+                >
+                  <input
+                    autoFocus
+                    type="text"
+                    maxLength={40}
+                    placeholder="Room name"
+                    value={pendingRoomName}
+                    onChange={(e) => setPendingRoomName(e.target.value)}
+                    className="rounded-lg border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
+                    style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                  />
+                  <button
+                    type="submit"
+                    className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
+                    style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.12)' }}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setRoomNameEditing(false); setPendingRoomName('') }}
+                    className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
+                    style={{ borderColor: '#4a5e44', color: '#4a5e44' }}
+                  >
+                    Cancel
+                  </button>
+                </form>
               )}
             </div>
             <span
@@ -732,10 +818,19 @@ function GamePageInner() { // NOSONAR
 
           {isPhaseSyncing && (
             <div
-              className="mt-4 inline-flex items-center rounded border px-3 py-2 font-mono text-xs uppercase tracking-[0.16em]"
+              className="mt-4 inline-flex flex-wrap items-center gap-3 rounded border px-3 py-2 font-mono text-xs uppercase tracking-[0.16em]"
               style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)', color: '#f5c518' }}
             >
-              Syncing next phase on-chain...
+              <span>Syncing next phase on-chain{'.'.repeat(1 + Math.floor((syncWaitMs / 500) % 3))}</span>
+              {syncWaitMs >= 12_000 && (
+                <button
+                  onClick={() => refresh()}
+                  className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
+                  style={{ borderColor: '#f5c518', color: '#f5c518', backgroundColor: 'rgba(245,197,24,0.14)' }}
+                >
+                  ↺ Retry
+                </button>
+              )}
             </div>
           )}
 
@@ -1181,6 +1276,27 @@ function GamePageInner() { // NOSONAR
         </div>
       </div>
       </div>
+
+      {/* Mobile floating countdown chip — visible across all tabs */}
+      {isMobile && headerCountdownMs > 0 && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs font-bold tabular-nums shadow-lg"
+          style={{
+            bottom: 'calc(60px + env(safe-area-inset-bottom, 0px) + 8px)',
+            borderColor: 'rgba(57,255,20,0.55)',
+            backgroundColor: 'rgba(6,11,6,0.92)',
+            color: '#39ff14',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            textShadow: '0 0 8px rgba(57,255,20,0.5)',
+          }}
+        >
+          <span className="text-[9px] font-normal uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+            {PHASE_LABEL[phase]}
+          </span>
+          <span>{formatCountdown(headerCountdownMs)}</span>
+        </div>
+      )}
 
       {/* Mobile Tab Bar */}
       {isMobile && (

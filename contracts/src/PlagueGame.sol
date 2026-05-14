@@ -1198,6 +1198,21 @@ contract PlagueGame {
     }
 
     /**
+     * @dev Accumulate `amount` as a platform fee taken from a room's pot.
+     *      When a PotEscrow is configured the tokens live there, not in this
+     *      contract — pull them out first so _accumulateFee can forward them
+     *      to the FeeManager via transferFrom.
+     */
+    function _accumulateFeeFromPot(uint256 roomId, uint256 amount) internal {
+        if (amount == 0) return;
+        IPotEscrow pe = potEscrow;
+        if (address(pe) != address(0)) {
+            pe.release(roomId, address(this), amount);
+        }
+        _accumulateFee(amount);
+    }
+
+    /**
      * @dev Distribute pot to alive players of the winning faction.
      *      Called automatically by resolveRound — never called externally.
      */
@@ -1227,7 +1242,7 @@ contract PlagueGame {
         if (winnerCount == 0) {
             // Safety valve: if no winners can be resolved, route all escrow to fees
             // instead of leaving untracked funds in contract balance.
-            _accumulateFee(potBeforeFee);
+            _accumulateFeeFromPot(roomId, potBeforeFee);
             r.pot = 0;
             return;
         }
@@ -1237,7 +1252,7 @@ contract PlagueGame {
         uint256 dust = potAfterFee - distributed;
 
         // Account for exact value conservation: platform fee + payout remainder dust.
-        _accumulateFee(platformFee + dust);
+        _accumulateFeeFromPot(roomId, platformFee + dust);
         r.pot = 0;
 
         for (uint256 i = 0; i < winnerCount; i++) {

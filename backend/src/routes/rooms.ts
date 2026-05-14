@@ -134,9 +134,21 @@ roomRouter.put('/:id/name', async (req, res) => {
       return res.json({ name: room.name })
     }
 
-    // Room was created directly on-chain — fetch its data and upsert
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const onChain = await chainAdapter.getRoom(BigInt(roomId)) as any
+    // Room was created directly on-chain — fetch its data and upsert.
+    // RPC propagation can lag a fresh createRoom tx, so retry briefly before
+    // failing. Without this the lobby PUT silently 404s and the name is lost.
+    let onChain: any = null  // eslint-disable-line @typescript-eslint/no-explicit-any
+    let lastErr: unknown = null
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        onChain = await chainAdapter.getRoom(BigInt(roomId))
+        break
+      } catch (err) {
+        lastErr = err
+        await new Promise(r => setTimeout(r, 750))
+      }
+    }
+    if (!onChain) throw lastErr ?? new Error(`Room ${roomId} not found on chain`)
     const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 44787
     const contractAddress = process.env.CONTRACT_ADDRESS ?? ''
     const room = await prisma.room.upsert({
