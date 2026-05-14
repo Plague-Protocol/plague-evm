@@ -1192,7 +1192,7 @@ function GamePageInner() { // NOSONAR
                       <p className="font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
                       {myVotedTarget && (
                         <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
-                          You voted for{' '}
+                          You voted against{' '}
                           <span style={{ color: '#f5c518' }}>
                             {room?.players?.find(p => p.walletAddress.toLowerCase() === myVotedTarget.toLowerCase())?.displayName ?? `${myVotedTarget.slice(0, 6)}…`}
                           </span>

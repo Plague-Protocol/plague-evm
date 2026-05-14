@@ -64,7 +64,7 @@ function clearEarlyResolveRetry(roomId: string): void {
   earlyResolveRetryAttempts.delete(roomId)
 }
 
-function scheduleEarlyResolveRetry(roomId: string): void {
+function scheduleEarlyResolveRetry(io: Server, roomId: string): void {
   if (earlyResolveRetryTimers.has(roomId)) return
   const attempts = earlyResolveRetryAttempts.get(roomId) ?? 0
   if (attempts >= EARLY_RESOLVE_MAX_RETRIES) {
@@ -75,13 +75,13 @@ function scheduleEarlyResolveRetry(roomId: string): void {
   const timer = setTimeout(() => {
     earlyResolveRetryTimers.delete(roomId)
     earlyResolveRetryAttempts.set(roomId, attempts + 1)
-    void tryEarlyResolveAfterAllVotes(roomId)
+    void tryEarlyResolveAfterAllVotes(io, roomId)
   }, EARLY_RESOLVE_RETRY_DELAY_MS)
 
   earlyResolveRetryTimers.set(roomId, timer)
 }
 
-async function tryEarlyResolveAfterAllVotes(roomId: string): Promise<void> {
+async function tryEarlyResolveAfterAllVotes(io: Server, roomId: string): Promise<void> {
   try {
     const id = BigInt(roomId)
     const rawRoom = await chainAdapter.getRoom(id)
@@ -102,13 +102,13 @@ async function tryEarlyResolveAfterAllVotes(roomId: string): Promise<void> {
     if (aliveNotVoted.length > 0) {
       // Keep a short retry loop to absorb RPC/event propagation lag between
       // the last VoteCast event and read visibility of hasVotedThisRound.
-      scheduleEarlyResolveRetry(roomId)
+      scheduleEarlyResolveRetry(io, roomId)
       return
     }
 
     // All alive players have voted — trigger immediate resolve.
     if (roomPhaseInProgress.has(id)) {
-      scheduleEarlyResolveRetry(roomId)
+      scheduleEarlyResolveRetry(io, roomId)
       return
     }
 
@@ -118,13 +118,17 @@ async function tryEarlyResolveAfterAllVotes(roomId: string): Promise<void> {
       await chainAdapter.resolveRound(id)
       resolveSucceeded = true
       logger.info(`[vote-early-resolve] resolveRound for room ${id} (all players voted early)`)
+      // Push snapshot immediately — don't wait for the chain watcher's poll
+      // cycle (~4s on HTTP) so the Voting→Reveal transition is visible to all
+      // clients right away.
+      queueRoomSnapshot(io, roomId)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (!isExpectedPhaseRevert(message)) {
         logger.warn(`[vote-early-resolve] resolveRound failed for room ${id}: ${message}`)
       }
       // Retry a few times to absorb lock/race conditions and short RPC/event lag.
-      scheduleEarlyResolveRetry(roomId)
+      scheduleEarlyResolveRetry(io, roomId)
     } finally {
       roomPhaseInProgress.delete(id)
       if (resolveSucceeded) clearEarlyResolveRetry(roomId)
@@ -132,7 +136,7 @@ async function tryEarlyResolveAfterAllVotes(roomId: string): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     logger.warn(`[vote-early-resolve] check failed for room ${roomId}: ${message}`)
-    scheduleEarlyResolveRetry(roomId)
+    scheduleEarlyResolveRetry(io, roomId)
   }
 }
 
@@ -600,7 +604,7 @@ export function setupSocketHandlers(io: Server) {
     // Early voting resolution: if every alive player has voted before the timer
     // expires, resolve the round immediately instead of waiting for the clock.
     if (eventName === 'VoteCast') {
-      void tryEarlyResolveAfterAllVotes(roomId)
+      void tryEarlyResolveAfterAllVotes(io, roomId)
     }
   })
 
@@ -715,6 +719,7 @@ export function setupSocketHandlers(io: Server) {
           roomPhaseInProgress.add(id)
           try {
             await chainAdapter.openVoting(id)
+            queueRoomSnapshot(io, roomId)
           } finally {
             roomPhaseInProgress.delete(id)
           }
@@ -728,6 +733,7 @@ export function setupSocketHandlers(io: Server) {
           roomPhaseInProgress.add(id)
           try {
             await chainAdapter.resolveRound(id)
+            queueRoomSnapshot(io, roomId)
           } finally {
             roomPhaseInProgress.delete(id)
           }
@@ -817,6 +823,7 @@ export function setupSocketHandlers(io: Server) {
         const target = cleanAlive[idx]
 
         await chainAdapter.assignInfection(BigInt(roomId), target)
+        queueRoomSnapshot(io, roomId)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         logger.warn(`[socket] assign_infection failed for ${roomId}: ${message}`)
@@ -911,6 +918,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on('resolve_round', async ({ roomId }: { roomId: string }) => {
       try {
         await chainAdapter.resolveRound(BigInt(roomId))
+        queueRoomSnapshot(io, roomId)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         logger.warn(`[socket] resolve_round failed for ${roomId}: ${message}`)
@@ -1299,7 +1307,7 @@ async function handleInfectionPhase(io: Server, id: bigint, rawRoom: RawRoom): P
   }
 }
 
-async function handleDiscussionPhase(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
+async function handleDiscussionPhase(io: Server, id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   const durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
   if (now < phaseStartedAt + durationMs) return
@@ -1308,6 +1316,9 @@ async function handleDiscussionPhase(id: bigint, rawRoom: RawRoom, now: number):
   try {
     await chainAdapter.openVoting(id)
     logger.info(`[phase-advance-monitor] openVoting succeeded for room ${id}`)
+    // Push snapshot immediately so all clients see Discussion→Voting without
+    // waiting for the chain watcher's HTTP poll (~4s).
+    queueRoomSnapshot(io, id.toString())
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message)) {
@@ -1318,7 +1329,7 @@ async function handleDiscussionPhase(id: bigint, rawRoom: RawRoom, now: number):
   }
 }
 
-async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
+async function handleVotingPhase(io: Server, id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   const durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
 
@@ -1338,6 +1349,9 @@ async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Pro
       `[phase-advance-monitor] resolveRound succeeded for room ${id}` +
       (allAliveVoted ? ' (all alive players voted early)' : '')
     )
+    // Push snapshot immediately so Voting→Reveal is visible to all clients
+    // without waiting for chain watcher polling.
+    queueRoomSnapshot(io, id.toString())
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message)) {
@@ -1348,7 +1362,7 @@ async function handleVotingPhase(id: bigint, rawRoom: RawRoom, now: number): Pro
   }
 }
 
-async function handleEliminationPhase(id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
+async function handleEliminationPhase(io: Server, id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   if (now < phaseStartedAt + ELIMINATION_PHASE_DURATION_MS) return
   if (roomPhaseInProgress.has(id)) return
@@ -1356,6 +1370,9 @@ async function handleEliminationPhase(id: bigint, rawRoom: RawRoom, now: number)
   try {
     await chainAdapter.finalizeElimination(id)
     logger.info(`[phase-advance-monitor] finalizeElimination succeeded for room ${id}`)
+    // Push snapshot immediately so the next-round Infection phase (or game end)
+    // surfaces without waiting for the chain watcher.
+    queueRoomSnapshot(io, id.toString())
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!isExpectedPhaseRevert(message)) {
@@ -1369,9 +1386,9 @@ async function handleEliminationPhase(id: bigint, rawRoom: RawRoom, now: number)
 async function processActiveRoom(io: Server, id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phase = Number(rawRoom.currentPhase)
   if (phase === 0) await handleInfectionPhase(io, id, rawRoom)
-  else if (phase === 1) await handleDiscussionPhase(id, rawRoom, now)
-  else if (phase === 2) await handleVotingPhase(id, rawRoom, now)
-  else if (phase === 3) await handleEliminationPhase(id, rawRoom, now)
+  else if (phase === 1) await handleDiscussionPhase(io, id, rawRoom, now)
+  else if (phase === 2) await handleVotingPhase(io, id, rawRoom, now)
+  else if (phase === 3) await handleEliminationPhase(io, id, rawRoom, now)
 }
 
 export function startPhaseAdvanceMonitor(io: Server, intervalMs = Number(process.env.PHASE_ADVANCE_INTERVAL_MS ?? 2_000)): NodeJS.Timeout {
