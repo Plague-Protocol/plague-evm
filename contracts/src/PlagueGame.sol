@@ -124,6 +124,12 @@ contract PlagueGame {
     /// @dev Nullifier registry — scoped per room so a nullifier used in room A
     ///      cannot be replayed in room B even with the same round number.
     mapping(uint256 => mapping(bytes32 => bool))           public usedNullifiers;
+    /// @dev Role-commitment registry — scoped per room. Prevents two players in
+    ///      the same room committing the same hash (which would otherwise cause
+    ///      a nullifier collision at Shield activation, letting only one of them
+    ///      submit). Across rooms the same passphrase is fine since both the
+    ///      commitment mapping and the nullifier already incorporate roomId.
+    mapping(uint256 => mapping(bytes32 => bool))           public usedRoleCommitments;
 
     uint256 public roomCount;
     /// @dev Number of rooms currently in Waiting, Starting, or Active status.
@@ -199,6 +205,7 @@ contract PlagueGame {
     error Reentrancy();
     error RoleCommitmentPending();
     error StartThresholdMet();
+    error DuplicateRoleCommitment();
 
     // ─── Modifiers ────────────────────────────────────────────────────────────────
 
@@ -418,11 +425,13 @@ contract PlagueGame {
         if (r.status != RoomStatus.Starting)  revert WrongPhase();
         if (p.addr == address(0))             revert NotParticipant();
         if (p.roleCommitted)                  revert AlreadyCommitted();
+        if (usedRoleCommitments[roomId][commitment]) revert DuplicateRoleCommitment();
 
         if (address(zkVerifier) != address(0)) {
             if (!zkVerifier.verifyRoleCommitment(commitment, zkProof)) revert InvalidProof();
         }
 
+        usedRoleCommitments[roomId][commitment] = true;
         p.roleCommitment = commitment;
         p.roleCommitted  = true;
     }
