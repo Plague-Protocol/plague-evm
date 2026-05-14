@@ -49,7 +49,7 @@ Required variables:
 # Foundry deploy
 PRIVATE_KEY=<deployer hex private key, no 0x prefix>
 BACKEND_SIGNER=<backend signer address>
-PLATFORM_RECEIVER=<address that receives proof fees + 0.3% pot>
+PLATFORM_RECEIVER=<address that receives proof fees + 1.5% pot>
 
 # Celo RPC
 CELO_TESTNET_RPC=https://forno.celo-sepolia.celo-testnet.org
@@ -220,5 +220,5 @@ Before deploying to mainnet:
 
 | Network | PlagueGame | ZKVerifier (adapter) | StubZKVerifier (dev-only) | Block |
 |---------|-----------|-----------------------|----------------------------|-------|
-| Celo Sepolia | `0x6713E78D11450cE258968D11eF4458A94ffCed13` | `0x456D0e619728461043523fC5E8bFf8E34FF5A46B` | n/a | `24992708–24992709` |
+| Celo Sepolia | `0x63c020880f2dd7E357F4c2aB70d03fb67E12BF3d` | `0x456D0e619728461043523fC5E8bFf8E34FF5A46B` | n/a | 2026-05-14 |
 | Celo Mainnet | — | — | n/a | — |

@@ -890,18 +890,20 @@ function GamePageInner() { // NOSONAR
             <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
               {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
             </span>
-            <button
-              onClick={() => refresh()}
-              disabled={isLoading}
-              title="Fetch latest state from chain"
-              className="ml-1 rounded border px-3 py-1 font-mono text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-40 hover:brightness-125 active:scale-95"
-              style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.08)', boxShadow: '0 0 6px rgba(57,255,20,0.35)' }}
-            >
-              {isLoading ? '…' : '↺ Sync'}
-            </button>
-            <span className="font-mono text-[10px] italic" style={{ color: '#8fa882' }}>
-              State looks stuck? Tap ↺ Sync to refresh.
-            </span>
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => refresh()}
+                disabled={isLoading}
+                title="Fetch latest state from chain"
+                className="ml-1 rounded border px-3 py-1 font-mono text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-40 hover:brightness-125 active:scale-95"
+                style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.08)', boxShadow: '0 0 6px rgba(57,255,20,0.35)' }}
+              >
+                {isLoading ? '…' : '↺ Sync'}
+              </button>
+              <span className="font-mono text-xs font-semibold" style={{ color: '#39ff14' }}>
+                Sync periodically for latest state.
+              </span>
+            </div>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
             {/* Prominent player identity badge */}
             {localPlayer && (

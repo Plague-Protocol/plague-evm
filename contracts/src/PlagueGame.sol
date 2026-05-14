@@ -14,7 +14,7 @@ import {IPotEscrow}   from "./interfaces/IPotEscrow.sol";
  *
  *         Platform fees:
  *           - Proof fees (first free, then charged per-proof) → platform wallet
- *           - 0.3% of pot at end of game → platform wallet
+ *           - 1.5% of pot at end of game → platform wallet
  *
  * ── Room Lifecycle ─────────────────────────────────────────────────────────────
  *  Waiting → Starting → Active → Ended
@@ -53,7 +53,7 @@ import {IPotEscrow}   from "./interfaces/IPotEscrow.sol";
  * ── Payout ─────────────────────────────────────────────────────────────────────
  *  pot = sum(stakes)
  *  Proof fees are collected separately and sent to platform (not included in pot).
- *  At game end: platform takes 0.3% of pot, remainder split among winners.
+ *  At game end: platform takes 1.5% of pot, remainder split among winners.
  */
 contract PlagueGame {
     uint64 public constant ROLE_COMMIT_TIMEOUT_SECS = 180;
@@ -257,7 +257,7 @@ contract PlagueGame {
      * @param _admin          Address that owns admin functions (setBackendSigner, setZkVerifier, setPlatformReceiver).
      * @param _backendSigner  Address authorised to drive phase transitions server-side.
      * @param _zkVerifier     Address of the IZKVerifier implementation (stub or Noir-generated).
-     * @param _platformReceiver Address to receive platform fees (proof fees + 0.3% of pot).
+     * @param _platformReceiver Address to receive platform fees (proof fees + 1.5% of pot).
      * @param _cUsdToken      cUSD ERC-20 token address for the target network.
      */
     function initialize(
@@ -941,7 +941,7 @@ contract PlagueGame {
     }
 
     /**
-     * @notice Withdraw accumulated platform fees (proof fees + 0.3% of pots).
+     * @notice Withdraw accumulated platform fees (proof fees + 1.5% of pots).
      *         Only callable by admin. Sent to platformReceiver.
      *         Only applies to fees accumulated before a FeeManager was configured;
      *         fees routed to FeeManager are withdrawn via FeeManager.withdrawAll().
@@ -1231,8 +1231,8 @@ contract PlagueGame {
         uint256 potBeforeFee    = r.pot;
         if (potBeforeFee == 0) return;
 
-        // Deduct 0.3% platform fee.
-        uint256 platformFee = (potBeforeFee * 3) / 1000;  // 0.3%
+        // Deduct 1.5% platform fee.
+        uint256 platformFee = (potBeforeFee * 15) / 1000;  // 1.5%
         uint256 potAfterFee = potBeforeFee - platformFee;
 
         address[] memory winners = new address[](all.length);

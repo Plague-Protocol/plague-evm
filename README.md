@@ -14,7 +14,7 @@ PlagueProtocol is a fully decentralised, zero-knowledge social deduction game bu
 |---|---|
 | **Provably fair roles** | Backend-signed role assignment — verifiable on-chain commitment, not even the server can forge it |
 | **ZK hidden roles** | Players commit to their role using a Poseidon hash. ZK circuits (Noir) prove claims without revealing the role |
-| **Real stakes** | Players stake cUSD. Proof fees go to platform. Platform takes 0.3% of pot. Winners auto-paid. |
+| **Real stakes** | Players stake cUSD. Proof fees go to platform. Platform takes 1.5% of pot. Winners auto-paid. |
 | **No middleman** | Solidity smart contracts on Celo handle all escrow, voting, and payouts |
 | **Neobrutalist UI** | Built with Next.js 14, Tailwind, Framer Motion |
 

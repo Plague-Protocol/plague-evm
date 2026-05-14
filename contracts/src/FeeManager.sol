@@ -15,7 +15,7 @@ import {IFeeManager} from "./interfaces/IFeeManager.sol";
  *
  *         Fee sources:
  *           - Proof fees (per-activation beyond the free one) forwarded by PlagueGame.
- *           - 0.3% of each game pot forwarded by PlagueGame at game end.
+ *           - 1.5% of each game pot forwarded by PlagueGame at game end.
  *
  * ── Access control ────────────────────────────────────────────────────────────────
  *   admin          : can withdraw fees, update settings, transfer ownership.

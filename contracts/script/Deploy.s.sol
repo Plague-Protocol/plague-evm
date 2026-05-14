@@ -16,7 +16,7 @@ import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
  * ── Required env vars ─────────────────────────────────────────────────────────
  *   PRIVATE_KEY        Deployer private key (hex, with 0x prefix)
  *   BACKEND_SIGNER     Address of the off-chain game server wallet
- *   PLATFORM_RECEIVER  Address to receive proof fees + 0.3% pot fees
+ *   PLATFORM_RECEIVER  Address to receive proof fees + 1.5% pot fees
  *   CUSD_TOKEN         cUSD ERC-20 address for the target network
  *                       Celo Sepolia: 0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1
  *                       Mainnet     : 0x765DE816845861e75A25fCA122bb6022DB77Eaca
