@@ -745,11 +745,38 @@ export function setupSocketHandlers(io: Server) {
      * Manual refresh fan-out.
      * Clients call this after impactful successful actions (join, commit, vote)
      * to nudge all room subscribers to immediately re-read chain state.
+     *
+     * Also opportunistically attempts an early phase advance so that the next
+     * phase lands without waiting for the next monitor tick. The existing
+     * roomPhaseInProgress lock and the helpers' internal guards keep this safe
+     * if a monitor is already mid-flight.
      */
     socket.on('request_room_refresh', async ({ roomId }: { roomId: string }) => {
       io.to(roomId).emit('room_refresh_requested', { roomId, timestamp: Date.now() })
       queueRoomSnapshot(io, roomId)
       queueLobbyRefresh(io, roomId)
+
+      void (async () => {
+        try {
+          const id = BigInt(roomId)
+          const rawRoom = await chainAdapter.getRoom(id)
+          // RoomStatus.Starting = 1 → try beginActivePhase if all alive committed
+          if (rawRoom.status === 1) {
+            await processRoomForCommitment(id)
+            return
+          }
+          // RoomStatus.Active = 2 → let processActiveRoom decide (handles early
+          // voting resolve when every alive player has voted; otherwise no-op).
+          if (rawRoom.status === 2) {
+            await processActiveRoom(id, rawRoom, Date.now())
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          if (!isExpectedPhaseRevert(message) && !isExpectedCommitmentMonitorRevert(message)) {
+            logger.debug(`[socket] opportunistic advance for ${roomId} skipped: ${message}`)
+          }
+        }
+      })()
     })
 
     /**

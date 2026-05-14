@@ -174,6 +174,103 @@ roomRouter.put('/:id/name', async (req, res) => {
 })
 
 /**
+ * POST /api/rooms/:id/reserve-commitment
+ * Pre-flight uniqueness check for Shield Password commitments.
+ *
+ * Two players using the same passphrase produce the same Poseidon commitment,
+ * which then collides at Shield-activation time (the innocence-proof nullifier
+ * derives from the same secret). The smart contract enforces uniqueness too —
+ * this endpoint is the zero-gas friendly path so a colliding player never
+ * burns a revert. Single-process backend means the Map insert serialises and
+ * is race-safe. If the backend is unreachable the frontend falls back to a
+ * best-effort client-side warning; the contract is the final guard.
+ *
+ * Body: { commitment: 0x{64 hex}, address: 0x{40 hex} }
+ *   200 ok            → reserved (or refreshed for the same address)
+ *   409 taken_on_chain → another player has already committed this hash
+ *   409 taken_reserved → another player just reserved this hash (TTL)
+ *   400 / 500          → input or chain read error
+ */
+const ReserveCommitmentSchema = z.object({
+  commitment: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'commitment must be 32-byte hex'),
+  address:    EvmAddress,
+})
+
+const RESERVATION_TTL_MS = 60_000
+const commitmentReservations = new Map<string, Map<string, { address: string; expiresAt: number }>>()
+
+function getRoomReservations(roomId: string): Map<string, { address: string; expiresAt: number }> {
+  let m = commitmentReservations.get(roomId)
+  if (!m) {
+    m = new Map()
+    commitmentReservations.set(roomId, m)
+  }
+  return m
+}
+
+function purgeExpiredReservations(m: Map<string, { address: string; expiresAt: number }>, now: number): void {
+  for (const [k, v] of m) {
+    if (v.expiresAt <= now) m.delete(k)
+  }
+}
+
+roomRouter.post('/:id/reserve-commitment', async (req, res) => {
+  const parsed = ReserveCommitmentSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() })
+  }
+  const roomId = req.params.id
+  const { commitment, address } = parsed.data
+  const commitmentLower = commitment.toLowerCase()
+  const addressLower    = address.toLowerCase()
+
+  try {
+    // RoomStatus.Starting = 1 — only the starting phase has commitments.
+    const rawRoom = await chainAdapter.getRoom(BigInt(roomId))
+    if (Number(rawRoom.status) !== 1) {
+      return res.status(409).json({ error: 'wrong_phase', message: 'Room is not in commit phase.' })
+    }
+
+    // 1. Has anyone else in this room already committed this hash on-chain?
+    const players = await Promise.all(
+      rawRoom.players.map(p => chainAdapter.getPlayer(BigInt(roomId), p))
+    )
+    const onChainCollide = players.find(p =>
+      p.addr.toLowerCase() !== addressLower &&
+      typeof p.roleCommitment === 'string' &&
+      p.roleCommitment.toLowerCase() === commitmentLower &&
+      // ignore the zero-bytes32 default
+      p.roleCommitment !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+    )
+    if (onChainCollide) {
+      return res.status(409).json({
+        error:   'taken_on_chain',
+        message: 'That Shield Password is already committed by another player. Pick a different one.',
+      })
+    }
+
+    // 2. Has another address just reserved it in the last minute?
+    const now = Date.now()
+    const reservations = getRoomReservations(roomId)
+    purgeExpiredReservations(reservations, now)
+    const existing = reservations.get(commitmentLower)
+    if (existing && existing.address.toLowerCase() !== addressLower) {
+      return res.status(409).json({
+        error:   'taken_reserved',
+        message: 'Another player just claimed that Shield Password. Pick a different one.',
+      })
+    }
+
+    // 3. Reserve (idempotent for the same address — extends TTL).
+    reservations.set(commitmentLower, { address, expiresAt: now + RESERVATION_TTL_MS })
+    return res.json({ ok: true, expiresAt: now + RESERVATION_TTL_MS })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return res.status(500).json({ error: 'lookup_failed', message })
+  }
+})
+
+/**
  * GET /api/rooms/:id/name
  * Get the display name of a room.
  */
