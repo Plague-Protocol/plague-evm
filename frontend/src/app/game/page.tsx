@@ -135,6 +135,7 @@ const CONTRACT_ERROR_MAP: Record<string, string> = {
   InvalidProof:          'ZK proof verification failed. Check your secret phrase and try again.',
   NotParticipant:        'You are not a participant in this room.',
   AlreadyCommitted:      'You have already committed your role.',
+  DuplicateRoleCommitment:'That Shield Password is already taken in this room. Pick a different one.',
   NotActive:             'The game is not currently active.',
   NotEnoughPlayers:      'Not enough players to perform this action.',
   InvalidInfectionTarget:'Invalid infection target.',
@@ -546,8 +547,57 @@ function GamePageInner() { // NOSONAR
       const role = 'clean' as const // backend assigns infection via assignInfection
       const secretBigInt = await deriveSecret(secretPhrase)
       const { commitment } = await generateRoleCommitment(role, secretBigInt)
-      const proofResult = await proveRoleCommitment({ role, secret: secretBigInt, commitment })
       const commitmentHex = ensureHexPrefixed(commitment)
+
+      // Pre-submit duplicate guard. Two players using the same passphrase produce
+      // the same commitment (poseidon2(0, secret)) and would collide nullifiers
+      // at Shield activation, so only one of them could ever submit.
+      //
+      // Path 1 (preferred): backend reservation endpoint. Zero gas on reject.
+      // Path 2 (fallback):  client-side check + confirm, used when backend is
+      //                     unreachable. The contract still enforces uniqueness
+      //                     as the final guard if both layers miss.
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+      let reservedByBackend = false
+      try {
+        const reserveRes = await fetch(`${backendUrl}/api/rooms/${roomId}/reserve-commitment`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ commitment: commitmentHex, address }),
+        })
+        if (reserveRes.status === 409) {
+          const body = await reserveRes.json().catch(() => ({})) as { message?: string }
+          const msg = body.message ?? 'That Shield Password is already taken in this room. Pick a different one.'
+          setCommitError(msg)
+          setCommitting(false)
+          return
+        }
+        if (reserveRes.ok) reservedByBackend = true
+      } catch {
+        // backend unreachable — fall through to client-side fallback
+      }
+
+      if (!reservedByBackend) {
+        const myAddrLower = address.toLowerCase()
+        const collidesWith = room?.players?.find(p =>
+          p.walletAddress.toLowerCase() !== myAddrLower &&
+          p.roleCommitment &&
+          p.roleCommitment.toLowerCase() === commitmentHex.toLowerCase()
+        )
+        if (collidesWith) {
+          const proceed = window.confirm(
+            `Heads up: another player has already set the same Shield Password (${collidesWith.displayName}).\n\n` +
+            `The contract will reject your submission. Pick a different password — or press OK to try anyway (the tx will revert and you'll pay gas).`
+          )
+          if (!proceed) {
+            setCommitError('Choose a different Shield Password.')
+            setCommitting(false)
+            return
+          }
+        }
+      }
+
+      const proofResult = await proveRoleCommitment({ role, secret: secretBigInt, commitment })
       const proofBytes    = ('0x' + proofResult.proof.map((b: number) => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
       const client = getContractClient()!
       await client.submitRoleCommitment(address, BigInt(roomId), commitmentHex, proofBytes)
@@ -570,7 +620,7 @@ function GamePageInner() { // NOSONAR
     } finally {
       setCommitting(false)
     }
-  }, [address, roomId, secretPhrase, schedulePostTxRefresh, socket])
+  }, [address, roomId, secretPhrase, schedulePostTxRefresh, socket, room])
 
   const handleStartGame = useCallback(async () => {
     if (!address || !roomId) return
@@ -849,6 +899,9 @@ function GamePageInner() { // NOSONAR
             >
               {isLoading ? '…' : '↺ Sync'}
             </button>
+            <span className="font-mono text-[10px] italic" style={{ color: '#8fa882' }}>
+              State looks stuck? Tap ↺ Sync to refresh.
+            </span>
             {error && <span className="font-mono text-xs" style={{ color: '#e63329' }}>{error}</span>}
             {/* Prominent player identity badge */}
             {localPlayer && (
