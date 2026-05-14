@@ -499,7 +499,7 @@ export default function LobbyPage() {
 
   // ── Create room form state ─────────────────────────────────────────────────
   const [maxPlayers, setMaxPlayers]   = useState(6)
-  const [stakeInput, setStakeInput]   = useState('10')
+  const [stakeInput, setStakeInput]   = useState('')
   const [roomNameInput, setRoomNameInput] = useState('')
   const [creating, setCreating]       = useState(false)
 
@@ -926,7 +926,7 @@ export default function LobbyPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="maxPlayers" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Max Players
+                        Max Players <span style={{ color: '#2e4a2e' }}>(4 – 20)</span>
                       </label>
                       <input
                         id="maxPlayers"
@@ -941,16 +941,17 @@ export default function LobbyPage() {
                     </div>
                     <div>
                       <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Stake (cUSD)
+                        Stake (cUSD) <span style={{ color: '#2e4a2e' }}>(any amount &gt; 0)</span>
                       </label>
                       <input
                         id="stakeInput"
                         type="number"
                         min={0.000000000000000001}
                         step={0.1}
+                        placeholder="e.g. 0.5"
                         value={stakeInput}
                         onChange={e => setStakeInput(e.target.value)}
-                        className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
+                        className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none placeholder:opacity-40"
                         style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
                       />
                     </div>
