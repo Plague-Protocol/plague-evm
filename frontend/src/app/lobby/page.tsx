@@ -941,7 +941,7 @@ export default function LobbyPage() {
                     </div>
                     <div>
                       <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Stake (cUSD) <span style={{ color: '#2e4a2e' }}>(any amount &gt; 0)</span>
+                        Stake (cUSD) <span style={{ color: '#2e4a2e' }}>(amount &gt; 0)</span>
                       </label>
                       <input
                         id="stakeInput"
