@@ -102,7 +102,7 @@ export class PlagueContractClient {
   private get publicClient() {
     return createPublicClient({
       chain:     this.chain,
-      transport: this.rpcUrl ? http(this.rpcUrl) : http(),
+      transport: http(this.rpcUrl, { retryCount: 0 }),
     })
   }
 
@@ -460,7 +460,7 @@ export class FaucetClient {
   }
 
   private get publicClient() {
-    return createPublicClient({ chain: this.chain, transport: http() })
+    return createPublicClient({ chain: this.chain, transport: http(undefined, { retryCount: 0 }) })
   }
 
   private walletClient(account: `0x${string}`) {
@@ -539,7 +539,7 @@ export async function readCUSDBalance(
   network: 'testnet' | 'mainnet',
 ): Promise<bigint> {
   const chain = CHAINS[network]
-  const pc = createPublicClient({ chain, transport: http() })
+  const pc = createPublicClient({ chain, transport: http(undefined, { retryCount: 0 }) })
   return pc.readContract({
     address:      cUSDAddress,
     abi:          ERC20_BALANCE_ABI,

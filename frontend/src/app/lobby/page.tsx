@@ -818,7 +818,10 @@ export default function LobbyPage() {
 
   // ── Periodic room refresh (10 s) to catch state changes from other players ─
   useEffect(() => {
-    const id = setInterval(() => { loadRooms() }, 10_000)
+    const id = setInterval(() => {
+      if (!navigator.onLine) return
+      loadRooms()
+    }, 10_000)
     return () => clearInterval(id)
   }, [loadRooms])
 

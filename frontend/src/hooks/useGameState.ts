@@ -687,6 +687,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     if (!roomId) return
     const id = setInterval(() => {
       if (socketConnectedRef.current) return
+      if (!navigator.onLine) return
       loadRoomFromChain(roomId, playerAddress ?? undefined)
     }, 5_000)
     return () => clearInterval(id)
