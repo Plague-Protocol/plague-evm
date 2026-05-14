@@ -25,6 +25,10 @@ import {InnocenceProofVerifier} from "../src/InnocenceProofVerifier.sol";
  *   ZK_VERIFIER_ADDR              If set, uses this IZKVerifier address directly (skip all ZK deployment)
  *   ROLE_COMMITMENT_VERIFIER_ADDR Address of an already-deployed role_commitment Honk verifier
  *   INNOCENCE_PROOF_VERIFIER_ADDR Address of an already-deployed innocence_proof Honk verifier
+ *   FEE_MANAGER_ADDR              If set, reuses this FeeManager (must be admin-owned by deployer)
+ *                                 and calls setAuthorizedGame(newPlagueGame). Skips FeeManager deploy.
+ *   POT_ESCROW_ADDR               If set, reuses this PotEscrow (must be admin-owned by deployer)
+ *                                 and calls setAuthorizedGame(newPlagueGame). Skips PotEscrow deploy.
  *
  * ── ZK deployment priority ────────────────────────────────────────────────────
  *   1. ZK_VERIFIER_ADDR set               → use as-is
@@ -124,14 +128,32 @@ contract DeployScript is Script {
         console.log("PlagueGame deployed       :", address(game));
 
         // ── FeeManager ───────────────────────────────────────────────────────────
-        FeeManager feeManager = new FeeManager(deployer, address(game), cUsdToken);
-        game.setFeeManager(address(feeManager));
-        console.log("FeeManager deployed       :", address(feeManager));
+        address feeManagerAddr;
+        try vm.envAddress("FEE_MANAGER_ADDR") returns (address existingFeeManager) {
+            FeeManager(existingFeeManager).setAuthorizedGame(address(game));
+            feeManagerAddr = existingFeeManager;
+            console.log("FeeManager reused         :", feeManagerAddr);
+            console.log("  authorizedGame set to    :", address(game));
+        } catch {
+            FeeManager feeManager = new FeeManager(deployer, address(game), cUsdToken);
+            feeManagerAddr = address(feeManager);
+            console.log("FeeManager deployed       :", feeManagerAddr);
+        }
+        game.setFeeManager(feeManagerAddr);
 
         // ── PotEscrow ────────────────────────────────────────────────────────────
-        PotEscrow potEscrow = new PotEscrow(deployer, address(game), cUsdToken);
-        game.setPotEscrow(address(potEscrow));
-        console.log("PotEscrow deployed        :", address(potEscrow));
+        address potEscrowAddr;
+        try vm.envAddress("POT_ESCROW_ADDR") returns (address existingPotEscrow) {
+            PotEscrow(existingPotEscrow).setAuthorizedGame(address(game));
+            potEscrowAddr = existingPotEscrow;
+            console.log("PotEscrow reused          :", potEscrowAddr);
+            console.log("  authorizedGame set to    :", address(game));
+        } catch {
+            PotEscrow potEscrow = new PotEscrow(deployer, address(game), cUsdToken);
+            potEscrowAddr = address(potEscrow);
+            console.log("PotEscrow deployed        :", potEscrowAddr);
+        }
+        game.setPotEscrow(potEscrowAddr);
 
         vm.stopBroadcast();
     }
