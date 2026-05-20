@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --font-display: 'Creepster', cursive;
+  --font-display: 'Zombie Holocaust', 'Creepster', cursive;
   --font-body: 'Oswald', sans-serif;
   --font-mono: 'VT323', monospace;
 
@@ -17,13 +17,15 @@
   --text-secondary: #8fa882;
   --text-muted: #4a5e44;
 
-  --accent-bio: #39ff14;
+  --accent-bio: #6b8e23;
+  --accent-toxic: #39ff14;
   --accent-blood: #cc1414;
   --accent-bone: #c8b89a;
   --accent-rust: #c97a12;
   --accent-mold: #5a8a2a;
 
-  --glow-bio: 0 0 20px rgba(57, 255, 20, 0.5);
+  --glow-bio: 0 0 20px rgba(107, 142, 35, 0.5);
+  --glow-toxic: 0 0 20px rgba(57, 255, 20, 0.6);
   --glow-blood: 0 0 20px rgba(204, 20, 20, 0.5);
   --glow-bone: 0 0 12px rgba(200, 184, 154, 0.3);
   --glow-rust: 0 0 16px rgba(201, 122, 18, 0.4);
@@ -75,7 +77,7 @@
   /* Card */
   .card-brutal {
     @apply border rounded-lg;
-    border-color: rgba(57, 255, 20, 0.12);
+    border-color: rgba(107, 142, 35, 0.12);
     background-color: var(--bg-card);
   }
 
@@ -83,7 +85,7 @@
   .input-brutal {
     @apply rounded-lg border bg-transparent font-mono px-4 py-3
            focus:outline-none transition-all;
-    border-color: rgba(57, 255, 20, 0.3);
+    border-color: rgba(107, 142, 35, 0.3);
     color: var(--text-primary);
   }
 
@@ -104,8 +106,8 @@
   }
 
   .player-token.clean {
-    border-color: #39ff14;
-    background-color: rgba(57, 255, 20, 0.06);
+    border-color: #6b8e23;
+    background-color: rgba(107, 142, 35, 0.06);
   }
 
   .player-token.eliminated {
@@ -138,7 +140,7 @@
 
   .hud-panel {
     @apply relative overflow-hidden rounded-lg border;
-    border-color: rgba(57, 255, 20, 0.12);
+    border-color: rgba(107, 142, 35, 0.12);
     background-color: var(--bg-card);
   }
 
@@ -232,7 +234,7 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   background: rgba(6, 11, 6, 0.92);
-  border-top: 1px solid rgba(57, 255, 20, 0.2);
+  border-top: 1px solid rgba(107, 142, 35, 0.2);
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
@@ -366,13 +368,13 @@
 
 @keyframes toxic-pulse {
   0% {
-    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+    box-shadow: 0 0 8px rgba(107, 142, 35, 0.3);
   }
   50% {
-    box-shadow: 0 0 28px rgba(57, 255, 20, 0.7), 0 0 56px rgba(57, 255, 20, 0.2);
+    box-shadow: 0 0 28px rgba(107, 142, 35, 0.7), 0 0 56px rgba(107, 142, 35, 0.2);
   }
   100% {
-    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+    box-shadow: 0 0 8px rgba(107, 142, 35, 0.3);
   }
 }
 

@@ -30,7 +30,7 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
         toastOptions={{
           style: {
             background: '#0e180d',
-            border: '1px solid rgba(57,255,20,0.25)',
+            border: '1px solid rgba(107,142,35,0.25)',
             color: '#d4c9b2',
             fontFamily: 'monospace',
             fontSize: '0.8rem',

@@ -66,7 +66,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
       className="rise-in grid items-center gap-4 rounded-xl border px-5 py-4 transition-all duration-150 hover:scale-[1.005]"
       style={{
         gridTemplateColumns: ROW_GRID,
-        borderColor: isTop3 ? `${rankColor}44` : 'rgba(57,255,20,0.12)',
+        borderColor: isTop3 ? `${rankColor}44` : 'rgba(107,142,35,0.12)',
         backgroundColor: isTop3 ? `${rankColor}0a` : '#0e180d',
       }}
     >
@@ -109,7 +109,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
       {/* Wins */}
       <div className="text-center">
-        <p className="font-display text-2xl leading-none" style={{ color: '#39ff14' }}>{player.wins}</p>
+        <p className="font-display text-2xl leading-none" style={{ color: '#6b8e23' }}>{player.wins}</p>
       </div>
 
       {/* Proofs */}
@@ -191,13 +191,13 @@ export default function LeaderboardPage() {
         {/* Hero header */}
         <header className="px-6 py-14 text-center">
           <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-5">
-            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
+            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
               Season Zero
             </span>
             <h1
               className="font-display text-5xl font-black leading-none sm:text-7xl lg:text-8xl"
               style={{
-                background: 'linear-gradient(135deg, #cc1414 0%, #f5c518 50%, #39ff14 100%)',
+                background: 'linear-gradient(135deg, #cc1414 0%, #c97a12 50%, #6b8e23 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -219,9 +219,9 @@ export default function LeaderboardPage() {
                     onClick={() => setActiveTab(tab.id)}
                     className="rounded-full border-2 px-5 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150 hover:opacity-90"
                     style={{
-                      borderColor: isActive ? '#39ff14' : 'rgba(57,255,20,0.25)',
-                      backgroundColor: isActive ? 'rgba(57,255,20,0.15)' : 'transparent',
-                      color: isActive ? '#39ff14' : '#4a5e44',
+                      borderColor: isActive ? '#6b8e23' : 'rgba(107,142,35,0.25)',
+                      backgroundColor: isActive ? 'rgba(107,142,35,0.15)' : 'transparent',
+                      color: isActive ? '#6b8e23' : '#4a5e44',
                     }}
                   >
                     {tab.label}
@@ -240,27 +240,27 @@ export default function LeaderboardPage() {
               {/* Table */}
               <article
                 className="rise-in rounded-xl border p-5"
-                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.18)' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)' }}
               >
                 {/* Header row */}
                 <div
                   className="mb-3 grid items-center gap-4 rounded-lg border px-5 py-3"
                   style={{
                     gridTemplateColumns: ROW_GRID,
-                    borderColor: 'rgba(57,255,20,0.25)',
+                    borderColor: 'rgba(107,142,35,0.25)',
                     backgroundColor: '#0e180d',
                   }}
                 >
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>#</span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Operative</span>
-                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Wins</span>
+                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Wins</span>
                   <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>Proofs</span>
                 </div>
 
                 {/* Rows */}
                 <div className="space-y-2">
                   {loading && (
-                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(57,255,20,0.15)', color: '#4a5e44' }}>
+                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#4a5e44' }}>
                       Loading rankings…
                     </div>
                   )}
@@ -270,7 +270,7 @@ export default function LeaderboardPage() {
                     </div>
                   )}
                   {!loading && !error && sorted.length === 0 && (
-                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(57,255,20,0.15)', color: '#4a5e44' }}>
+                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#4a5e44' }}>
                       {activeTab === 'week'
                         ? 'No games played this week yet.'
                         : 'No completed games yet. Rankings will appear once rooms finish.'}
@@ -283,12 +283,12 @@ export default function LeaderboardPage() {
 
                 {/* Pagination */}
                 {!loading && !error && totalPages > 1 && (
-                  <div className="mt-5 flex items-center justify-between border-t pt-4" style={{ borderColor: 'rgba(57,255,20,0.12)' }}>
+                  <div className="mt-5 flex items-center justify-between border-t pt-4" style={{ borderColor: 'rgba(107,142,35,0.12)' }}>
                     <button
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page === 1}
                       className="rounded-lg border px-4 py-2 font-mono text-xs uppercase tracking-wider transition-all disabled:opacity-30"
-                      style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14', backgroundColor: 'transparent' }}
+                      style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23', backgroundColor: 'transparent' }}
                     >
                       ← Prev
                     </button>
@@ -299,7 +299,7 @@ export default function LeaderboardPage() {
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                       disabled={page === totalPages}
                       className="rounded-lg border px-4 py-2 font-mono text-xs uppercase tracking-wider transition-all disabled:opacity-30"
-                      style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14', backgroundColor: 'transparent' }}
+                      style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23', backgroundColor: 'transparent' }}
                     >
                       Next →
                     </button>
@@ -313,19 +313,19 @@ export default function LeaderboardPage() {
                 {/* Stats */}
                 <div
                   className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.18)', animationDelay: '80ms' }}
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)', animationDelay: '80ms' }}
                 >
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Season 0 Stats</p>
                   <div className="mt-4 space-y-2">
                     {[
-                      { label: 'Total games',    value: loading ? '…' : String(data?.totalGames ?? 0),       color: '#39ff14' },
+                      { label: 'Total games',    value: loading ? '…' : String(data?.totalGames ?? 0),       color: '#6b8e23' },
                       { label: 'Total proofs',   value: loading ? '…' : String(totalProofs),                  color: '#e63329' },
                       { label: 'Tracked players', value: loading ? '…' : String(data?.players.length ?? 0),  color: '#f5c518' },
                     ].map(s => (
                       <div
                         key={s.label}
                         className="flex items-center justify-between rounded-lg border px-4 py-3"
-                        style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: '#0e180d' }}
+                        style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}
                       >
                         <span className="font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</span>
                         <span className="font-display text-2xl leading-none" style={{ color: s.color }}>{s.value}</span>
@@ -346,7 +346,7 @@ export default function LeaderboardPage() {
                       <div className="mt-3 flex gap-4">
                         <div className="text-center">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
-                          <p className="mt-1 font-display text-2xl leading-none" style={{ color: '#39ff14' }}>{thisWeekTop.wins}</p>
+                          <p className="mt-1 font-display text-2xl leading-none" style={{ color: '#6b8e23' }}>{thisWeekTop.wins}</p>
                         </div>
                         <div className="text-center">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Proofs</p>
@@ -370,7 +370,7 @@ export default function LeaderboardPage() {
                 {/* Tab context blurb */}
                 <div
                   className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.12)', animationDelay: '240ms' }}
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.12)', animationDelay: '240ms' }}
                 >
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Viewing</p>
                   <p className="mt-2 font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
@@ -398,7 +398,7 @@ export default function LeaderboardPage() {
             <h2
               className="font-display text-4xl font-black leading-none sm:text-6xl"
               style={{
-                background: 'linear-gradient(135deg, #cc1414, #39ff14)',
+                background: 'linear-gradient(135deg, #cc1414, #c97a12)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -413,10 +413,10 @@ export default function LeaderboardPage() {
               href="/lobby"
               className="rounded-lg border px-8 py-4 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
               style={{
-                background: 'linear-gradient(135deg, #cc1414, #39ff14)',
+                background: 'linear-gradient(135deg, #cc1414, #c97a12)',
                 borderColor: 'transparent',
                 color: '#060b06',
-                boxShadow: '0 0 24px rgba(57,255,20,0.35)',
+                boxShadow: '0 0 24px rgba(107,142,35,0.35)',
               }}
             >
               Enter the Lobby

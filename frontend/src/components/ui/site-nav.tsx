@@ -25,7 +25,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
     <div className="rise-in relative" style={{ isolation: 'isolate', zIndex: 50 }}>
       <header
         className="flex items-center justify-between gap-4 rounded-xl border px-5 py-3 backdrop-blur"
-        style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: 'rgba(6,11,6,0.92)' }}
+        style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: 'rgba(6,11,6,0.92)' }}
       >
         {/* Logo */}
         <Link href="/" className="flex flex-shrink-0 items-center gap-3" onClick={() => setMenuOpen(false)}>
@@ -55,7 +55,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
                 className="whitespace-nowrap rounded-lg px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150"
                 style={
                   isActive
-                    ? { backgroundColor: 'rgba(57,255,20,0.1)', color: '#39ff14', border: '1px solid rgba(57,255,20,0.35)' }
+                    ? { backgroundColor: 'rgba(107,142,35,0.1)', color: '#6b8e23', border: '1px solid rgba(107,142,35,0.35)' }
                     : { backgroundColor: 'transparent', color: '#4a5e44', border: '1px solid transparent' }
                 }
               >
@@ -74,28 +74,28 @@ export function SiteNav({ currentPath }: SiteNavProps) {
           {/* Hamburger button — mobile only */}
           <button
             className="flex h-9 w-9 flex-col items-center justify-center gap-1.5 rounded-lg border md:hidden"
-            style={{ borderColor: 'rgba(57,255,20,0.25)', backgroundColor: menuOpen ? 'rgba(57,255,20,0.08)' : 'transparent' }}
+            style={{ borderColor: 'rgba(107,142,35,0.25)', backgroundColor: menuOpen ? 'rgba(107,142,35,0.08)' : 'transparent' }}
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="Toggle menu"
           >
             <span
               className="h-0.5 w-5 rounded-full transition-all"
               style={{
-                backgroundColor: '#39ff14',
+                backgroundColor: '#6b8e23',
                 transform: menuOpen ? 'translateY(8px) rotate(45deg)' : 'none',
               }}
             />
             <span
               className="h-0.5 w-5 rounded-full transition-all"
               style={{
-                backgroundColor: '#39ff14',
+                backgroundColor: '#6b8e23',
                 opacity: menuOpen ? 0 : 1,
               }}
             />
             <span
               className="h-0.5 w-5 rounded-full transition-all"
               style={{
-                backgroundColor: '#39ff14',
+                backgroundColor: '#6b8e23',
                 transform: menuOpen ? 'translateY(-8px) rotate(-45deg)' : 'none',
               }}
             />
@@ -107,7 +107,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
       {menuOpen && (
         <div
           className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border p-4 backdrop-blur md:hidden"
-          style={{ borderColor: 'rgba(57,255,20,0.2)', backgroundColor: 'rgba(6,11,6,0.97)' }}
+          style={{ borderColor: 'rgba(107,142,35,0.2)', backgroundColor: 'rgba(6,11,6,0.97)' }}
         >
           <nav className="flex flex-col gap-1">
             {navItems.map((item) => {
@@ -120,7 +120,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
                   className="rounded-lg px-4 py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all"
                   style={
                     isActive
-                      ? { backgroundColor: 'rgba(57,255,20,0.1)', color: '#39ff14', border: '1px solid rgba(57,255,20,0.35)' }
+                      ? { backgroundColor: 'rgba(107,142,35,0.1)', color: '#6b8e23', border: '1px solid rgba(107,142,35,0.35)' }
                       : { color: '#8fa882', border: '1px solid transparent' }
                   }
                 >
@@ -129,7 +129,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
               )
             })}
           </nav>
-          <div className="mt-3 border-t pt-3" style={{ borderColor: 'rgba(57,255,20,0.15)' }}>
+          <div className="mt-3 border-t pt-3" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
             <ConnectButton />
           </div>
         </div>

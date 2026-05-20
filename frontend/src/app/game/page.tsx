@@ -27,7 +27,7 @@ const PHASE_LABEL: Record<RoundPhase, string> = {
 
 const PHASE_COLOR: Record<RoundPhase, string> = {
   infection:  '#e63329',
-  discussion: '#39ff14',
+  discussion: '#6b8e23',
   voting:     '#f5c518',
   reveal:     '#d4c9b2',
   ended:      '#4a5e44',
@@ -36,7 +36,7 @@ const PHASE_COLOR: Record<RoundPhase, string> = {
 function playerStyle(status: string): { border: string; backgroundColor: string; color: string } {
   if (status === 'infected')   return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.15)', color: '#ff6b6b' }
   if (status === 'eliminated') return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
-  return { border: '2px solid #39ff14', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14' }
+  return { border: '2px solid #6b8e23', backgroundColor: 'rgba(107,142,35,0.08)', color: '#6b8e23' }
 }
 
 /** Only reveal 'infected' styling to the player themselves — hide it from others. */
@@ -70,7 +70,7 @@ function getHeaderTitle(isLoading: boolean, round: number, roomStatus?: string):
 
 function getPhaseCardBackground(phase: RoundPhase): string {
   if (phase === 'infection') return 'rgba(230,51,41,0.1)'
-  if (phase === 'discussion') return 'rgba(57,255,20,0.1)'
+  if (phase === 'discussion') return 'rgba(107,142,35,0.1)'
   if (phase === 'voting') return 'rgba(245,197,24,0.1)'
   return 'rgba(143,168,130,0.1)'
 }
@@ -310,7 +310,7 @@ function GamePageInner() { // NOSONAR
               style={{
                 ...playerStyle(visibleStatus(p, address)),
                 boxShadow: isMe
-                  ? '0 0 0 2px #39ff14, 0 0 12px rgba(57,255,20,0.35)'
+                  ? '0 0 0 2px #6b8e23, 0 0 12px rgba(107,142,35,0.35)'
                   : selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
                 cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
               }}
@@ -701,7 +701,7 @@ function GamePageInner() { // NOSONAR
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
         <p className="font-mono text-lg" style={{ color: '#e63329' }}>No room specified.</p>
-        <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#39ff14', color: '#39ff14' }}>
+        <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#6b8e23', color: '#6b8e23' }}>
           ← Back to Lobby
         </button>
       </main>
@@ -722,7 +722,7 @@ function GamePageInner() { // NOSONAR
             <button
               onClick={() => refresh()}
               className="rounded border px-5 py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80"
-              style={{ borderColor: '#39ff14', color: '#39ff14' }}
+              style={{ borderColor: '#6b8e23', color: '#6b8e23' }}
             >
               Retry
             </button>
@@ -751,10 +751,10 @@ function GamePageInner() { // NOSONAR
       <>
       <header
         className="relative overflow-hidden px-6 py-12"
-        style={{ borderBottom: '1px solid rgba(57,255,20,0.2)' }}
+        style={{ borderBottom: '1px solid rgba(107,142,35,0.2)' }}
       >
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <div className="absolute left-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-10 blur-3xl" style={{ backgroundColor: '#39ff14' }} />
+          <div className="absolute left-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-10 blur-3xl" style={{ backgroundColor: '#6b8e23' }} />
           <div className="absolute right-1/3 top-1/2 h-48 w-48 -translate-y-1/2 rounded-full opacity-10 blur-3xl" style={{ backgroundColor: '#cc1414' }} />
         </div>
 
@@ -774,7 +774,7 @@ function GamePageInner() { // NOSONAR
                   <button
                     onClick={() => setRoomNameEditing(true)}
                     className="rounded border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
-                    style={{ borderColor: 'rgba(57,255,20,0.5)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.08)' }}
+                    style={{ borderColor: 'rgba(107,142,35,0.5)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.08)' }}
                   >
                     + Set name
                   </button>
@@ -821,12 +821,12 @@ function GamePageInner() { // NOSONAR
                     value={pendingRoomName}
                     onChange={(e) => setPendingRoomName(e.target.value)}
                     className="rounded-lg border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
-                    style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                    style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
                   />
                   <button
                     type="submit"
                     className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
-                    style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.12)' }}
+                    style={{ borderColor: '#6b8e23', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.12)' }}
                   >
                     Save
                   </button>
@@ -856,10 +856,10 @@ function GamePageInner() { // NOSONAR
             {headerCountdownMs > 0 && (
               <div
                 className="flex flex-col items-center rounded-xl border px-5 py-3 sm:px-10 sm:py-4"
-                style={{ borderColor: 'rgba(57,255,20,0.45)', backgroundColor: 'rgba(57,255,20,0.06)' }}
+                style={{ borderColor: 'rgba(107,142,35,0.45)', backgroundColor: 'rgba(107,142,35,0.06)' }}
               >
                 <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Time Left</p>
-                <p className="mt-1 font-display text-3xl sm:text-6xl font-bold leading-none tabular-nums" style={{ color: '#39ff14', textShadow: '0 0 20px rgba(57,255,20,0.5)' }}>
+                <p className="mt-1 font-display text-3xl sm:text-6xl font-bold leading-none tabular-nums" style={{ color: '#6b8e23', textShadow: '0 0 20px rgba(107,142,35,0.5)' }}>
                   {formatCountdown(headerCountdownMs)}
                 </p>
               </div>
@@ -896,7 +896,7 @@ function GamePageInner() { // NOSONAR
                 disabled={isLoading}
                 title="Fetch latest state from chain"
                 className="ml-1 rounded border px-3 py-1 font-mono text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-40 hover:brightness-125 active:scale-95"
-                style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.08)', boxShadow: '0 0 6px rgba(57,255,20,0.35)' }}
+                style={{ borderColor: '#6b8e23', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.08)', boxShadow: '0 0 6px rgba(107,142,35,0.35)' }}
               >
                 {isLoading ? '…' : '↺ Sync'}
               </button>
@@ -906,10 +906,10 @@ function GamePageInner() { // NOSONAR
                 <span
                   className="ml-auto rounded-lg border px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-[0.18em]"
                   style={{
-                    borderColor: 'rgba(57,255,20,0.6)',
-                    backgroundColor: 'rgba(57,255,20,0.12)',
-                    color: '#39ff14',
-                    boxShadow: '0 0 10px rgba(57,255,20,0.2)',
+                    borderColor: 'rgba(107,142,35,0.6)',
+                    backgroundColor: 'rgba(107,142,35,0.12)',
+                    color: '#6b8e23',
+                    boxShadow: '0 0 10px rgba(107,142,35,0.2)',
                   }}
                 >
                   You: <span style={{ color: '#d4c9b2' }}>{localPlayer.displayName}</span>
@@ -931,7 +931,7 @@ function GamePageInner() { // NOSONAR
             {[
               { label: 'POT',          value: `${potCUSD} cUSD`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
-              { label: 'SHIELD WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#39ff14' },
+              { label: 'SHIELD WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#6b8e23' },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -1009,14 +1009,14 @@ function GamePageInner() { // NOSONAR
 
               {/* Containment Board — Board tab (mobile) / always (desktop) */}
               {showOnTab('board') && (
-                <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)' }}>
+                <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
                   <div className="flex items-center justify-between gap-4">
                     <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
-                    <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(57,255,20,0.35)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}>
+                    <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(107,142,35,0.35)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.1)' }}>
                       {activePlayers.length} alive
                     </span>
                   </div>
-                  <div className="mt-6 rounded-lg border p-5" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(57,255,20,0.15)' }}>
+                  <div className="mt-6 rounded-lg border p-5" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.15)' }}>
                     {playersPanelBody}
                   </div>
                   {localPlayer?.isEliminated && (
@@ -1076,10 +1076,10 @@ function GamePageInner() { // NOSONAR
                   )}
 
                   {room?.status === 'starting' && (
-                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Set Shield Password</p>
+                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Set Shield Password</p>
                       {commitDone ? (
-                        <p className="mt-3 font-mono text-xs" style={{ color: '#39ff14' }}>✓ Shield Password set. Waiting for all players…</p>
+                        <p className="mt-3 font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Shield Password set. Waiting for all players…</p>
                       ) : (
                         <>
                           <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
@@ -1094,14 +1094,14 @@ function GamePageInner() { // NOSONAR
                             value={secretPhrase}
                             onChange={e => setSecretPhrase(e.target.value)}
                             className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                            style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                            style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
                           />
                           {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
                           <button
                             onClick={handleCommitRole}
                             disabled={!canCommit || !secretPhrase || committing}
                             className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
+                            style={{ backgroundColor: '#6b8e23', borderColor: '#6b8e23', color: '#060b06' }}
                           >
                             {committing ? 'Activating Shield…' : 'Set Shield Password'}
                           </button>
@@ -1111,8 +1111,8 @@ function GamePageInner() { // NOSONAR
                   )}
 
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
-                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#39ff14' }}>Activate Shield</p>
+                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>
                       <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
                         Activate your Shield to prove innocence before voting opens. Your first Shield activation is free.
                         {localPlayer?.freeProofUsed && ' (Free activation used — fee will be charged.)'}
@@ -1123,14 +1123,14 @@ function GamePageInner() { // NOSONAR
                         value={secretPhrase}
                         onChange={e => setSecretPhrase(e.target.value)}
                         className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                        style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                        style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
                       />
                       {proofError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{proofError}</p>}
                       <button
                         onClick={handleSubmitProof}
                         disabled={!canProve || !secretPhrase || proving}
                         className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                        style={{ backgroundColor: '#39ff14', borderColor: '#39ff14', color: '#060b06' }}
+                        style={{ backgroundColor: '#6b8e23', borderColor: '#6b8e23', color: '#060b06' }}
                       >
                         {proving ? 'Activating Shield…' : 'Activate Shield'}
                       </button>
@@ -1159,8 +1159,8 @@ function GamePageInner() { // NOSONAR
 
               {/* Live Feed — Feed tab (mobile) / always (desktop) */}
               {showOnTab('feed') && (
-                <div className="rise-in rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.15)' }}>
-                  <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#39ff14' }}>Live Feed</p>
+                <div className="rise-in rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.15)' }}>
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#6b8e23' }}>Live Feed</p>
                   <ul
                     className="space-y-2 font-mono text-xs overflow-y-auto"
                     style={{ color: '#8fa882', maxHeight: isMobile ? 'calc(100vh - 260px)' : '24rem', scrollbarWidth: 'thin' }}
@@ -1188,8 +1188,8 @@ function GamePageInner() { // NOSONAR
                   <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>{votePanelLabel}</p>
 
                   {phase === 'voting' && hasVoted && (
-                    <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(57,255,20,0.3)', backgroundColor: 'rgba(57,255,20,0.06)' }}>
-                      <p className="font-mono text-xs" style={{ color: '#39ff14' }}>✓ Your vote has been recorded.</p>
+                    <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.06)' }}>
+                      <p className="font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Your vote has been recorded.</p>
                       {myVotedTarget && (
                         <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
                           You voted against{' '}
@@ -1264,12 +1264,12 @@ function GamePageInner() { // NOSONAR
                   className="rise-in rounded-lg border p-4 flex flex-col"
                   style={{
                     backgroundColor: '#0a100a',
-                    borderColor: 'rgba(57,255,20,0.15)',
+                    borderColor: 'rgba(107,142,35,0.15)',
                     animationDelay: '160ms',
                     ...(isMobile ? { height: 'calc(100svh - 180px)', maxHeight: 'calc(100svh - 180px)' } : {}),
                   }}
                 >
-                  <p className="font-mono text-xs uppercase tracking-[0.2em] flex-shrink-0" style={{ color: '#39ff14' }}>Room Chat</p>
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] flex-shrink-0" style={{ color: '#6b8e23' }}>Room Chat</p>
                   <div
                     className="mt-3 overflow-y-auto space-y-2 pr-1 flex-1 min-h-0"
                     style={{ height: isMobile ? undefined : '16rem', scrollbarWidth: 'thin' }}
@@ -1279,7 +1279,7 @@ function GamePageInner() { // NOSONAR
                     ) : (
                       chatMessages.map((m, i) => (
                         <div key={`${m.timestamp}-${m.sender}-${i}`} className="font-mono text-[11px] leading-snug break-words">
-                          <span style={{ color: m.sender.toLowerCase() === address?.toLowerCase() ? '#39ff14' : '#f5c518' }}>
+                          <span style={{ color: m.sender.toLowerCase() === address?.toLowerCase() ? '#6b8e23' : '#f5c518' }}>
                             {m.displayName}
                           </span>
                           <span style={{ color: '#4a5e44' }}>: </span>
@@ -1299,13 +1299,13 @@ function GamePageInner() { // NOSONAR
                       onKeyDown={e => { if (e.key === 'Enter') handleSendChat() }}
                       disabled={!canChat}
                       className="flex-1 rounded border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
-                      style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#d4c9b2' }}
+                      style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#d4c9b2' }}
                     />
                     <button
                       onClick={handleSendChat}
                       disabled={!chatInput.trim() || !canChat}
                       className="rounded border px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                      style={{ borderColor: '#39ff14', color: '#39ff14' }}
+                      style={{ borderColor: '#6b8e23', color: '#6b8e23' }}
                     >
                       Send
                     </button>
@@ -1321,7 +1321,7 @@ function GamePageInner() { // NOSONAR
                 <Link
                   href="/lobby"
                   className="rise-in rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
-                  style={{ borderColor: 'rgba(57,255,20,0.35)', backgroundColor: 'rgba(57,255,20,0.08)', color: '#39ff14', display: 'block', animationDelay: '300ms' }}
+                  style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)', color: '#6b8e23', display: 'block', animationDelay: '300ms' }}
                 >
                   ← Back to Lobby
                 </Link>
@@ -1339,12 +1339,12 @@ function GamePageInner() { // NOSONAR
           className="fixed left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs font-bold tabular-nums shadow-lg"
           style={{
             bottom: 'calc(60px + env(safe-area-inset-bottom, 0px) + 8px)',
-            borderColor: 'rgba(57,255,20,0.55)',
+            borderColor: 'rgba(107,142,35,0.55)',
             backgroundColor: 'rgba(6,11,6,0.92)',
-            color: '#39ff14',
+            color: '#6b8e23',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
-            textShadow: '0 0 8px rgba(57,255,20,0.5)',
+            textShadow: '0 0 8px rgba(107,142,35,0.5)',
           }}
         >
           <span className="text-[9px] font-normal uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>

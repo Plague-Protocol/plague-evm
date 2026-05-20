@@ -2,55 +2,55 @@ import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 
 const stats = [
-  { icon: '🧟', number: '146', label: 'Active Matches' },
-  { icon: '🔐', number: '824', label: 'ZK Proofs Submitted' },
-  { icon: '💀', number: '311', label: 'Wallets Onboarded' },
+  { icon: '🧟', number: '146', label: 'Matches Played' },
+  { icon: '🩸', number: '824', label: 'Zombies Caught' },
+  { icon: '💀', number: '311', label: 'Players' },
 ]
 
 const features = [
   {
     icon: '☣️',
     phase: '01',
-    title: 'Infect & Deceive',
+    title: 'One of You Is Infected',
     description:
-      'Patient Zero secretly infects others through social interaction. Use deception, misdirection, and alliances to spread the plague undetected.',
+      'Patient Zero is hiding in the room. Each round they turn another player — in total secret. Lie, scheme, and frame the innocent to stay alive.',
   },
   {
     icon: '🗳️',
     phase: '02',
-    title: 'Vote & Eliminate',
+    title: 'Vote Out the Zombie',
     description:
-      'The town votes to eliminate suspected carriers. Submit on-chain votes that are transparent, final, and secured by Celo smart contracts.',
+      'Every round, everyone votes who to throw out. Pick wrong and the infection spreads. Stay quiet and the vote goes against you.',
   },
   {
-    icon: '🔮',
+    icon: '🛡️',
     phase: '03',
-    title: 'Prove Innocence',
+    title: 'Shield Yourself',
     description:
-      'Generate zero-knowledge proofs to claim innocence without revealing your role. Noir circuits verify your status trustlessly.',
+      "If you're being framed, activate your Shield to prove you're clean — without revealing anything else. You only get one free, so use it when it counts.",
   },
 ]
 
 const mechanics = [
   {
-    icon: '⛓️',
-    title: 'On-Chain Escrow',
-    desc: 'Stakes locked in Solidity contracts on Celo. Players stake in cUSD. Winners auto-claim, losers auto-drain. Platform takes 0.3% fee.',
+    icon: '💰',
+    title: 'Real Cash Stakes',
+    desc: "Everyone pitches in cUSD before the match. Winners split the pot automatically when the game ends. No middlemen, no chasing payouts.",
   },
   {
-    icon: '🌐',
-    title: 'Celo Speed',
-    desc: 'Transactions finalize in under 5 seconds. Real-time game state without gas anxiety.',
+    icon: '⚡',
+    title: 'Fast Rounds',
+    desc: 'Every move confirms in under 5 seconds. No waiting, no awkward lulls — the tension never drops.',
   },
   {
     icon: '🔒',
-    title: 'ZK Role Privacy',
-    desc: "Your role commitment is sealed with Noir. Nobody knows you're infected until you choose to reveal.",
+    title: 'Secret Roles',
+    desc: "Your role is locked behind cryptography. Nobody — not other players, not even us — can see who's infected until reveal.",
   },
   {
     icon: '📊',
-    title: 'Proof Leaderboards',
-    desc: 'Track submission counts, win rates, and proof efficiency across seasons on a transparent board.',
+    title: 'Track Your Glory',
+    desc: 'Climb the leaderboard. Brag about your win streaks. Bring receipts.',
   },
 ]
 
@@ -82,7 +82,7 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div
             className="rise-in absolute left-[8%] top-[12%] h-96 w-96 rounded-full opacity-12 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #39ff14, transparent)', animationDelay: '0ms' }}
+            style={{ background: 'radial-gradient(circle, #6b8e23, transparent)', animationDelay: '0ms' }}
           />
           <div
             className="rise-in absolute right-[8%] top-[20%] h-80 w-80 rounded-full opacity-10 blur-3xl"
@@ -101,7 +101,7 @@ export default function HomePage() {
               className="rounded-full border px-3 py-1 sm:px-4 sm:py-1.5 font-mono text-[10px] sm:text-xs uppercase tracking-[0.22em]"
               style={{ borderColor: 'rgba(204,20,20,0.5)', backgroundColor: 'rgba(204,20,20,0.1)', color: '#cc1414' }}
             >
-              Zombie Plague · Celo × EVM × Noir ZK
+              Zombie Plague · Social Deduction · Real Stakes
             </span>
 
             <h1 className="max-w-5xl font-display leading-[0.88]">
@@ -111,7 +111,7 @@ export default function HomePage() {
               <span
                 className="block text-4xl sm:text-7xl lg:text-9xl"
                 style={{
-                  background: 'linear-gradient(135deg, #39ff14, #cc1414)',
+                  background: 'linear-gradient(135deg, #cc1414, #c97a12)',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text',
@@ -122,24 +122,24 @@ export default function HomePage() {
             </h1>
 
             <p className="max-w-2xl font-body text-sm sm:text-lg leading-relaxed" style={{ color: '#8fa882' }}>
-              A zero-knowledge social deduction game on Celo. Deceive, vote, prove — every action
-              is on-chain and verifiable.
+              One player is secretly infected. The rest have to find them before they turn
+              everyone. Stake cUSD, survive the rounds, take the pot.
             </p>
 
             <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
               <Link
                 href="/lobby"
                 className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
-                style={{ backgroundColor: '#39ff14', color: '#060b06', boxShadow: '4px 4px 0px #cc1414' }}
+                style={{ backgroundColor: '#6b8e23', color: '#060b06', boxShadow: '4px 4px 0px #cc1414' }}
               >
-                Enter Lobby
+                Play Now
               </Link>
               <Link
-                href="/game"
+                href="/how-to-play"
                 className="rounded-lg border px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
-                style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14', boxShadow: '4px 4px 0px rgba(57,255,20,0.2)' }}
+                style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23', boxShadow: '4px 4px 0px rgba(107,142,35,0.2)' }}
               >
-                Watch a Match
+                How to Play
               </Link>
             </div>
           </div>
@@ -153,7 +153,7 @@ export default function HomePage() {
               <div
                 key={stat.label}
                 className="flex flex-col items-center gap-2 sm:gap-3 rounded-2xl border p-4 sm:p-8 text-center transition-all hover:scale-[1.02]"
-                style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: 'rgba(12,19,9,0.85)' }}
+                style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: 'rgba(12,19,9,0.85)' }}
               >
                 <span className="text-3xl sm:text-5xl">{stat.icon}</span>
                 <span className="font-display text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
@@ -169,14 +169,14 @@ export default function HomePage() {
       </section>
 
       {/* Ticker */}
-      <div className="border-y py-3" style={{ borderColor: 'rgba(57,255,20,0.12)', backgroundColor: '#0a100a' }}>
+      <div className="border-y py-3" style={{ borderColor: 'rgba(107,142,35,0.12)', backgroundColor: '#0a100a' }}>
         <div className="overflow-hidden">
-          <div className="ticker" style={{ color: '#39ff14' }}>
-            OPEN SOURCE MULTIPLAYER PROTOCOL&nbsp;&nbsp;|&nbsp;&nbsp;ROOM ESCROW&nbsp;&nbsp;|&nbsp;&nbsp;VOTE
-            RESOLUTION&nbsp;&nbsp;|&nbsp;&nbsp;ZK COMMITMENTS&nbsp;&nbsp;|&nbsp;&nbsp;CELO
-            NETWORK&nbsp;&nbsp;|&nbsp;&nbsp;SOLIDITY CONTRACTS&nbsp;&nbsp;|&nbsp;&nbsp;NOIR
-            CIRCUITS&nbsp;&nbsp;|&nbsp;&nbsp;OPEN SOURCE MULTIPLAYER PROTOCOL&nbsp;&nbsp;|&nbsp;&nbsp;ROOM
-            ESCROW&nbsp;&nbsp;|&nbsp;&nbsp;VOTE RESOLUTION&nbsp;&nbsp;|&nbsp;&nbsp;ZK COMMITMENTS&nbsp;&nbsp;|
+          <div className="ticker" style={{ color: '#6b8e23' }}>
+            FIND PATIENT ZERO&nbsp;&nbsp;|&nbsp;&nbsp;TRUST NO ONE&nbsp;&nbsp;|&nbsp;&nbsp;STAKE
+            cUSD&nbsp;&nbsp;|&nbsp;&nbsp;WIN THE POT&nbsp;&nbsp;|&nbsp;&nbsp;ONE OF YOU IS
+            INFECTED&nbsp;&nbsp;|&nbsp;&nbsp;SHIELD YOURSELF&nbsp;&nbsp;|&nbsp;&nbsp;VOTE BEFORE
+            THE TIMER&nbsp;&nbsp;|&nbsp;&nbsp;FIND PATIENT ZERO&nbsp;&nbsp;|&nbsp;&nbsp;TRUST NO
+            ONE&nbsp;&nbsp;|&nbsp;&nbsp;STAKE cUSD&nbsp;&nbsp;|&nbsp;&nbsp;WIN THE POT&nbsp;&nbsp;|
           </div>
         </div>
       </div>
@@ -185,7 +185,7 @@ export default function HomePage() {
       <section className="px-4 sm:px-6 py-12 sm:py-24" style={{ backgroundColor: '#060b06' }}>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-16">
           <div className="flex flex-col items-center gap-6">
-            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
+            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
               How It Works
             </span>
             <h2
@@ -195,8 +195,8 @@ export default function HomePage() {
               THREE PHASES. ONE SURVIVOR.
             </h2>
             <p className="max-w-2xl text-center font-body" style={{ color: '#8fa882' }}>
-              Each match runs through infection, deliberation, and proof — all governed by on-chain
-              logic.
+              Every match: someone gets infected, the room argues, the room votes. Repeat until
+              only one side is left standing.
             </p>
           </div>
 
@@ -207,7 +207,7 @@ export default function HomePage() {
                 className="rise-in flex flex-col gap-4 sm:gap-5 rounded-lg border p-5 sm:p-10 transition-all duration-300 hover:scale-[1.02]"
                 style={{
                   backgroundColor: '#0c1309',
-                  borderColor: 'rgba(57,255,20,0.12)',
+                  borderColor: 'rgba(107,142,35,0.12)',
                   animationDelay: `${i * 120}ms`,
                 }}
               >
@@ -236,13 +236,13 @@ export default function HomePage() {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-16">
           <div className="flex flex-col items-center gap-6">
             <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#c97a12' }}>
-              Game Mechanics
+              Why Play
             </span>
             <h2
               className="max-w-4xl text-center font-display text-2xl leading-none sm:text-4xl md:text-6xl lg:text-7xl"
               style={{ color: '#d4c9b2' }}
             >
-              BUILT ON CHAIN. PLAYED OFF IT.
+              PLAY WITH FRIENDS. WIN REAL MONEY.
             </h2>
           </div>
 
@@ -253,13 +253,13 @@ export default function HomePage() {
                 className="rise-in flex gap-4 sm:gap-6 rounded-lg border p-5 sm:p-10 transition-all hover:scale-[1.01]"
                 style={{
                   backgroundColor: '#0e180d',
-                  borderColor: 'rgba(57,255,20,0.08)',
+                  borderColor: 'rgba(107,142,35,0.08)',
                   animationDelay: `${i * 100}ms`,
                 }}
               >
                 <div
                   className="flex h-10 w-10 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl text-xl sm:text-2xl"
-                  style={{ background: 'linear-gradient(135deg, rgba(57,255,20,0.2), rgba(204,20,20,0.2))' }}
+                  style={{ background: 'linear-gradient(135deg, rgba(107,142,35,0.2), rgba(204,20,20,0.2))' }}
                 >
                   {m.icon}
                 </div>
@@ -273,6 +273,20 @@ export default function HomePage() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Under the hood — small tech mention for crypto-natives */}
+          <div
+            className="mx-auto mt-12 max-w-3xl rounded-lg border px-5 py-4 text-center"
+            style={{ borderColor: 'rgba(143,168,130,0.15)', backgroundColor: 'rgba(6,11,6,0.5)' }}
+          >
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>
+              Under the Hood
+            </p>
+            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+              Built on Celo · Smart contracts hold the stakes · Noir zero-knowledge proofs keep
+              your role private · Open-source and verifiable
+            </p>
           </div>
         </div>
       </section>
@@ -290,7 +304,7 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0">
           <div
             className="absolute left-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-15 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #39ff14, transparent)' }}
+            style={{ background: 'radial-gradient(circle, #6b8e23, transparent)' }}
           />
           <div
             className="absolute right-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-10 blur-3xl"
@@ -302,7 +316,7 @@ export default function HomePage() {
             <h2
               className="font-display text-3xl leading-none sm:text-5xl md:text-7xl lg:text-9xl"
               style={{
-                background: 'linear-gradient(135deg, #39ff14, #cc1414, #c97a12)',
+                background: 'linear-gradient(135deg, #cc1414, #c97a12, #6b8e23)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -311,7 +325,7 @@ export default function HomePage() {
               FIND PATIENT ZERO.
             </h2>
             <p className="max-w-xl font-body text-base sm:text-xl" style={{ color: '#8fa882' }}>
-              Or become them. Every session is a new social experiment on Celo.
+              Or become them. Every match is a fresh hunt.
             </p>
           </div>
 
@@ -336,12 +350,12 @@ export default function HomePage() {
             href="/lobby"
             className="rounded-lg px-6 py-3 sm:px-12 sm:py-6 font-mono text-sm sm:text-lg font-bold uppercase tracking-wider transition-all hover:opacity-90"
             style={{
-              background: 'linear-gradient(135deg, #39ff14, #cc1414)',
+              background: 'linear-gradient(135deg, #cc1414, #c97a12)',
               color: '#060b06',
-              boxShadow: '0 0 30px rgba(57,255,20,0.4)',
+              boxShadow: '0 0 30px rgba(204,20,20,0.45)',
             }}
           >
-            Play Now — It&apos;s Free
+            Find a Match
           </Link>
         </div>
       </section>

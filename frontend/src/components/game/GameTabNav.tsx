@@ -73,7 +73,7 @@ export function GameTabNav({ activeTab, onTabChange, unreadChat }: GameTabNavPro
               onClick={() => onTabChange(tab.id)}
               className="relative flex flex-1 flex-col items-center gap-0.5 py-2 transition-colors duration-150"
               style={{
-                color: isActive ? '#39ff14' : '#4a5e44',
+                color: isActive ? '#6b8e23' : '#4a5e44',
               }}
               aria-current={isActive ? 'page' : undefined}
             >
@@ -81,7 +81,7 @@ export function GameTabNav({ activeTab, onTabChange, unreadChat }: GameTabNavPro
               {isActive && (
                 <span
                   className="absolute top-0 left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full"
-                  style={{ backgroundColor: '#39ff14', boxShadow: '0 0 8px rgba(57,255,20,0.6)' }}
+                  style={{ backgroundColor: '#6b8e23', boxShadow: '0 0 8px rgba(107,142,35,0.6)' }}
                 />
               )}
 

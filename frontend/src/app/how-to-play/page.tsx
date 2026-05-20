@@ -18,13 +18,13 @@ const phases = [
     icon: '💬',
     color: '#f5c518',
     duration: '60 s',
-    desc: 'Players discuss and debate who might be infected. Clean players may optionally submit a Zero-Knowledge innocence proof to protect themselves. Proof submissions are limited to 1 per player per round and close the moment voting begins.',
+    desc: "Players discuss and debate who might be infected. Clean players can activate a Shield to prove they're not the zombie without revealing anything else. One Shield per player per round, and the window closes the moment voting begins.",
   },
   {
     number: '03',
     name: 'Voting',
     icon: '🗳️',
-    color: '#39ff14',
+    color: '#6b8e23',
     duration: '60 s',
     desc: 'Every alive player casts an on-chain vote for the player they believe is infected. Any player who fails to vote before the timer expires automatically receives a self-vote — their vote is cast against themselves. Silence equals guilt; abstention is never safe.',
   },
@@ -41,64 +41,64 @@ const phases = [
 const voteRules = [
   {
     case: 'A',
-    title: 'Single top candidate — no proof',
+    title: 'Single top candidate — no Shield',
     color: '#e63329',
     outcome: 'Eliminated',
-    desc: 'One player received the most votes and submitted no innocence proof. They are eliminated from the game.',
+    desc: 'One player got the most votes and never activated a Shield. They get kicked out of the game.',
   },
   {
     case: 'B',
-    title: 'Single top candidate — has valid proof',
+    title: 'Single top candidate — Shield activated',
     color: '#84cc16',
     outcome: 'Saved',
-    desc: 'One player received the most votes but proved their innocence during Discussion. They are saved; the game continues with normal infection next round.',
+    desc: 'One player got the most votes but activated their Shield during Discussion. They survive; the game continues normally next round.',
   },
   {
     case: 'C',
     title: 'Tie — at least one infected or unprotected',
     color: '#f5c518',
     outcome: 'All vulnerable tied players eliminated',
-    desc: 'Multiple players share the top vote count. If any tied player is infected, all tied infected players are eliminated. If no infected players are tied, all tied unprotected clean players are eliminated. Any tied clean player with a valid proof is saved.',
+    desc: 'Multiple players share the top vote count. If any tied player is infected, all tied infected players are kicked out. If none are infected, all tied clean players without a Shield go down. Anyone with an active Shield is safe.',
   },
   {
     case: 'D',
-    title: 'Tie — all have valid proofs',
+    title: 'Tie — everyone Shielded',
     color: '#8fa882',
     outcome: 'No elimination',
-    desc: 'All tied top-voted players proved their innocence during Discussion. Nobody is eliminated and no extra infection is forced — only the Patient Zero drives infection through the normal next-round assignment. A generic message is broadcast; no proof hints are revealed.',
+    desc: "Every tied top-voted player activated their Shield. Nobody goes home, and no extra infection is forced — only Patient Zero infects normally next round. The room sees a generic message; nobody learns who Shielded.",
   },
 ]
 
 const proofRules = [
   {
     icon: '🆓',
-    title: 'First proof is free',
-    desc: 'Every player gets exactly one free innocence proof per game. No cUSD required.',
+    title: 'First Shield is free',
+    desc: 'Every player gets one free Shield per game. No cUSD needed.',
   },
   {
     icon: '💸',
-    title: 'Additional proofs cost a fee',
-    desc: 'After the free proof is used, each subsequent proof requires a fee equal to the room\'s configured proofFee. This fee goes directly to the platform.',
+    title: 'Extra Shields cost a fee',
+    desc: "After your free one, each extra Shield costs the room's fee. The fee goes to the platform.",
   },
   {
     icon: '1️⃣',
-    title: 'One proof per round',
-    desc: 'Maximum one proof per player per round, enforced by a nullifier. You cannot spam proofs.',
+    title: 'One Shield per round',
+    desc: "Max one Shield per player per round. You can't spam them.",
   },
   {
     icon: '🔐',
-    title: 'Only Clean players can prove innocence',
-    desc: 'The ZK circuit enforces role == CLEAN. Infected players fail the circuit constraint and cannot produce a valid proof — the chain rejects their submission.',
+    title: 'Only Clean players can Shield',
+    desc: "Infected players can't fake a Shield — the math literally won't let them. If you're infected, don't try; it will fail and reveal you.",
   },
   {
     icon: '⏰',
-    title: 'Submit during Discussion only',
-    desc: 'The proof window is open from the start of Discussion and closes the instant voting begins. Proofs submitted outside this window are rejected.',
+    title: 'Discussion phase only',
+    desc: "The Shield window opens when Discussion starts and slams shut the moment voting begins. Miss it and you're on your own.",
   },
   {
     icon: '🎲',
     title: 'Strategic gamble',
-    desc: 'You must decide whether to use your proof before knowing if you\'ll be the top-voted target. Spending it when you\'re safe wastes a resource; not spending it when targeted costs you the game.',
+    desc: "You have to decide whether to Shield before you know who'll be the top vote target. Use it when safe and you waste it; don't use it when targeted and you lose the game.",
   },
 ]
 
@@ -127,7 +127,7 @@ const roles = [
     color: '#84cc16',
     bgColor: 'rgba(132,204,22,0.08)',
     borderColor: 'rgba(132,204,22,0.35)',
-    desc: 'Knows their role is clean. Must use social deduction and ZK proofs to identify and eliminate infected players before it\'s too late.',
+    desc: "You know you're clean. Use deduction and your Shield to find the infected before they take everyone down.",
     winCondition: 'Eliminate all infected players before rounds run out.',
   },
 ]
@@ -186,11 +186,11 @@ export default function HowToPlayPage() {
       {/* Hero */}
       <header
         className="relative overflow-hidden px-4 sm:px-6 py-10 sm:py-20"
-        style={{ borderBottom: '1px solid rgba(57,255,20,0.2)' }}
+        style={{ borderBottom: '1px solid rgba(107,142,35,0.2)' }}
       >
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
           <div className="absolute left-1/4 top-1/2 h-80 w-80 -translate-y-1/2 rounded-full opacity-10 blur-3xl"
-            style={{ backgroundColor: '#39ff14' }} />
+            style={{ backgroundColor: '#6b8e23' }} />
           <div className="absolute right-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-8 blur-3xl"
             style={{ backgroundColor: '#cc1414' }} />
         </div>
@@ -205,8 +205,9 @@ export default function HowToPlayPage() {
             HOW TO PLAY
           </h1>
           <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#4a5e44' }}>
-            Zombie Plague is a social deduction game built on Celo. Stake cUSD, earn your role in secret,
-            use zero-knowledge proofs to survive, and outlast the infection — or spread it.
+            Stake your cUSD, find Patient Zero before they turn everyone, and walk away with the
+            pot. Activate your Shield if you&apos;re being framed — but you only get one free, so
+            spend it wisely.
           </p>
         </div>
       </header>
@@ -259,14 +260,14 @@ export default function HowToPlayPage() {
               {
                 status: 'Starting',
                 color: '#f5c518',
-                desc: 'The host has called startGame. The join window is closed. Each player must submit their ZK role commitment — a cryptographic binding of their role and secret — within a time-limited window. If too few players commit before the window expires, the game ends immediately: committed players split the pot equally, uncommitted players are refunded.',
-                actions: ['Submit role commitment: Poseidon(role, secret)', 'Commitment window is time-limited — missing it may end the game early', 'No new players can join'],
+                desc: "The host started the game and the join window is closed. Every player has to lock in their secret role within a short window. If too few players lock in, the game ends early — the ones who locked in split the pot, the rest get refunded.",
+                actions: ['Set your Shield Password to lock in your role', 'Lock in fast — missing the window can end the game early', 'No new players can join'],
               },
               {
                 status: 'Active',
-                color: '#39ff14',
-                desc: 'The game is live. Rounds of Infection → Discussion → Voting → Reveal repeat until a win condition is met. All actions (votes, proofs) are on-chain and irreversible.',
-                actions: ['Infection, Discussion, Voting, Reveal phases cycle', 'Submit votes and ZK proofs on-chain', 'Watch for phase-change events'],
+                color: '#6b8e23',
+                desc: 'The game is live. Rounds of Infection → Discussion → Voting → Reveal repeat until one side wins. Every action is locked in on-chain — no take-backs.',
+                actions: ['Infection, Discussion, Voting, Reveal phases cycle', 'Cast votes and activate Shields on-chain', 'Watch for phase-change events'],
               },
               {
                 status: 'Ended',
@@ -284,7 +285,7 @@ export default function HowToPlayPage() {
                     {i + 1}
                   </div>
                   {i < arr.length - 1 && (
-                    <div className="w-px flex-1" style={{ backgroundColor: 'rgba(57,255,20,0.2)', minHeight: '2rem' }} />
+                    <div className="w-px flex-1" style={{ backgroundColor: 'rgba(107,142,35,0.2)', minHeight: '2rem' }} />
                   )}
                 </div>
                 <div className="pb-8">
@@ -368,9 +369,9 @@ export default function HowToPlayPage() {
             </ul>
             <div
               className="mt-5 rounded-lg border p-4"
-              style={{ borderColor: 'rgba(57,255,20,0.3)', backgroundColor: 'rgba(57,255,20,0.08)' }}
+              style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.08)' }}
             >
-              <p className="font-mono text-xs uppercase tracking-[0.15em]" style={{ color: '#39ff14' }}>On-Chain Verifiable</p>
+              <p className="font-mono text-xs uppercase tracking-[0.15em]" style={{ color: '#6b8e23' }}>On-Chain Verifiable</p>
               <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
                 The current Patient Zero address is stored publicly in the contract (<code className="font-mono" style={{ color: '#8fa882' }}>currentPatientZero[roomId]</code>). Any player can verify who holds the role at any time.
               </p>
@@ -425,9 +426,9 @@ export default function HowToPlayPage() {
 
         {/* ── Innocence Proofs ─────────────────────────────────────────────── */}
         <section>
-          <SectionTitle number="05" title="Zero-Knowledge Innocence Proofs" />
+          <SectionTitle number="05" title="Shields" />
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
-            Proofs are your insurance policy. Use them wisely — they are limited.
+            Shields are your insurance policy. Use them wisely — they are limited.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {proofRules.map((rule) => (
@@ -444,14 +445,14 @@ export default function HowToPlayPage() {
           </div>
           <div
             className="mt-6 rounded-xl border p-5"
-            style={{ borderColor: 'rgba(57,255,20,0.3)', backgroundColor: 'rgba(6,11,6,0.6)' }}
+            style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(6,11,6,0.6)' }}
           >
-            <p className="font-mono text-xs font-bold uppercase tracking-[0.15em]" style={{ color: '#39ff14' }}>How the ZK Circuit Works</p>
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.15em]" style={{ color: '#6b8e23' }}>Under the Hood (for the curious)</p>
             <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>
-              The innocence proof circuit (built in Noir) verifies that your role is <code style={{ color: '#84cc16' }}>CLEAN</code> without revealing your actual role or secret to anyone.
+              The Shield circuit (built in Noir) proves your role is <code style={{ color: '#84cc16' }}>CLEAN</code> without revealing your role or your secret to anyone.
               Your commitment <code style={{ color: '#8fa882' }}>Poseidon(role, secret)</code> was registered on-chain at game start.
-              The nullifier <code style={{ color: '#8fa882' }}>Poseidon(secret, roomId, round)</code> ensures the same proof cannot be replayed across rounds.
-              The Groth16 proof is verified on-chain by the ZK verifier contract before the submission is accepted.
+              The nullifier <code style={{ color: '#8fa882' }}>Poseidon(secret, roomId, round)</code> stops the same Shield from being replayed across rounds.
+              The Groth16 proof is verified on-chain before the Shield is accepted.
             </p>
           </div>
         </section>
@@ -511,10 +512,10 @@ export default function HowToPlayPage() {
                 color: '#84cc16',
                 title: 'Playing Clean',
                 tips: [
-                  'Save your free proof for when you\'re likely to be the top vote target.',
-                  'Watch for players who never vote against obvious suspects — they may be protecting their team.',
-                  'Coordinate with other trusted clean players to focus votes decisively.',
-                  'Submitting a proof too early signals your position — use it only when needed.',
+                  "Save your free Shield for when you're about to be voted out.",
+                  'Watch for players who never vote against obvious suspects — they might be covering for their team.',
+                  'Team up with trusted clean players and focus votes decisively.',
+                  "Shielding too early tips your hand — only do it when you need to.",
                 ],
               },
               {
@@ -522,10 +523,10 @@ export default function HowToPlayPage() {
                 color: '#e63329',
                 title: 'Playing Infected',
                 tips: [
-                  'Never vote obviously against the clean faction — it gives you away.',
-                  'Cast your vote early and convincingly against a clean player to build false trust.',
-                  'If the current Patient Zero is under suspicion, encourage their elimination — you may promote.',
-                  'Remember: infected players cannot generate valid innocence proofs. Don\'t try to submit one — it will fail and reveal your status.',
+                  'Never vote obviously against the clean side — it gives you away.',
+                  'Vote early and convincingly against a clean player to build false trust.',
+                  "If the current Patient Zero is under suspicion, push for their elimination — you might get promoted.",
+                  "You can't fake a Shield — the math will reject you. Don't try; it will publicly out you.",
                 ],
               },
             ].map((section) => (
@@ -562,14 +563,14 @@ export default function HowToPlayPage() {
               <Link
                 href="/lobby"
                 className="rounded-xl px-8 py-3 font-mono text-sm font-bold uppercase tracking-wider transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #cc1414, #39ff14)', color: '#060b06' }}
+                style={{ background: 'linear-gradient(135deg, #cc1414, #c97a12)', color: '#060b06' }}
               >
                 Browse Lobby
               </Link>
               <Link
                 href="/"
                 className="rounded-xl border px-8 py-3 font-mono text-sm font-bold uppercase tracking-wider transition-opacity hover:opacity-80"
-                style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14' }}
+                style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23' }}
               >
                 Back to Home
               </Link>
@@ -588,7 +589,7 @@ export default function HowToPlayPage() {
 function SectionTitle({ number, title }: Readonly<{ number: string; title: string }>) {
   return (
     <div className="flex items-baseline gap-4">
-      <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#39ff14' }}>{number}</span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#6b8e23' }}>{number}</span>
       <h2 className="font-display text-2xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
     </div>
   )

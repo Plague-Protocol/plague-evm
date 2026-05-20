@@ -5,6 +5,9 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
 const SCREAM_TRACK  = '/sounds/infected-win.mp3'
 
+const GATE_VIDEO   = '/videos/zombie-clip-1.mp4'
+const FINALE_VIDEO = '/videos/zombie-clip-2.mp4'
+
 const BG_FRAMES = [
   '/images/bg-horror.jpg',
   '/images/bg-zombie-portrait.jpg',
@@ -150,6 +153,9 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   const lastHeartbeatRef = useRef(0)
 
   const { lines, activeLine, done } = useStoryTypewriter(phase === 'story')
+
+  // Act III triggers the finale zombie clip — fades in behind the climax text
+  const inAct3 = phase === 'story' && (lines[activeLine]?.act === 3 || done)
 
   // ── First-time visitor ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -306,14 +312,14 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             alignItems:      'center',
             gap:             '0.4rem',
             background:      'rgba(6,11,6,0.7)',
-            border:          '1px solid rgba(57,255,20,0.35)',
+            border:          '1px solid rgba(107,142,35,0.35)',
             borderRadius:    '6px',
             padding:         '0.4rem 0.75rem',
             cursor:          'pointer',
             fontFamily:      'var(--font-mono)',
             fontSize:        '0.65rem',
             letterSpacing:   '0.14em',
-            color:           splashMuted ? '#4a5e44' : '#39ff14',
+            color:           splashMuted ? '#4a5e44' : '#6b8e23',
             backdropFilter:  'blur(8px)',
           }}
         >
@@ -338,6 +344,53 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           }} />
         ))}
       </div>
+
+      {/* Zombie video — pre-splash gate */}
+      {phase === 'gate' && (
+        <video
+          src={GATE_VIDEO}
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-hidden="true"
+          style={{
+            position:      'absolute',
+            inset:         0,
+            zIndex:        0,
+            width:         '100%',
+            height:        '100%',
+            objectFit:     'cover',
+            filter:        'saturate(0.7) contrast(1.1) brightness(0.5)',
+            opacity:       0.85,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Zombie video — Act III climax (fades in over the image stack) */}
+      {phase === 'story' && (
+        <video
+          src={FINALE_VIDEO}
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-hidden="true"
+          style={{
+            position:    'absolute',
+            inset:       0,
+            zIndex:      0,
+            width:       '100%',
+            height:      '100%',
+            objectFit:   'cover',
+            filter:      'saturate(0.7) contrast(1.15) brightness(0.42)',
+            opacity:     inAct3 ? 0.7 : 0,
+            transition:  'opacity 1.6s ease',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
 
       {/* Scanlines */}
       <div style={{
@@ -371,8 +424,8 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             width:           `${p.size}px`,
             height:          `${p.size}px`,
             borderRadius:    '50%',
-            backgroundColor: 'rgba(57,255,20,0.35)',
-            boxShadow:       '0 0 6px rgba(57,255,20,0.5)',
+            backgroundColor: 'rgba(107,142,35,0.35)',
+            boxShadow:       '0 0 6px rgba(107,142,35,0.5)',
             animation:       `splash-particle ${p.duration}s ${p.delay}s ease-in infinite`,
           }} />
         ))}
@@ -429,18 +482,18 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               textTransform:   'uppercase',
               fontWeight:      700,
               color:           '#060b06',
-              backgroundColor: '#39ff14',
-              border:          '2px solid #39ff14',
+              backgroundColor: '#6b8e23',
+              border:          '2px solid #6b8e23',
               borderRadius:    '6px',
               cursor:          'pointer',
-              boxShadow:       '0 0 24px rgba(57,255,20,0.6)',
+              boxShadow:       '0 0 24px rgba(107,142,35,0.6)',
               animation:       'splash-pulse 2s ease-in-out infinite',
             }}
             onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)'
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(107,142,35,0.9)'
             }}
             onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)'
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(107,142,35,0.6)'
             }}
           >
             DARE TO ENTER
@@ -510,7 +563,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               if (isAct3) textColor = '#d4c9b2'
               if (isClimax) textColor = '#e63329'
               const cursor = i === activeLine && !done
-                ? { borderRight: '2px solid #39ff14', paddingRight: '4px' }
+                ? { borderRight: '2px solid #6b8e23', paddingRight: '4px' }
                 : {}
               return (
                 <div key={line.full} style={{
@@ -553,21 +606,21 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               textTransform: 'uppercase',
               fontWeight:    700,
               color:         '#060b06',
-              backgroundColor: '#39ff14',
-              border:        '2px solid #39ff14',
+              backgroundColor: '#6b8e23',
+              border:        '2px solid #6b8e23',
               borderRadius:  '6px',
               cursor:        'pointer',
-              boxShadow:     '0 0 24px rgba(57,255,20,0.6)',
+              boxShadow:     '0 0 24px rgba(107,142,35,0.6)',
               opacity:       done ? 1 : 0,
               transform:     done ? 'translateY(0)' : 'translateY(8px)',
               transition:    'opacity 0.6s ease, transform 0.6s ease, box-shadow 0.2s',
               pointerEvents: done && !exiting && !finaleStatic ? 'auto' : 'none',
             }}
             onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(57,255,20,0.9)'
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(107,142,35,0.9)'
             }}
             onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(57,255,20,0.6)'
+              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(107,142,35,0.6)'
             }}
           >
             ENTER

@@ -37,9 +37,9 @@ export function ConnectButton() {
         disabled={isLoading}
         className="flex-shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150 hover:opacity-90 disabled:opacity-50"
         style={{
-          background: 'linear-gradient(135deg, #cc1414, #39ff14)',
+          background: 'linear-gradient(135deg, #cc1414, #c97a12)',
           color: '#060b06',
-          boxShadow: '0 0 12px rgba(57,255,20,0.35)',
+          boxShadow: '0 0 12px rgba(107,142,35,0.35)',
         }}
       >
         {isLoading ? 'Connecting…' : 'Connect Wallet'}
@@ -55,9 +55,9 @@ export function ConnectButton() {
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider transition-all duration-150 hover:opacity-90"
         style={{
-          background: 'linear-gradient(135deg, #39ff14, #5a8a2a)',
+          background: 'linear-gradient(135deg, #6b8e23, #5a8a2a)',
           color: '#060b06',
-          boxShadow: '0 0 10px rgba(57,255,20,0.3)',
+          boxShadow: '0 0 10px rgba(107,142,35,0.3)',
         }}
       >
         <span
@@ -76,7 +76,7 @@ export function ConnectButton() {
       {open && (
         <div
           className="absolute right-0 top-full mt-1 min-w-[200px] rounded-xl border p-2"
-          style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200, position: 'absolute' }}
+          style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200, position: 'absolute' }}
         >
           {/* Full address */}
           <div className="px-3 py-2">
@@ -84,13 +84,13 @@ export function ConnectButton() {
             <p className="mt-1 font-mono text-xs break-all" style={{ color: '#8fa882' }}>{address}</p>
           </div>
 
-          <div className="my-1 border-t" style={{ borderColor: 'rgba(57,255,20,0.1)' }} />
+          <div className="my-1 border-t" style={{ borderColor: 'rgba(107,142,35,0.1)' }} />
 
           {/* Copy */}
           <button
             onClick={copy}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80"
-            style={{ color: copied ? '#39ff14' : '#8fa882', backgroundColor: copied ? 'rgba(57,255,20,0.08)' : 'transparent' }}
+            style={{ color: copied ? '#6b8e23' : '#8fa882', backgroundColor: copied ? 'rgba(107,142,35,0.08)' : 'transparent' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>

@@ -1,13 +1,16 @@
 import type { Metadata } from 'next'
-import { Creepster, Oswald, VT323, Rajdhani, Share_Tech_Mono } from 'next/font/google'
+import { Oswald, VT323, Rajdhani, Share_Tech_Mono } from 'next/font/google'
+import localFont from 'next/font/local'
 import Script from 'next/script'
 import { Providers } from '@/providers/providers'
 import './globals.css'
 
-const displayFont = Creepster({
-  subsets: ['latin'],
+const displayFont = localFont({
+  src: '../../public/fonts/Zombie_Holocaust.ttf',
   weight: '400',
+  style: 'normal',
   variable: '--font-display',
+  display: 'swap',
 })
 
 const bodyFont = Oswald({

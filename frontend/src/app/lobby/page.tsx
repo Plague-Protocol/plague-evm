@@ -18,7 +18,7 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 
 const statusColor: Record<string, string> = {
   waiting:  '#1a7a4a',
-  starting: '#39ff14',
+  starting: '#6b8e23',
   active:   '#f5c518',
   ended:    '#4a5e44',
 }
@@ -342,16 +342,16 @@ function getJoinButtonState(
     || expired
     || (room.status === 'waiting' && isFull)
 
-  if (isJoining) return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: 'Joining\u2026', disabled }
+  if (isJoining) return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Joining\u2026', disabled }
 
   if (isMyRoom && isFull && room.status === 'waiting') {
-    return { bg: 'transparent', border: 'rgba(57,255,20,0.3)', color: '#4a5e44', label: 'Starting\u2026', disabled }
+    return { bg: 'transparent', border: 'rgba(107,142,35,0.3)', color: '#4a5e44', label: 'Starting\u2026', disabled }
   }
   if (isMyRoom && isExpired) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Expired', disabled }
   }
   if (isMyRoom) {
-    return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: 'Rejoin', disabled }
+    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Rejoin', disabled }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
@@ -362,7 +362,7 @@ function getJoinButtonState(
   if (room.status === 'starting') {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Starting\u2026', disabled: true }
   }
-  return { bg: 'transparent', border: 'rgba(57,255,20,0.5)', color: '#39ff14', label: statusLabel[room.status], disabled }
+  return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: statusLabel[room.status], disabled }
 }
 
 function RoomCard({
@@ -388,7 +388,7 @@ function RoomCard({
   const showEndRoom  = isMyHost && room.status === 'waiting' && isExpired && !isFull
   const joinBtn      = getJoinButtonState(room, isMyRoom, isFull, isExpired, lockedOut, isJoining)
 
-  let cardBorderColor = 'rgba(57,255,20,0.2)'
+  let cardBorderColor = 'rgba(107,142,35,0.2)'
   if (isExpired && room.status === 'waiting') cardBorderColor = 'rgba(143,168,130,0.15)'
   else if (isExpiring) cardBorderColor = 'rgba(245,197,24,0.35)'
 
@@ -419,7 +419,7 @@ function RoomCard({
           </span>
         )}
         {isFull && room.status === 'waiting' && (
-          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(57,255,20,0.1)', color: '#39ff14', border: '1px solid rgba(57,255,20,0.3)' }}>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(107,142,35,0.1)', color: '#6b8e23', border: '1px solid rgba(107,142,35,0.3)' }}>
             Full
           </span>
         )}
@@ -841,13 +841,13 @@ export default function LobbyPage() {
       {/* Header */}
       <header className="px-4 sm:px-6 py-8 sm:py-16">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-6 text-center">
-          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#39ff14' }}>
+          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
             Game Lobby
           </span>
           <h1
             className="font-display text-3xl font-bold leading-none sm:text-6xl lg:text-8xl"
             style={{
-              background: 'linear-gradient(135deg, #cc1414, #39ff14)',
+              background: 'linear-gradient(135deg, #cc1414, #c8b89a)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -856,7 +856,8 @@ export default function LobbyPage() {
             ACTIVE ROOMS
           </h1>
           <p className="max-w-xl font-body text-sm sm:text-lg" style={{ color: '#8fa882' }}>
-            Join a waiting room, stake cUSD, and lock in your role before the game starts. Once a game begins, the join window closes permanently.
+            Pick a room, stake your cUSD, and get in before it locks. Once the match starts,
+            no one else can join.
           </p>
         </div>
       </header>
@@ -867,13 +868,13 @@ export default function LobbyPage() {
           <div className="mx-auto w-full max-w-6xl">
             <div
               className="flex items-center justify-between gap-4 rounded-lg border px-5 py-4"
-              style={{ backgroundColor: 'rgba(57,255,20,0.07)', borderColor: 'rgba(57,255,20,0.45)' }}
+              style={{ backgroundColor: 'rgba(107,142,35,0.07)', borderColor: 'rgba(107,142,35,0.45)' }}
             >
               <div className="flex items-center gap-3">
-                <span className="inline-block h-2 w-2 rounded-full bg-green-400" style={{ boxShadow: '0 0 6px #39ff14' }} />
+                <span className="inline-block h-2 w-2 rounded-full bg-green-400" style={{ boxShadow: '0 0 6px #6b8e23' }} />
                 <span className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
                   You are in{' '}
-                  <span style={{ color: '#39ff14' }}>
+                  <span style={{ color: '#6b8e23' }}>
                     {myActiveRoom.name ?? `Room #${myActiveRoom.id.toString()}`}
                   </span>
                   {' — '}
@@ -885,7 +886,7 @@ export default function LobbyPage() {
               <button
                 onClick={() => pushToGame(myActiveRoom.id)}
                 className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
-                style={{ borderColor: '#39ff14', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.1)' }}
+                style={{ borderColor: '#6b8e23', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.1)' }}
               >
                 Return to Game →
               </button>
@@ -902,7 +903,7 @@ export default function LobbyPage() {
             <div className="order-2 lg:order-1 flex flex-col gap-6">
               <article
                 className="rise-in rounded-lg border p-5 sm:p-8"
-                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.3)' }}
+                style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.3)' }}
               >
                 <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                   Create Room
@@ -920,7 +921,7 @@ export default function LobbyPage() {
                       value={roomNameInput}
                       onChange={e => setRoomNameInput(e.target.value)}
                       className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none placeholder:opacity-30"
-                      style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                      style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -936,7 +937,7 @@ export default function LobbyPage() {
                         value={maxPlayers}
                         onChange={e => setMaxPlayers(Number(e.target.value))}
                         className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none"
-                        style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                        style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
                       />
                     </div>
                     <div>
@@ -952,7 +953,7 @@ export default function LobbyPage() {
                         value={stakeInput}
                         onChange={e => setStakeInput(e.target.value)}
                         className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none placeholder:opacity-40"
-                        style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#d4c9b2' }}
+                        style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
                       />
                     </div>
                   </div>
@@ -961,7 +962,7 @@ export default function LobbyPage() {
                   </p>
 
                   {myActiveRoom && myActiveRoom.players >= myActiveRoom.maxPlayers && (
-                    <p className="font-mono text-xs" style={{ color: '#39ff14' }}>
+                    <p className="font-mono text-xs" style={{ color: '#6b8e23' }}>
                       Room #{myActiveRoom.id.toString()} is full — auto-starting now.
                     </p>
                   )}
@@ -976,7 +977,7 @@ export default function LobbyPage() {
                     onClick={handleCreateRoom}
                     disabled={creating || !!myActiveRoom}
                     className="w-full rounded-lg border py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
-                    style={{ backgroundColor: '#cc1414', borderColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px #39ff14' }}
+                    style={{ backgroundColor: '#cc1414', borderColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px #6b8e23' }}
                   >
                     {createBtnLabel}
                   </button>
@@ -991,7 +992,7 @@ export default function LobbyPage() {
                     <div
                       key={s.label}
                       className="rounded-lg border p-3 text-center"
-                      style={{ borderColor: 'rgba(57,255,20,0.2)', backgroundColor: '#0e180d' }}
+                      style={{ borderColor: 'rgba(107,142,35,0.2)', backgroundColor: '#0e180d' }}
                     >
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
                         {s.label}
@@ -1056,7 +1057,7 @@ export default function LobbyPage() {
                               autoFocus
                               className="min-w-0 flex-1 rounded border bg-transparent px-3 py-2 font-mono text-xs focus:outline-none placeholder:opacity-30"
                               style={{
-                                borderColor: nicknameAvailable === false ? 'rgba(230,51,41,0.5)' : 'rgba(57,255,20,0.4)',
+                                borderColor: nicknameAvailable === false ? 'rgba(230,51,41,0.5)' : 'rgba(107,142,35,0.4)',
                                 color: '#d4c9b2',
                               }}
                             />
@@ -1064,7 +1065,7 @@ export default function LobbyPage() {
                               onClick={handleSaveNickname}
                               disabled={savingNickname || !nicknameInput.trim() || nicknameAvailable === false}
                               className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                              style={{ borderColor: 'rgba(57,255,20,0.4)', color: '#39ff14' }}
+                              style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23' }}
                             >
                               {savingNickname ? '…' : 'Save'}
                             </button>
@@ -1081,7 +1082,7 @@ export default function LobbyPage() {
                           {/* Availability feedback */}
                           {nicknameInput.trim() && nicknameInput.trim() !== savedNickname && (
                             <p className="mt-1 font-mono text-[10px]" style={{
-                              color: checkingNickname ? '#4a5e44' : nicknameAvailable === true ? '#39ff14' : nicknameAvailable === false ? '#e63329' : '#4a5e44',
+                              color: checkingNickname ? '#4a5e44' : nicknameAvailable === true ? '#6b8e23' : nicknameAvailable === false ? '#e63329' : '#4a5e44',
                             }}>
                               {checkingNickname ? 'Checking…' : nicknameAvailable === true ? '✓ Available' : nicknameAvailable === false ? '✗ Already taken' : ''}
                             </p>
@@ -1090,7 +1091,7 @@ export default function LobbyPage() {
                       )}
                     </div>
 
-                    <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(57,255,20,0.15)', backgroundColor: '#0e180d' }}>
+                    <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}>
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>cUSD Balance</p>
                       <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#4a5e44' }}>
                         {cusdBalance ? `${cusdBalance} cUSD` : '…'}
@@ -1136,7 +1137,7 @@ export default function LobbyPage() {
                             onClick={handleClaim}
                             disabled={claiming}
                             className="w-full rounded border py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
-                            style={{ borderColor: 'rgba(57,255,20,0.45)', color: '#39ff14', backgroundColor: 'rgba(57,255,20,0.06)' }}
+                            style={{ borderColor: 'rgba(107,142,35,0.45)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.06)' }}
                           >
                             {claiming ? 'Claiming…' : 'Claim 50 test cUSD'}
                           </button>
@@ -1148,7 +1149,7 @@ export default function LobbyPage() {
                   <button
                     onClick={connect}
                     className="mt-3 w-full rounded-lg border py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
-                    style={{ borderColor: 'rgba(57,255,20,0.5)', color: '#39ff14' }}
+                    style={{ borderColor: 'rgba(107,142,35,0.5)', color: '#6b8e23' }}
                   >
                     Connect Wallet
                   </button>
@@ -1159,7 +1160,7 @@ export default function LobbyPage() {
             {/* Right column: Room List — order-1 on mobile so it appears first */}
             <article
               className="order-1 lg:order-2 rise-in rounded-lg border p-4 sm:p-6"
-              style={{ backgroundColor: '#0a100a', borderColor: 'rgba(57,255,20,0.2)', animationDelay: '80ms' }}
+              style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)', animationDelay: '80ms' }}
             >
               <div className="flex items-end justify-between gap-4">
                 <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
@@ -1168,18 +1169,18 @@ export default function LobbyPage() {
                 <div className="flex items-center gap-3">
                   <span
                     className="rounded-full border px-3 py-1 font-mono text-xs"
-                    style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14' }}
+                    style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}
                   >
                     {`${rooms.filter(r => r.status !== 'ended').length} rooms`}
                     {loadingRooms && hasLoadedOnce && (
-                      <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full animate-pulse align-middle" style={{ backgroundColor: '#39ff14' }} />
+                      <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full animate-pulse align-middle" style={{ backgroundColor: '#6b8e23' }} />
                     )}
                   </span>
                   <button
                     onClick={loadRooms}
                     disabled={loadingRooms}
                     className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80 disabled:opacity-40"
-                    style={{ borderColor: 'rgba(57,255,20,0.3)', color: '#39ff14' }}
+                    style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}
                   >
                     ↺
                   </button>

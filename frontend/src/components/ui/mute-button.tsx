@@ -11,9 +11,9 @@ export function MuteButton() {
       title={muted ? 'Unmute' : 'Mute'}
       className="flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-lg transition-all duration-150 hover:opacity-90"
       style={{
-        backgroundColor: 'rgba(57,255,20,0.08)',
-        border: '1px solid rgba(57,255,20,0.2)',
-        color: muted ? '#4a5e44' : '#39ff14',
+        backgroundColor: 'rgba(107,142,35,0.08)',
+        border: '1px solid rgba(107,142,35,0.2)',
+        color: muted ? '#4a5e44' : '#6b8e23',
       }}
     >
       {muted ? (
