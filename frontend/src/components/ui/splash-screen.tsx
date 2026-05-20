@@ -149,8 +149,27 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   // gate = logo screen requiring a click; story = typewriter + audio running
   const [phase,        setPhase]        = useState<'gate' | 'story'>('gate')
 
-  const ambientRef       = useRef<HTMLAudioElement | null>(null)
-  const lastHeartbeatRef = useRef(0)
+  const ambientRef         = useRef<HTMLAudioElement | null>(null)
+  const transientAudiosRef = useRef<HTMLAudioElement[]>([])
+  const lastHeartbeatRef   = useRef(0)
+
+  // Track and play a one-shot Audio so the mute toggle can stop it later.
+  const playOneShot = useCallback((src: string, volume: number) => {
+    const audio = new Audio(src)
+    audio.volume = volume
+    transientAudiosRef.current.push(audio)
+    audio.addEventListener('ended', () => {
+      transientAudiosRef.current = transientAudiosRef.current.filter(a => a !== audio)
+    })
+    audio.play().catch(() => {})
+    return audio
+  }, [])
+
+  const stopAllTransients = useCallback(() => {
+    const audios = transientAudiosRef.current
+    transientAudiosRef.current = []
+    for (const audio of audios) audio.pause()
+  }, [])
 
   const { lines, activeLine, done } = useStoryTypewriter(phase === 'story')
 
@@ -196,25 +215,27 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     setPhase('story')
   }, [phase, splashMuted])
 
-  // ── Cleanup ambient on visible reset ─────────────────────────────────────────
+  // ── Cleanup ambient + transients on visible reset ───────────────────────────
   useEffect(() => {
     if (visible) return
     ambientRef.current?.pause()
     if (ambientRef.current) ambientRef.current.currentTime = 0
     ambientRef.current = null
-  }, [visible])
+    stopAllTransients()
+  }, [visible, stopAllTransients])
 
-  // ── Respond to mute toggle on existing ambient audio ─────────────────────────
+  // ── Respond to mute toggle on existing ambient + one-shot audio ──────────────
   useEffect(() => {
+    if (splashMuted) {
+      ambientRef.current?.pause()
+      stopAllTransients()
+      return
+    }
     const audio = ambientRef.current
     if (!audio) return
-    if (splashMuted) {
-      audio.pause()
-    } else {
-      audio.volume = 0.28
-      audio.play().catch(() => {})
-    }
-  }, [splashMuted])
+    audio.volume = 0.28
+    audio.play().catch(() => {})
+  }, [splashMuted, stopAllTransients])
 
   // ── Heartbeat — rate-limited to max once per 1.4 s ───────────────────────────
   useEffect(() => {
@@ -222,27 +243,27 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     const now = Date.now()
     if (now - lastHeartbeatRef.current < 1400) return
     lastHeartbeatRef.current = now
-    const beat = new Audio('/sounds/heartbeat.mp3')
-    beat.volume = 0.18
-    beat.play().catch(() => {})
-  }, [activeLine, visible, splashMuted, phase])
+    playOneShot('/sounds/heartbeat.mp3', 0.18)
+  }, [activeLine, visible, splashMuted, phase, playOneShot])
 
   // ── Scream — fires at Act I climax (line 2 "Day 7…"), echoes out over 4 s ────
   useEffect(() => {
     if (!visible || activeLine !== 2 || splashMuted || phase !== 'story') return
+    let fade: ReturnType<typeof setInterval> | null = null
     const fire = setTimeout(() => {
-      const scream = new Audio(SCREAM_TRACK)
-      scream.volume = 0.24
-      scream.play().catch(() => {})
+      const scream = playOneShot(SCREAM_TRACK, 0.24)
       let step = 0
-      const fade = setInterval(() => {
+      fade = setInterval(() => {
         step++
         scream.volume = Math.max(0, 0.24 * (1 - step / 20))
-        if (step >= 20) { clearInterval(fade); scream.pause() }
+        if (step >= 20) { if (fade) clearInterval(fade); scream.pause() }
       }, 200)
     }, 500)
-    return () => clearTimeout(fire)
-  }, [activeLine, visible, splashMuted, phase])
+    return () => {
+      clearTimeout(fire)
+      if (fade) clearInterval(fade)
+    }
+  }, [activeLine, visible, splashMuted, phase, playOneShot])
 
   // ── Dismiss / finale ─────────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
@@ -251,14 +272,15 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     setFinaleStatic(true)
     setTitleSlam(true)
     if (!splashMuted) {
-      const sting = new Audio('/sounds/reveal-sting.mp3')
-      sting.volume = 0.35
-      sting.play().catch(() => {})
+      playOneShot('/sounds/reveal-sting.mp3', 0.35)
     }
     setTimeout(() => setExiting(true), 260)
     if (ambientRef.current) { ambientRef.current.pause(); ambientRef.current.currentTime = 0 }
-    setTimeout(() => { setVisible(false); setFinaleStatic(false); setTitleSlam(false); onResolved?.() }, 900)
-  }, [exiting, finaleStatic, splashMuted])
+    setTimeout(() => {
+      stopAllTransients()
+      setVisible(false); setFinaleStatic(false); setTitleSlam(false); onResolved?.()
+    }, 900)
+  }, [exiting, finaleStatic, splashMuted, playOneShot, stopAllTransients])
 
   // ── Keyboard dismiss (only during story) ─────────────────────────────────────
   useEffect(() => {
