@@ -30,7 +30,7 @@ const mechanics = [
   {
     icon: '💰',
     title: 'Real Cash Stakes',
-    desc: "Everyone pitches in cUSD before the match. Winners split the pot automatically when the game ends. No middlemen, no chasing payouts.",
+    desc: "Everyone pitches in USDm before the match. Winners split the pot automatically when the game ends. No middlemen, no chasing payouts.",
   },
   {
     icon: '⚡',
@@ -118,7 +118,7 @@ export default function HomePage() {
 
             <p className="max-w-2xl font-body text-sm sm:text-lg leading-relaxed" style={{ color: '#a0bb94' }}>
               One player is secretly infected. The rest have to find them before they turn
-              everyone. Stake cUSD, survive the rounds, take the pot.
+              everyone. Stake USDm, survive the rounds, take the pot.
             </p>
 
             <div className="flex flex-wrap justify-center gap-3 sm:gap-4">

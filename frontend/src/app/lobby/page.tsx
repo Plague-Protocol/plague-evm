@@ -10,11 +10,15 @@ import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
 
-// ── cUSD contract addresses ───────────────────────────────────────────────────
+// ── Stablecoin contract addresses ───────────────────────────────────────────────
+// Mainnet token is USDm (formerly cUSD); testnet uses the mock cUSD faucet token.
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD)
-  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Mainnet
+  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD / test cUSD)
+  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Celo Mainnet (USDm)
 }
+
+// Token name shown to users — USDm on mainnet, cUSD on testnet.
+const STABLE_TOKEN = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') === 'mainnet' ? 'USDm' : 'cUSD'
 
 const statusColor: Record<string, string> = {
   waiting:  '#1a7a4a',
@@ -105,18 +109,20 @@ async function requestRoomRefresh(roomId: string): Promise<void> {
   })
 }
 
-/** Reads the caller's cUSD balance and throws a user-friendly error if it is below `required`. */
+/** Reads the caller's stablecoin balance and throws a user-friendly error if it is below `required`. */
 async function assertSufficientCUSD(
   address: `0x${string}`,
   cUSDAddr: `0x${string}`,
   required: bigint,
   network: 'testnet' | 'mainnet',
+  tokenLabel = STABLE_TOKEN,
 ): Promise<void> {
   const balance = await readCUSDBalance(address, cUSDAddr, network)
   if (balance < required) {
     const have = (Number(balance) / 1e18).toFixed(2)
     const need = (Number(required) / 1e18).toFixed(2)
-    throw new Error(`Insufficient cUSD balance. You need ${need} cUSD but your wallet only holds ${have} cUSD. Use the faucet to claim test tokens.`)
+    const faucetHint = network === 'testnet' ? ' Use the faucet to claim test tokens.' : ''
+    throw new Error(`Insufficient ${tokenLabel} balance. You need ${need} ${tokenLabel} but your wallet only holds ${have} ${tokenLabel}.${faucetHint}`)
   }
 }
 
@@ -304,8 +310,8 @@ const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
   TooManyActiveRooms:      'The contract has reached its room limit. Please wait for a room to finish.',
   Unauthorized:            'You are not authorised to perform this action.',
   // require() string reasons from the contract
-  'cUSD transferFrom failed': 'cUSD transfer failed. Check your balance and that the contract is approved.',
-  'cUSD transfer failed':     'cUSD transfer failed. Check your balance and try again.',
+  'cUSD transferFrom failed': `${STABLE_TOKEN} transfer failed. Check your balance and that the contract is approved.`,
+  'cUSD transfer failed':     `${STABLE_TOKEN} transfer failed. Check your balance and try again.`,
   'maxPlayers must be 4-20':  'Max players must be between 4 and 20.',
   'stakeAmount must be > 0':  'Stake amount must be greater than zero.',
 }
@@ -313,7 +319,7 @@ const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
 function getFriendlyError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
   if (/user (rejected|denied)/i.test(msg)) return 'Transaction cancelled.'
-  if (/Insufficient cUSD balance/i.test(msg)) return msg   // our own pre-check — pass through verbatim
+  if (/Insufficient (cUSD|USDm) balance/i.test(msg)) return msg   // our own pre-check — pass through verbatim
   if (/insufficient funds/i.test(msg)) return 'Insufficient CELO to pay gas. Add CELO to your wallet first.'
   // Named custom errors decoded by viem (error names appear as-is in the message)
   for (const [name, friendly] of Object.entries(CONTRACT_ERROR_MESSAGES)) {
@@ -436,16 +442,16 @@ function RoomCard({
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
-            <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>{stakeCUSD} cUSD</p>
+            <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>{stakeCUSD} {STABLE_TOKEN}</p>
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
-            <p className="font-display text-lg leading-none" style={{ color: '#8fa882' }}>{feeCUSD} cUSD</p>
+            <p className="font-display text-lg leading-none" style={{ color: '#8fa882' }}>{feeCUSD} {STABLE_TOKEN}</p>
           </div>
           {room.status === 'active' && (
             <div className="text-center">
               <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
-              <p className="font-display text-lg leading-none" style={{ color: '#f5c518' }}>{potCUSD} cUSD</p>
+              <p className="font-display text-lg leading-none" style={{ color: '#f5c518' }}>{potCUSD} {STABLE_TOKEN}</p>
             </div>
           )}
           {room.status === 'waiting' && room.expiresAt > 0 && (
@@ -856,7 +862,7 @@ export default function LobbyPage() {
             ACTIVE ROOMS
           </h1>
           <p className="max-w-xl font-body text-sm sm:text-lg" style={{ color: '#8fa882' }}>
-            Pick a room, stake your cUSD, and get in before it locks. Once the match starts,
+            Pick a room, stake your {STABLE_TOKEN}, and get in before it locks. Once the match starts,
             no one else can join.
           </p>
         </div>
@@ -942,7 +948,7 @@ export default function LobbyPage() {
                     </div>
                     <div>
                       <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Stake (cUSD) <span style={{ color: '#2e4a2e' }}>(amount &gt; 0)</span>
+                        Stake ({STABLE_TOKEN}) <span style={{ color: '#2e4a2e' }}>(amount &gt; 0)</span>
                       </label>
                       <input
                         id="stakeInput"
@@ -958,7 +964,7 @@ export default function LobbyPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                    Proof fee: 1% of stake ({(Number.parseFloat(stakeInput || '0') * 0.01).toFixed(4)} cUSD per extra proof)
+                    Proof fee: 1% of stake ({(Number.parseFloat(stakeInput || '0') * 0.01).toFixed(4)} {STABLE_TOKEN} per extra proof)
                   </p>
 
                   {myActiveRoom && myActiveRoom.players >= myActiveRoom.maxPlayers && (
@@ -985,7 +991,7 @@ export default function LobbyPage() {
 
                 <div className="mt-6 grid grid-cols-3 gap-3">
                   {[
-                    { label: 'Stake',   value: `${stakeInput} cUSD` },
+                    { label: 'Stake',   value: `${stakeInput} ${STABLE_TOKEN}` },
                     { label: 'Players', value: `${maxPlayers}` },
                     { label: 'Mode',    value: 'ZK' },
                   ].map((s) => (
@@ -1091,12 +1097,14 @@ export default function LobbyPage() {
                       )}
                     </div>
 
+                    {isTestnet && (
                     <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}>
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>cUSD Balance</p>
                       <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#4a5e44' }}>
                         {cusdBalance ? `${cusdBalance} cUSD` : '…'}
                       </p>
                     </div>
+                    )}
 
                     {/* Testnet faucet */}
                     {showFaucet && isTestnet && (
