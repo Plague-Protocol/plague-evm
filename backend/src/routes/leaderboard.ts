@@ -222,3 +222,24 @@ leaderboardRouter.get('/', async (_req, res) => {
     res.status(500).json({ error: message })
   }
 })
+
+/**
+ * GET /api/leaderboard/stats
+ * Lightweight aggregate counts for the homepage hero stats.
+ * No backfill — reads only persisted summaries.
+ */
+leaderboardRouter.get('/stats', async (_req, res) => {
+  try {
+    const [totalGames, totalPlayers, zombiesCaught] = await Promise.all([
+      prisma.gameSummary.count(),
+      prisma.gameSummaryPlayer.groupBy({ by: ['address'] }).then(r => r.length),
+      prisma.gameSummaryPlayer.count({
+        where: { statusAtEnd: 'infected', result: 'loss' },
+      }),
+    ])
+    res.json({ totalGames, totalPlayers, zombiesCaught })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})

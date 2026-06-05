@@ -1,11 +1,6 @@
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
-
-const stats = [
-  { icon: '🧟', number: '146', label: 'Matches Played' },
-  { icon: '🩸', number: '824', label: 'Zombies Caught' },
-  { icon: '💀', number: '311', label: 'Players' },
-]
+import { HeroStats, CtaStats } from '@/components/ui/home-stats'
 
 const features = [
   {
@@ -149,21 +144,7 @@ export default function HomePage() {
             className="rise-in grid w-full grid-cols-1 gap-6 sm:grid-cols-3"
             style={{ animationDelay: '200ms' }}
           >
-            {stats.map((stat) => (
-              <div
-                key={stat.label}
-                className="flex flex-col items-center gap-2 sm:gap-3 rounded-2xl border p-4 sm:p-8 text-center transition-all hover:scale-[1.02]"
-                style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: 'rgba(12,19,9,0.85)' }}
-              >
-                <span className="text-3xl sm:text-5xl">{stat.icon}</span>
-                <span className="font-display text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
-                  {stat.number}
-                </span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>
-                  {stat.label}
-                </span>
-              </div>
-            ))}
+            <HeroStats />
           </div>
         </div>
       </section>
@@ -330,20 +311,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid w-full grid-cols-1 gap-6 sm:grid-cols-3">
-            {[
-              { n: '146', l: 'Matches Played' },
-              { n: '311', l: 'Players Registered' },
-              { n: '99.9%', l: 'Chain Uptime' },
-            ].map((s) => (
-              <div key={s.l} className="flex flex-col items-center gap-2 text-center">
-                <span className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>
-                  {s.n}
-                </span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>
-                  {s.l}
-                </span>
-              </div>
-            ))}
+            <CtaStats />
           </div>
 
           <Link
