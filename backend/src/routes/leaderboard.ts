@@ -233,9 +233,8 @@ leaderboardRouter.get('/stats', async (_req, res) => {
     const [totalGames, totalPlayers, zombiesCaught] = await Promise.all([
       prisma.gameSummary.count(),
       prisma.gameSummaryPlayer.groupBy({ by: ['address'] }).then(r => r.length),
-      prisma.gameSummaryPlayer.count({
-        where: { statusAtEnd: 'infected', result: 'loss' },
-      }),
+      // "Zombie caught" = games where clean players won (Patient Zero was identified)
+      prisma.gameSummary.count({ where: { outcome: 'clean_win' } }),
     ])
     res.json({ totalGames, totalPlayers, zombiesCaught })
   } catch (err) {
