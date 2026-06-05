@@ -9,10 +9,10 @@ const GATE_VIDEO   = '/videos/zombie-clip-1.mp4'
 const FINALE_VIDEO = '/videos/zombie-clip-2.mp4'
 
 const BG_FRAMES = [
-  '/images/bg-horror.jpg',
-  '/images/bg-zombie-portrait.jpg',
-  '/images/bg-patient-zero.jpg',
-  '/images/bg-game.jpg',
+  '/images/bg-horror.webp',
+  '/images/bg-zombie-portrait.webp',
+  '/images/bg-patient-zero.webp',
+  '/images/bg-game.webp',
 ] as const
 
 // ── Story — three acts. Acts 1 & 2 fade+collapse when the next act begins. ───
@@ -265,6 +265,17 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     }
   }, [activeLine, visible, splashMuted, phase, playOneShot])
 
+  // ── Skip entire intro immediately ───────────────────────────────────────────
+  const skipAll = useCallback(() => {
+    if (globalThis.window !== undefined) sessionStorage.setItem('plague_intro_seen', '1')
+    ambientRef.current?.pause()
+    if (ambientRef.current) ambientRef.current.currentTime = 0
+    ambientRef.current = null
+    stopAllTransients()
+    setVisible(false)
+    onResolved?.()
+  }, [stopAllTransients, onResolved])
+
   // ── Dismiss / finale ─────────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
     if (exiting || finaleStatic) return
@@ -349,6 +360,43 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           <span>{splashMuted ? 'MUTED' : 'SOUND ON'}</span>
         </button>
       )}
+
+      {/* Skip button — always visible in both phases */}
+      <button
+        onClick={skipAll}
+        aria-label="Skip intro"
+        style={{
+          position:      'absolute',
+          top:           '1rem',
+          left:          '1rem',
+          zIndex:        10,
+          display:       'flex',
+          alignItems:    'center',
+          gap:           '0.35rem',
+          background:    'rgba(6,11,6,0.7)',
+          border:        '1px solid rgba(212,201,178,0.25)',
+          borderRadius:  '6px',
+          padding:       '0.4rem 0.75rem',
+          cursor:        'pointer',
+          fontFamily:    'var(--font-mono)',
+          fontSize:      '0.65rem',
+          letterSpacing: '0.14em',
+          color:         'rgba(212,201,178,0.7)',
+          backdropFilter: 'blur(8px)',
+          transition:    'color 0.15s, border-color 0.15s',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.color = '#d4c9b2';
+          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(212,201,178,0.5)';
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.color = 'rgba(212,201,178,0.7)';
+          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(212,201,178,0.25)';
+        }}
+      >
+        <span>SKIP</span>
+        <span style={{ fontSize: '0.75rem', lineHeight: 1 }}>››</span>
+      </button>
 
       {/* Background layers — stacked, crossfade via opacity transition */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>

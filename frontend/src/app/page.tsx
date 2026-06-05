@@ -68,7 +68,7 @@ export default function HomePage() {
       <section
         className="relative flex min-h-[88vh] w-full flex-col items-center justify-center overflow-hidden px-6 py-20"
         style={{
-          backgroundImage: 'url(/images/bg-home.jpg)',
+          backgroundImage: 'url(/images/bg-home.webp)',
           backgroundSize: 'cover',
           backgroundPosition: 'center top',
         }}
@@ -121,7 +121,7 @@ export default function HomePage() {
               </span>
             </h1>
 
-            <p className="max-w-2xl font-body text-sm sm:text-lg leading-relaxed" style={{ color: '#8fa882' }}>
+            <p className="max-w-2xl font-body text-sm sm:text-lg leading-relaxed" style={{ color: '#a0bb94' }}>
               One player is secretly infected. The rest have to find them before they turn
               everyone. Stake cUSD, survive the rounds, take the pot.
             </p>
@@ -159,7 +159,7 @@ export default function HomePage() {
                 <span className="font-display text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
                   {stat.number}
                 </span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>
+                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>
                   {stat.label}
                 </span>
               </div>
@@ -194,7 +194,7 @@ export default function HomePage() {
             >
               THREE PHASES. ONE SURVIVOR.
             </h2>
-            <p className="max-w-2xl text-center font-body" style={{ color: '#8fa882' }}>
+              <p className="max-w-2xl text-center font-body" style={{ color: '#a0bb94' }}>
               Every match: someone gets infected, the room argues, the room votes. Repeat until
               only one side is left standing.
             </p>
@@ -213,7 +213,7 @@ export default function HomePage() {
               >
                 <div className="flex items-start justify-between">
                   <span className="text-4xl">{f.icon}</span>
-                  <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+                  <span className="font-mono text-xs" style={{ color: '#7fa06c' }}>
                     {f.phase}
                   </span>
                 </div>
@@ -221,7 +221,7 @@ export default function HomePage() {
                   <h3 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                     {f.title}
                   </h3>
-                  <p className="mt-3 font-body text-sm leading-relaxed" style={{ color: '#8fa882' }}>
+                  <p className="mt-3 font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
                     {f.description}
                   </p>
                 </div>
@@ -267,7 +267,7 @@ export default function HomePage() {
                   <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
                     {m.title}
                   </h3>
-                  <p className="mt-2 font-body text-sm leading-relaxed" style={{ color: '#8fa882' }}>
+                  <p className="mt-2 font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
                     {m.desc}
                   </p>
                 </div>
@@ -280,10 +280,10 @@ export default function HomePage() {
             className="mx-auto mt-12 max-w-3xl rounded-lg border px-5 py-4 text-center"
             style={{ borderColor: 'rgba(143,168,130,0.15)', backgroundColor: 'rgba(6,11,6,0.5)' }}
           >
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#7fa06c' }}>
               Under the Hood
             </p>
-            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#a0bb94' }}>
               Built on Celo · Smart contracts hold the stakes · Noir zero-knowledge proofs keep
               your role private · Open-source and verifiable
             </p>
@@ -295,7 +295,7 @@ export default function HomePage() {
       <section
         className="relative overflow-hidden px-4 sm:px-6 py-16 sm:py-32"
         style={{
-          backgroundImage: 'url(/images/bg-zombie-portrait.jpg)',
+          backgroundImage: 'url(/images/bg-zombie-portrait.webp)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}
@@ -324,7 +324,7 @@ export default function HomePage() {
             >
               FIND PATIENT ZERO.
             </h2>
-            <p className="max-w-xl font-body text-base sm:text-xl" style={{ color: '#8fa882' }}>
+              <p className="max-w-xl font-body text-base sm:text-xl" style={{ color: '#a0bb94' }}>
               Or become them. Every match is a fresh hunt.
             </p>
           </div>
@@ -339,7 +339,7 @@ export default function HomePage() {
                 <span className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>
                   {s.n}
                 </span>
-                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>
+                <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>
                   {s.l}
                 </span>
               </div>

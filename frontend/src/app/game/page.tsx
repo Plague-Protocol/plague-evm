@@ -699,7 +699,7 @@ function GamePageInner() { // NOSONAR
   // ── No roomId guard ─────────────────────────────────────────────────────
   if (!roomId) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
         <p className="font-mono text-lg" style={{ color: '#e63329' }}>No room specified.</p>
         <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#6b8e23', color: '#6b8e23' }}>
           ← Back to Lobby
@@ -711,7 +711,7 @@ function GamePageInner() { // NOSONAR
   // ── Room not found / initializing guard ─────────────────────────────────
   if (!isLoading && !room && error === 'Room not found.') {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
         <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)' }} />
         <div className="relative flex flex-col items-center gap-4 text-center px-8">
           <p className="font-display text-4xl" style={{ color: '#e63329' }}>Room Not Found</p>
@@ -736,7 +736,7 @@ function GamePageInner() { // NOSONAR
   }
 
   return (
-    <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
+    <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
       <div className="relative game-tab-content" style={{ zIndex: 1 }}>
       {/* Nav */}

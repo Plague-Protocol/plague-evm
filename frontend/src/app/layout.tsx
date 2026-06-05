@@ -51,6 +51,9 @@ export const metadata: Metadata = {
     description: 'Can you find Patient Zero before the infection spreads?',
     images: [{ url: '/images/z-plague-image.png', width: 1200, height: 630 }],
   },
+  other: {
+    'talentapp:project_verification': '734c0dd315dbccb48f9a22fb0dd3124c1ec99e4cc50610ee9c895db0b5739aaa353547cba1bba32353ac5c633a1a10287cc39939f6046ab17b845323baa09542',
+  },
 }
 
 export default function RootLayout({

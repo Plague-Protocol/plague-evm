@@ -413,11 +413,11 @@
 @keyframes splash-pulse {
   0%, 100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 24px rgba(230,51,41,0.8));
+    opacity: 0.88;
   }
   50% {
     transform: scale(1.12);
-    filter: drop-shadow(0 0 48px rgba(230,51,41,1)) drop-shadow(0 0 80px rgba(230,51,41,0.4));
+    opacity: 1;
   }
 }
 

@@ -172,7 +172,7 @@ export default function LeaderboardPage() {
       style={{
         backgroundColor: '#060b06',
         color: '#d4c9b2',
-        backgroundImage: 'url(/images/bg-zombie-portrait.jpg)',
+        backgroundImage: 'url(/images/bg-zombie-portrait.webp)',
         backgroundSize: 'cover',
         backgroundPosition: 'center top',
         backgroundAttachment: 'fixed',
