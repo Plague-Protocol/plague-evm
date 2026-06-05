@@ -1097,14 +1097,12 @@ export default function LobbyPage() {
                       )}
                     </div>
 
-                    {isTestnet && (
                     <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}>
-                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>cUSD Balance</p>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>{STABLE_TOKEN} Balance</p>
                       <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#4a5e44' }}>
-                        {cusdBalance ? `${cusdBalance} cUSD` : '…'}
+                        {cusdBalance ? `${cusdBalance} ${STABLE_TOKEN}` : '…'}
                       </p>
                     </div>
-                    )}
 
                     {/* Testnet faucet */}
                     {showFaucet && isTestnet && (
