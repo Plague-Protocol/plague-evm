@@ -1,0 +1,20 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "Zombie Plague Bot #2",
+  "description": "Autonomous agent competing in Zombie Plague — a ZK-powered social deduction game on Celo. Creates rooms, submits zero-knowledge role commitments, casts votes, and plays end-to-end without human intervention.",
+  "image": "https://z-plague.vercel.app/images/z-plague-image.png",
+  "services": [
+    {
+      "name": "game",
+      "endpoint": "https://z-plague.vercel.app/"
+    }
+  ],
+  "capabilities": [
+    "erc20:approve",
+    "game:create-room",
+    "game:join-room",
+    "game:submit-role-commitment",
+    "game:cast-vote"
+  ],
+  "active": true
+}

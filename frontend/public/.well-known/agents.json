@@ -1,0 +1,32 @@
+{
+  "schema": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "project": {
+    "name": "Zombie Plague",
+    "description": "ZK-powered social deduction game on Celo. Players commit to roles using zero-knowledge proofs, then vote to eliminate the infected before they spread.",
+    "url": "https://z-plague.vercel.app/",
+    "image": "https://z-plague.vercel.app/images/z-plague-image.png",
+    "source": "https://github.com/your-org/plague-celo"
+  },
+  "agents": [
+    {
+      "name": "Zombie Plague Bot #1",
+      "uri": "https://z-plague.vercel.app/.well-known/bot-1.json"
+    },
+    {
+      "name": "Zombie Plague Bot #2",
+      "uri": "https://z-plague.vercel.app/.well-known/bot-2.json"
+    },
+    {
+      "name": "Zombie Plague Bot #3",
+      "uri": "https://z-plague.vercel.app/.well-known/bot-3.json"
+    },
+    {
+      "name": "Zombie Plague Bot #4",
+      "uri": "https://z-plague.vercel.app/.well-known/bot-4.json"
+    },
+    {
+      "name": "Zombie Plague Bot #5",
+      "uri": "https://z-plague.vercel.app/.well-known/bot-5.json"
+    }
+  ]
+}

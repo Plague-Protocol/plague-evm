@@ -198,6 +198,11 @@ function clients() {
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
+// Optional: pay backend gas in USDm instead of CELO.
+// Set FEE_CURRENCY_ADDRESS=0x765DE816845861e75A25fCA122bb6022DB77Eaca on mainnet
+// so the backend signer wallet needs no CELO — only USDm for gas.
+const FEE_CURRENCY_ADDRESS = process.env.FEE_CURRENCY_ADDRESS as `0x${string}` | undefined
+
 async function writeAndWait(functionName: string, args: readonly unknown[]) {
   const { publicClient, walletClient, address } = clients()
   const { request } = await publicClient.simulateContract({
@@ -206,6 +211,7 @@ async function writeAndWait(functionName: string, args: readonly unknown[]) {
     functionName: functionName as never,
     args:         args as never,
     account:      walletClient.account,
+    ...(FEE_CURRENCY_ADDRESS ? { feeCurrency: FEE_CURRENCY_ADDRESS } : {}),
   })
   const hash = await walletClient.writeContract(request as never)
   return publicClient.waitForTransactionReceipt({ hash })
