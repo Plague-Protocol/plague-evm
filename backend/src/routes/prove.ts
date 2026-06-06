@@ -26,6 +26,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
+import { Noir } from '@noir-lang/noir_js'
 import { logger } from '../lib/logger'
 
 const execAsync = promisify(exec)
@@ -126,6 +127,87 @@ proveRouter.post('/', async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     logger.error('bb prove: failed', { circuitId: parseResult.data.circuitId, error: msg })
+    res.status(500).json({ error: 'Proof generation failed', detail: msg })
+  } finally {
+    if (tmpDir) {
+      rm(tmpDir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+})
+
+// ── Role commitment: inputs → witness → proof ─────────────────────────────
+//
+// POST /api/prove/role-commitment
+//
+// Called by the bot runner (agents/) to generate a role commitment proof
+// entirely server-side, avoiding @noir-lang/noir_js version mismatches on
+// the client.
+//
+// Request body:
+//   { role: "0x...", secret: "0x...", commitment: "0x..." }
+//   All three are 0x-prefixed 32-byte hex field elements.
+//
+// Response:
+//   { proofHex: "0x..." }
+
+const RoleCommitmentProveSchema = z.object({
+  role:       z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+  secret:     z.string().regex(/^0x[0-9a-fA-F]{1,64}$/),
+  commitment: z.string().regex(/^0x[0-9a-fA-F]{1,64}$/),
+})
+
+// Cache the loaded circuit JSON (loaded once on first request)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _roleCircuit: any = null
+async function getRoleCircuit() {
+  if (!_roleCircuit) {
+    const circuitPath = join(CIRCUIT_DIR, 'role_commitment.json')
+    const raw = await readFile(circuitPath, 'utf8')
+    _roleCircuit = JSON.parse(raw)
+  }
+  return _roleCircuit
+}
+
+proveRouter.post('/role-commitment', async (req, res) => {
+  const parseResult = RoleCommitmentProveSchema.safeParse(req.body)
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid request: ' + parseResult.error.message })
+  }
+
+  const { role, secret, commitment } = parseResult.data
+  let tmpDir: string | null = null
+
+  try {
+    const bb = getBBBinary()
+
+    // 1. Generate witness using @noir-lang/noir_js (same version as circuit compiler)
+    const circuit = await getRoleCircuit()
+    const noir = new Noir(circuit)
+    const { witness } = await noir.execute({ role, secret, commitment })
+
+    // 2. Write witness to temp dir and generate proof via bb CLI
+    const tmpId = randomBytes(8).toString('hex')
+    tmpDir = join(tmpdir(), `plague-role-${tmpId}`)
+    await mkdir(tmpDir, { recursive: true })
+
+    const witnessPath = join(tmpDir, 'witness.gz')
+    await writeFile(witnessPath, Buffer.from(witness))
+
+    const circuitPath = join(CIRCUIT_DIR, 'role_commitment.json')
+    const cmd = `"${bb}" prove -s ultra_honk -t evm --write_vk -b "${circuitPath}" -w "${witnessPath}" -o "${tmpDir}"`
+
+    try {
+      await execAsync(cmd, { timeout: 120_000 })
+    } catch (execErr) {
+      const e = execErr as { stdout?: string; stderr?: string }
+      throw new Error(`bb prove failed.\nstdout: ${e.stdout ?? ''}\nstderr: ${e.stderr ?? ''}`)
+    }
+
+    const proofBytes = await readFile(join(tmpDir, 'proof'))
+    res.json({ proofHex: '0x' + proofBytes.toString('hex') })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error('role-commitment prove: failed', { error: msg })
     res.status(500).json({ error: 'Proof generation failed', detail: msg })
   } finally {
     if (tmpDir) {
