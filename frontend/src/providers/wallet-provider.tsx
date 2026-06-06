@@ -131,11 +131,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         isLoading: false,
         error: null,
       })
-      // Auto-switch to Celo if user is on an unsupported network.
-      // This also adds the Celo chain to wallets that don't have it yet.
-      const knownCeloChains = [42220, 44787, 11142220]
-      if (!knownCeloChains.includes(parsedChainId)) {
-        const network = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'mainnet' | 'testnet'
+      // Auto-switch to the correct Celo chain for this deployment.
+      // Fires both when the user is on a non-Celo network AND when they are on
+      // the wrong Celo network (e.g. Mainnet wallet on a testnet build).
+      const network = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'mainnet' | 'testnet'
+      const targetChainId = CELO_CHAINS[network].id
+      if (parsedChainId !== targetChainId) {
         const chain = CELO_CHAINS[network]
         const chainHex = `0x${chain.id.toString(16)}`
         try {
