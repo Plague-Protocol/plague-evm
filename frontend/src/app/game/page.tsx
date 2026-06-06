@@ -740,7 +740,7 @@ function GamePageInner() { // NOSONAR
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
       <div className="relative game-tab-content" style={{ zIndex: 1 }}>
       {/* Nav */}
-      <div className="px-4 pt-4 sm:px-8 sm:pt-6">
+      <div className="sticky top-0 z-50 px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
           <SiteNav currentPath="/game" />
         </div>
@@ -929,7 +929,7 @@ function GamePageInner() { // NOSONAR
         <div className="mx-auto w-full max-w-6xl">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {[
-              { label: 'POT',          value: `${potCUSD} cUSD`, accent: '#f5c518' },
+              { label: 'POT',          value: `${potCUSD} USDm`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
               { label: 'SHIELD WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#6b8e23' },
             ].map((stat) => (
@@ -1145,7 +1145,7 @@ function GamePageInner() { // NOSONAR
                     <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.3)' }}>
                       <h3 className="font-display text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
                       <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>{getResultLabel(result.outcome)}</p>
-                      <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} cUSD</p>
+                      <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} USDm</p>
                       <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
                         Winners: {result.winners.map(w => {
                           const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())

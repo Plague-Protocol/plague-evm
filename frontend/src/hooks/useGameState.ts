@@ -458,7 +458,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       case 'pot_drained': {
         const winner = String(p.winner)
         const amount = BigInt(typeof p.amount === 'string' || typeof p.amount === 'number' ? String(p.amount) : '0')
-        appendFeed(`Pot distributed — winner received ${(Number(amount) / 1e18).toFixed(4)} cUSD.`)
+        appendFeed(`Pot distributed — winner received ${(Number(amount) / 1e18).toFixed(4)} USDm.`)
         setState(prev => {
           const outcome = pendingOutcomeRef.current ?? 'max_rounds_draw'
           if (!prev.result) {

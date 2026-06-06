@@ -79,8 +79,8 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
             <p className={`mt-2 font-mono text-sm ${isWrongNetwork ? 'text-red-400' : ''}`}>{networkName}</p>
           </div>
           <div className={`border p-3 rounded ${isDark ? 'border-white/20 bg-white/5' : 'border-black/20 bg-black/5'}`}>
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400">cUSD Balance</p>
-            <p className="mt-2 font-display text-2xl leading-none">{balance === null ? '…' : `${balance} cUSD`}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400">USDm Balance</p>
+            <p className="mt-2 font-display text-2xl leading-none">{balance === null ? '…' : `${balance} USDm`}</p>
           </div>
         </div>
       )}

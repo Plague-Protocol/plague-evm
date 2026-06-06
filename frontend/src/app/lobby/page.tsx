@@ -17,8 +17,8 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
   42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Celo Mainnet (USDm)
 }
 
-// Token name shown to users — USDm on mainnet, cUSD on testnet.
-const STABLE_TOKEN = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') === 'mainnet' ? 'USDm' : 'cUSD'
+// Token name shown to users — always USDm.
+const STABLE_TOKEN = 'USDm'
 
 const statusColor: Record<string, string> = {
   waiting:  '#1a7a4a',
@@ -63,7 +63,7 @@ function formatCUSDBalance(balance: bigint): string {
 }
 
 function claimSuccessMessage(claimed: boolean): string {
-  return claimed ? '50 cUSD dropped to your wallet!' : ''
+  return claimed ? '50 USDm dropped to your wallet!' : ''
 }
 
 function getCreateButtonLabel(isConnected: boolean, creating: boolean): string {
@@ -838,7 +838,7 @@ export default function LobbyPage() {
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.85)', zIndex: 0 }} />
       <div className="relative" style={{ zIndex: 1 }}>
       {/* Nav */}
-      <div className="px-4 pt-4 sm:px-8 sm:pt-6">
+      <div className="sticky top-0 z-50 px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
           <SiteNav currentPath="/lobby" />
         </div>
@@ -1110,7 +1110,7 @@ export default function LobbyPage() {
                         <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Test Faucet</p>
                         <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(245,197,24,0.25)', backgroundColor: 'rgba(245,197,24,0.06)' }}>
                           <p className="font-mono text-[11px]" style={{ color: '#f5c518' }}>
-                            Step 1: Get CELO gas first, then claim cUSD here.
+                            Step 1: Get CELO gas first, then claim USDm here.
                           </p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <a
@@ -1145,7 +1145,7 @@ export default function LobbyPage() {
                             className="w-full rounded border py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
                             style={{ borderColor: 'rgba(107,142,35,0.45)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.06)' }}
                           >
-                            {claiming ? 'Claiming…' : 'Claim 50 test cUSD'}
+                            {claiming ? 'Claiming…' : 'Claim 50 test USDm'}
                           </button>
                         )}
                       </div>

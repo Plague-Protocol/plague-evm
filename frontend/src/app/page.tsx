@@ -53,7 +53,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2' }}>
       {/* Nav */}
-      <div className="px-4 pt-4 sm:px-8 sm:pt-6">
+      <div className="sticky top-0 z-50 px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
           <SiteNav currentPath="/" />
         </div>
@@ -73,22 +73,6 @@ export default function HomePage() {
           className="pointer-events-none absolute inset-0"
           style={{ background: 'linear-gradient(to bottom, rgba(6,11,6,0.80) 0%, rgba(6,11,6,0.65) 50%, rgba(6,11,6,0.94) 100%)' }}
         />
-        {/* Animated glow blobs */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div
-            className="rise-in absolute left-[8%] top-[12%] h-96 w-96 rounded-full opacity-12 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #6b8e23, transparent)', animationDelay: '0ms' }}
-          />
-          <div
-            className="rise-in absolute right-[8%] top-[20%] h-80 w-80 rounded-full opacity-10 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #cc1414, transparent)', animationDelay: '200ms' }}
-          />
-          <div
-            className="rise-in absolute bottom-[15%] left-[38%] h-72 w-72 rounded-full opacity-08 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #c97a12, transparent)', animationDelay: '400ms' }}
-          />
-        </div>
-
         <div className="relative z-10 flex w-full max-w-6xl flex-col items-center gap-16 text-center">
           {/* Badge + Heading + CTA */}
           <div className="rise-in flex flex-col items-center gap-8">
@@ -125,7 +109,7 @@ export default function HomePage() {
               <Link
                 href="/lobby"
                 className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
-                style={{ backgroundColor: '#6b8e23', color: '#060b06', boxShadow: '4px 4px 0px #cc1414' }}
+                style={{ backgroundColor: '#6b8e23', color: '#060b06' }}
               >
                 Play Now
               </Link>
@@ -154,10 +138,10 @@ export default function HomePage() {
         <div className="overflow-hidden">
           <div className="ticker" style={{ color: '#6b8e23' }}>
             FIND PATIENT ZERO&nbsp;&nbsp;|&nbsp;&nbsp;TRUST NO ONE&nbsp;&nbsp;|&nbsp;&nbsp;STAKE
-            cUSD&nbsp;&nbsp;|&nbsp;&nbsp;WIN THE POT&nbsp;&nbsp;|&nbsp;&nbsp;ONE OF YOU IS
+            USDm&nbsp;&nbsp;|&nbsp;&nbsp;WIN THE POT&nbsp;&nbsp;|&nbsp;&nbsp;ONE OF YOU IS
             INFECTED&nbsp;&nbsp;|&nbsp;&nbsp;SHIELD YOURSELF&nbsp;&nbsp;|&nbsp;&nbsp;VOTE BEFORE
             THE TIMER&nbsp;&nbsp;|&nbsp;&nbsp;FIND PATIENT ZERO&nbsp;&nbsp;|&nbsp;&nbsp;TRUST NO
-            ONE&nbsp;&nbsp;|&nbsp;&nbsp;STAKE cUSD&nbsp;&nbsp;|&nbsp;&nbsp;WIN THE POT&nbsp;&nbsp;|
+            ONE&nbsp;&nbsp;|&nbsp;&nbsp;STAKE USDm&nbsp;&nbsp;|&nbsp;&nbsp;WIN THE POT&nbsp;&nbsp;|
           </div>
         </div>
       </div>
@@ -276,7 +260,7 @@ export default function HomePage() {
       <section
         className="relative overflow-hidden px-4 sm:px-6 py-16 sm:py-32"
         style={{
-          backgroundImage: 'url(/images/bg-zombie-portrait.webp)',
+          backgroundImage: 'url(/images/bg-cta.webp)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}

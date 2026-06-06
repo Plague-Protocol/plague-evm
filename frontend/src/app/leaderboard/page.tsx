@@ -172,7 +172,7 @@ export default function LeaderboardPage() {
       style={{
         backgroundColor: '#060b06',
         color: '#d4c9b2',
-        backgroundImage: 'url(/images/bg-zombie-portrait.webp)',
+        backgroundImage: 'url(/images/bg-leaderboard.webp)',
         backgroundSize: 'cover',
         backgroundPosition: 'center top',
         backgroundAttachment: 'fixed',
@@ -182,7 +182,7 @@ export default function LeaderboardPage() {
 
       <div className="relative" style={{ zIndex: 1 }}>
         {/* Nav */}
-        <div className="px-4 pt-4 sm:px-8 sm:pt-6">
+        <div className="sticky top-0 z-50 px-4 pt-4 sm:px-8 sm:pt-6">
           <div className="mx-auto w-full max-w-6xl">
             <SiteNav currentPath="/leaderboard" />
           </div>

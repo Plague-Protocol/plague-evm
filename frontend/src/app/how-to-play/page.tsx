@@ -73,7 +73,7 @@ const proofRules = [
   {
     icon: '🆓',
     title: 'First Shield is free',
-    desc: 'Every player gets one free Shield per game. No cUSD needed.',
+    desc: 'Every player gets one free Shield per game. No USDm needed.',
   },
   {
     icon: '💸',
@@ -177,7 +177,7 @@ export default function HowToPlayPage() {
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
       <div className="relative" style={{ zIndex: 1 }}>
       {/* Nav */}
-      <div className="px-4 pt-4 sm:px-8 sm:pt-6">
+      <div className="sticky top-0 z-50 px-4 pt-4 sm:px-8 sm:pt-6">
         <div className="mx-auto w-full max-w-6xl">
           <SiteNav currentPath="/how-to-play" />
         </div>
@@ -188,12 +188,6 @@ export default function HowToPlayPage() {
         className="relative overflow-hidden px-4 sm:px-6 py-10 sm:py-20"
         style={{ borderBottom: '1px solid rgba(107,142,35,0.2)' }}
       >
-        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <div className="absolute left-1/4 top-1/2 h-80 w-80 -translate-y-1/2 rounded-full opacity-10 blur-3xl"
-            style={{ backgroundColor: '#6b8e23' }} />
-          <div className="absolute right-1/4 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full opacity-8 blur-3xl"
-            style={{ backgroundColor: '#cc1414' }} />
-        </div>
         <div className="relative mx-auto w-full max-w-6xl text-center">
           <span
             className="inline-block rounded-full border px-4 py-1.5 font-mono text-xs uppercase tracking-[0.22em]"
@@ -205,7 +199,7 @@ export default function HowToPlayPage() {
             HOW TO PLAY
           </h1>
           <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#4a5e44' }}>
-            Stake your cUSD, find Patient Zero before they turn everyone, and walk away with the
+            Stake your USDm, find Patient Zero before they turn everyone, and walk away with the
             pot. Activate your Shield if you&apos;re being framed — but you only get one free, so
             spend it wisely.
           </p>
@@ -254,8 +248,8 @@ export default function HowToPlayPage() {
               {
                 status: 'Waiting',
                 color: '#84cc16',
-                desc: 'The room is open. Players can join by staking the required cUSD amount. Once the room fills or the host closes it, no more entries are accepted. Rooms automatically expire if not started within the configured time — all stakes are fully refunded.',
-                actions: ['Join by staking cUSD', 'Wait for min players (4 minimum)', 'Room expires if unfilled → stakes refunded'],
+                desc: 'The room is open. Players can join by staking the required USDm amount. Once the room fills or the host closes it, no more entries are accepted. Rooms automatically expire if not started within the configured time — all stakes are fully refunded.',
+                actions: ['Join by staking USDm', 'Wait for min players (4 minimum)', 'Room expires if unfilled → stakes refunded'],
               },
               {
                 status: 'Starting',
@@ -557,7 +551,7 @@ export default function HowToPlayPage() {
           >
             <h2 className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
             <p className="mt-3 font-mono text-sm" style={{ color: '#4a5e44' }}>
-              Connect your wallet, join a room in the lobby, and stake your cUSD.
+              Connect your wallet, join a room in the lobby, and stake your USDm.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <Link
