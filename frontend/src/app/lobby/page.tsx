@@ -22,11 +22,12 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 // Token name shown to users — always USDm.
 const STABLE_TOKEN = 'USDm'
 
-// Floor for the per-extra-proof fee. The fee is 1% of stake, but tiny stakes
-// would round that to ~0 and make extra proofs look free. This fixed minimum
-// keeps it a real charge — ~2-3x a proof tx's gas cost, leaving headroom for
-// gas spikes. 0.002 USDm = 2e15 wei. Override with NEXT_PUBLIC_MIN_PROOF_FEE_WEI.
-const MIN_PROOF_FEE_WEI = BigInt(process.env.NEXT_PUBLIC_MIN_PROOF_FEE_WEI ?? '2000000000000000')
+// Floor for the per-extra-Shield fee (contract field is proofFee). The fee is
+// 1% of stake; tiny stakes round that to ~0 and look free, so this fixed
+// minimum keeps it a visible charge. Pricing/anti-spam only — the player pays
+// their own gas, so this isn't a platform cost to recover. 0.001 USDm = 1e15
+// wei. Override with NEXT_PUBLIC_MIN_PROOF_FEE_WEI.
+const MIN_PROOF_FEE_WEI = BigInt(process.env.NEXT_PUBLIC_MIN_PROOF_FEE_WEI ?? '1000000000000000')
 
 /** Proof fee for a given stake input: max(1% of stake, floor). */
 function proofFeeWeiFor(stakeInput: string): bigint {
@@ -1012,8 +1013,8 @@ export default function LobbyPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                    Proof fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN} per extra proof
-                    {' '}(1% of stake, min {formatToken(MIN_PROOF_FEE_WEI)}). First proof is free.
+                    Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN} per extra Shield
+                    {' '}(1% of stake, min {formatToken(MIN_PROOF_FEE_WEI)}). First Shield is free.
                   </p>
 
                   {myActiveRoom && (
