@@ -26,7 +26,8 @@ import {
   startGame,
   submitRoleCommitment,
   castVote,
-  getPlayerStatus,
+  getRoom,
+  getRoomStatuses,
 } from './chain.js'
 import type { BotWallet } from './config.js'
 import type { BotProof } from './setup.js'
@@ -34,10 +35,16 @@ import type { BotProof } from './setup.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PROOFS_PATH = resolve(__dirname, '../data/bot-proofs.json')
 
-// Phase numbers from the contract
+// Phase numbers from the contract (RoundPhase enum)
 const PHASE_VOTING = 2
 
-// Player status numbers from the contract
+// Room status numbers from the contract (RoomStatus enum)
+const ROOM_STARTING = 1
+const ROOM_ACTIVE = 2
+const ROOM_ENDED = 3
+
+// Player status numbers from the contract (PlayerStatus enum)
+const STATUS_INFECTED = 1
 const STATUS_ELIMINATED = 2
 
 // ── Zombie-themed chat lines bots send during discussion ──────────────────────
@@ -143,8 +150,8 @@ interface BotState {
   socket: Socket | null
   isInfected: boolean
   hasCommitted: boolean
-  hasVotedThisRound: boolean
-  alivePlayers: string[] // updated from room snapshots
+  votedRound: number          // last round number this bot voted in (0 = none yet)
+  votedTargets: Set<string>   // lowercased addresses this bot has voted for (own history)
 }
 
 // ── Game cycle ────────────────────────────────────────────────────────────────
@@ -179,9 +186,21 @@ async function runCycle(bots: BotWallet[], proofs: BotProof[]): Promise<void> {
     socket: null,
     isInfected: false,
     hasCommitted: false,
-    hasVotedThisRound: false,
-    alivePlayers: [],
+    votedRound: 0,
+    votedTargets: new Set<string>(),
   }))
+
+  // Host fires startGame once the room is full. Snapshots can arrive repeatedly
+  // before the tx mines and flips room status, so guard against duplicate sends
+  // (which otherwise collide on the same nonce → "already known"/"nonce too low").
+  let startGameSent = false
+
+  // Direct on-chain poll for the Starting status. The backend's discrete
+  // `game_started` event (and the snapshots it triggers) can be dropped by the
+  // event relay, which would leave every bot waiting and the room auto-refunding
+  // after the role-commit timeout. Polling chain state guarantees the shield is
+  // submitted regardless of socket delivery.
+  let statusPoll: ReturnType<typeof setInterval> | undefined
 
   // Track resolved game end
   let gameEnded = false
@@ -191,19 +210,28 @@ async function runCycle(bots: BotWallet[], proofs: BotProof[]): Promise<void> {
       if (gameEnded) resolve()
     }
 
+    // Submit a bot's role commitment ("shield") exactly once. Triggered from
+    // three independent paths so a single dropped signal can't stall the room:
+    // the `game_started` socket event, `Starting`-status room snapshots, and the
+    // backend-independent on-chain status poll below.
+    const commitRole = (state: BotState): void => {
+      if (state.hasCommitted) return
+      state.hasCommitted = true
+      void submitRoleCommitment(
+        state.bot,
+        roomId,
+        state.proof.commitment,
+        state.proof.proofHex,
+      ).catch(err => {
+        state.hasCommitted = false // allow a retry on the next snapshot
+        console.warn(`[bot-${state.bot.index}] Commitment failed: ${err.message}`)
+      })
+    }
+
     for (const state of states) {
       state.socket = connectBot(state.bot, roomId, {
         onGameStarted: () => {
-          if (state.hasCommitted) return
-          state.hasCommitted = true
-          void submitRoleCommitment(
-            state.bot,
-            roomId,
-            state.proof.commitment,
-            state.proof.proofHex,
-          ).catch(err => {
-            console.warn(`[bot-${state.bot.index}] Commitment failed: ${err.message}`)
-          })
+          commitRole(state)
         },
 
         onInfectionAssigned: () => {
@@ -211,17 +239,9 @@ async function runCycle(bots: BotWallet[], proofs: BotProof[]): Promise<void> {
           console.log(`[bot-${state.bot.index}] *** INFECTED (patient zero) ***`)
         },
 
-        onPhaseChanged: (phase: number) => {
-          if (phase === PHASE_VOTING && !state.hasVotedThisRound) {
-            state.hasVotedThisRound = true
-            void castVoteForBot(state, roomId).catch(err => {
-              console.warn(`[bot-${state.bot.index}] Vote failed: ${err.message}`)
-            })
-          }
-          // Reset vote flag at the start of the next non-voting phase
-          if (phase !== PHASE_VOTING) {
-            state.hasVotedThisRound = false
-          }
+        onPhaseChanged: () => {
+          // Voting is driven by the backend-independent chain-status poll below,
+          // so no per-event action is needed here.
         },
 
         onGameEnded: () => {
@@ -230,21 +250,24 @@ async function runCycle(bots: BotWallet[], proofs: BotProof[]): Promise<void> {
         },
 
         onSnapshot: (snap: RoomSnapshot) => {
-          // Track alive players from snapshots
-          const alive = snap.players
-            .filter(p => p.status !== STATUS_ELIMINATED)
-            .map(p => p.addr.toLowerCase())
-          state.alivePlayers = alive
-
           // Host: start game when room is full
           if (
             state.bot.index === 0 &&
+            !startGameSent &&
             snap.room.status === 0 && // waiting
             snap.room.players.length >= maxPlayers
           ) {
+            startGameSent = true
             void startGame(state.bot, roomId).catch(err => {
+              startGameSent = false // allow a retry on genuine failure
               console.warn(`[bot-0] startGame failed: ${err.message}`)
             })
+          }
+
+          // Any bot: submit the role commitment ("shield") as soon as the room
+          // enters Starting. Reliable fallback for a missed `game_started` event.
+          if (snap.room.status === 1 /* starting */) {
+            commitRole(state)
           }
 
           // Send a chat message during discussion phase (occasional)
@@ -258,13 +281,57 @@ async function runCycle(bots: BotWallet[], proofs: BotProof[]): Promise<void> {
         },
       })
     }
+
+    // Backend-independent driver: poll chain state and act on it directly so the
+    // game never stalls when the backend's socket relay drops events. Submits the
+    // shield during Starting, and casts votes during the Voting phase.
+    statusPoll = setInterval(async () => {
+      try {
+        const room = await getRoom(roomId)
+        const status = Number(room.status)
+
+        if (status === ROOM_STARTING) {
+          for (const state of states) commitRole(state)
+          return
+        }
+        if (status === ROOM_ENDED) {
+          // End the cycle from chain state — don't depend on the `game_ended`
+          // socket event, which the backend relay can drop (otherwise the cycle
+          // blocks on the 20-minute safety timeout before the next game starts).
+          if (statusPoll) { clearInterval(statusPoll); statusPoll = undefined }
+          gameEnded = true
+          checkDone()
+          return
+        }
+        if (status === ROOM_ACTIVE && Number(room.currentPhase) === PHASE_VOTING) {
+          const round = Number(room.currentRound)
+          const pending = states.filter(s => s.votedRound < round)
+          if (pending.length === 0) return
+
+          // Authoritative roster from chain (resilient to dropped snapshots).
+          const roster = await getRoomStatuses(roomId)
+          const aliveAddrs = roster.filter(p => p.status !== STATUS_ELIMINATED).map(p => p.addr)
+
+          for (const state of pending) {
+            const self = state.bot.address.toLowerCase()
+            const me = roster.find(p => p.addr === self)
+            // Skip bots that are no longer alive (eliminated can't vote).
+            if (!me || me.status === STATUS_ELIMINATED) { state.votedRound = round; continue }
+            castVoteForBot(state, roomId, round, aliveAddrs, me.status === STATUS_INFECTED)
+          }
+        }
+      } catch {
+        // Transient RPC error — retry on the next tick.
+      }
+    }, 4000)
   })
 
   // 5. Wait for game to end (with a safety timeout)
   const GAME_TIMEOUT_MS = 20 * 60 * 1000 // 20 minutes max
   await Promise.race([gameEndedPromise, sleep(GAME_TIMEOUT_MS)])
 
-  // 6. Disconnect all sockets
+  // 6. Stop the status poll and disconnect all sockets
+  if (statusPoll) { clearInterval(statusPoll); statusPoll = undefined }
   for (const state of states) {
     state.socket?.disconnect()
   }
@@ -274,22 +341,56 @@ async function runCycle(bots: BotWallet[], proofs: BotProof[]): Promise<void> {
 
 // ── Vote strategy ─────────────────────────────────────────────────────────────
 
-async function castVoteForBot(state: BotState, roomId: bigint): Promise<void> {
-  // Pick a random alive player that isn't this bot
-  const candidates = state.alivePlayers.filter(
-    addr => addr !== state.bot.address.toLowerCase(),
-  )
+/**
+ * Cast a bot's vote for the given round, exactly once.
+ *
+ * Strategy stays within the game's fair information model — a bot only acts on
+ * what it legitimately knows (its own role and its own past votes), never on
+ * other players' hidden infection status (which, although readable on-chain, is
+ * meant to be secret):
+ *   - Clean bots vote for a random living opponent — they have no fair signal to
+ *     identify the infected, so uniform-random is the honest baseline.
+ *   - Infected bots also target living opponents, but prefer ones they haven't
+ *     voted for before. The patient zero's vote doubles as the next infection
+ *     target, so spreading to fresh players grows the infected side instead of
+ *     wasting the vote on someone already targeted.
+ *
+ * Candidates are derived from the authoritative on-chain roster, so a bot can
+ * never vote for itself or an eliminated player.
+ */
+function castVoteForBot(
+  state: BotState,
+  roomId: bigint,
+  round: number,
+  aliveAddrs: string[],
+  ownInfected: boolean,
+): void {
+  if (state.votedRound >= round) return
 
-  if (candidates.length === 0) {
-    console.log(`[bot-${state.bot.index}] No candidates to vote for — skipping`)
-    return
+  const self = state.bot.address.toLowerCase()
+  const candidates = aliveAddrs.filter(addr => addr !== self)
+  if (candidates.length === 0) return
+
+  // Infected bots prefer targets they haven't hit yet (spread infection wider);
+  // fall back to the full set once every opponent has been targeted.
+  let pool = candidates
+  if (ownInfected) {
+    const fresh = candidates.filter(addr => !state.votedTargets.has(addr))
+    if (fresh.length > 0) pool = fresh
   }
 
-  // Infected bots prefer to vote for clean players (random selection here,
-  // real strategy could be smarter). Clean bots vote randomly.
-  const target = candidates[Math.floor(Math.random() * candidates.length)] as `0x${string}`
+  const target = pool[Math.floor(Math.random() * pool.length)] as `0x${string}`
 
-  await castVote(state.bot, roomId, target)
+  state.votedRound = round // optimistic guard against double-voting this round
+  void castVote(state.bot, roomId, target)
+    .then(() => { state.votedTargets.add(target) })
+    .catch(err => {
+      const msg = err instanceof Error ? err.message : String(err)
+      // The contract already recorded the vote — treat as done.
+      if (/AlreadyVoted/.test(msg)) { state.votedTargets.add(target); return }
+      state.votedRound = round - 1 // allow a retry on the next poll tick
+      console.warn(`[bot-${state.bot.index}] Vote failed: ${msg}`)
+    })
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

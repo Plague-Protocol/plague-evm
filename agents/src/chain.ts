@@ -204,3 +204,21 @@ export async function getPlayerStatus(
   })
   return Number(player.status)
 }
+
+/** PlayerStatus enum: 0 = Clean, 1 = Infected, 2 = Eliminated. */
+export interface PlayerStatusEntry {
+  addr: string // lowercased
+  status: number
+}
+
+/**
+ * Authoritative roster for a room: every player's address (lowercased) and
+ * on-chain status. Used to drive voting from chain state rather than relying on
+ * socket snapshots, which can be dropped by the backend's event relay.
+ */
+export async function getRoomStatuses(roomId: bigint): Promise<PlayerStatusEntry[]> {
+  const room = await getRoom(roomId)
+  const addrs = room.players as readonly `0x${string}`[]
+  const statuses = await Promise.all(addrs.map(a => getPlayerStatus(roomId, a)))
+  return addrs.map((a, i) => ({ addr: a.toLowerCase(), status: statuses[i] }))
+}

@@ -74,7 +74,7 @@ Requires: CELO on mainnet for gas. Output: `data/agent-registrations.json`.
 
 | Contract | Testnet (Celo Sepolia) | Mainnet (Celo) |
 |---|---|---|
-| PlagueGame | `0x4B24E6A2470dCf22261Cc14CD52cf9e17001b13A` | TBD |
+| PlagueGame | `0x63c020880f2dd7E357F4c2aB70d03fb67E12BF3d` | TBD |
 | cUSD / USDm | `0xAE10A9E08D979E7D154D3B0212FB7CBF70FA6BB1` | `0x765DE816845861e75A25fCA122bb6022DB77Eaca` |
 | ERC-8004 Identity Registry | — | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
 

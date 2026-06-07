@@ -2,7 +2,7 @@
  * config.ts — Environment, chain, and bot wallet setup.
  */
 import 'dotenv/config'
-import { createPublicClient, createWalletClient, http } from 'viem'
+import { createPublicClient, createWalletClient, getAddress, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { celo, celoSepolia } from 'viem/chains'
 
@@ -12,10 +12,27 @@ export const NETWORK = (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainne
 export const CHAIN = NETWORK === 'mainnet' ? celo : celoSepolia
 export const RPC_URL =
   process.env.CELO_RPC_URL ??
-  (NETWORK === 'mainnet' ? 'https://forno.celo.org' : 'https://forno.celo-testnet.org')
+  (NETWORK === 'mainnet'
+    ? 'https://forno.celo.org'
+    : 'https://forno.celo-sepolia.celo-testnet.org')
 
-export const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS ?? '') as `0x${string}`
-export const USDM_ADDRESS = (process.env.USDM_ADDRESS ?? '') as `0x${string}`
+// Normalize to EIP-55 checksum so viem accepts addresses regardless of the
+// casing used in .env (e.g. all-lowercase or all-uppercase hex).
+function envAddress(name: string, required = true): `0x${string}` | undefined {
+  const raw = process.env[name]
+  if (!raw) {
+    if (required) throw new Error(`${name} env var is not set`)
+    return undefined
+  }
+  try {
+    return getAddress(raw)
+  } catch {
+    throw new Error(`${name} is not a valid address: ${raw}`)
+  }
+}
+
+export const CONTRACT_ADDRESS = envAddress('CONTRACT_ADDRESS') as `0x${string}`
+export const USDM_ADDRESS = envAddress('USDM_ADDRESS') as `0x${string}`
 export const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:4000'
 export const STAKE_AMOUNT = BigInt(process.env.STAKE_AMOUNT ?? '100000000000000') // 0.0001 USDm
 export const CYCLE_DELAY_MS = Number(process.env.CYCLE_DELAY_MS ?? 30_000)
@@ -24,11 +41,7 @@ export const CYCLE_DELAY_MS = Number(process.env.CYCLE_DELAY_MS ?? 30_000)
 // Set to the USDm token address to avoid needing CELO on each bot wallet.
 // On mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
 // On testnet: leave unset (MockCUSD doesn't support fee currency)
-export const FEE_CURRENCY_ADDRESS =
-  process.env.FEE_CURRENCY_ADDRESS as `0x${string}` | undefined
-
-if (!CONTRACT_ADDRESS) throw new Error('CONTRACT_ADDRESS env var is not set')
-if (!USDM_ADDRESS) throw new Error('USDM_ADDRESS env var is not set')
+export const FEE_CURRENCY_ADDRESS = envAddress('FEE_CURRENCY_ADDRESS', false)
 
 // ── Public client ─────────────────────────────────────────────────────────────
 
