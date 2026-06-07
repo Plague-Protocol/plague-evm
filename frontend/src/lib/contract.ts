@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  fallback,
   http,
   maxUint256,
   parseAbi,
@@ -77,6 +78,28 @@ const CHAINS = {
   mainnet: celo,         // chainId 42220
 } as const
 
+// ── RPC fallback transport ──────────────────────────────────────────────────────
+// The public Celo RPCs occasionally fail/rate-limit ("Failed to fetch"). Reads go
+// through a fallback transport that rotates to a backup endpoint when the primary
+// is unhealthy, so a momentary blip doesn't surface as a broken lobby.
+
+const DEFAULT_RPCS: Record<number, string[]> = {
+  [celo.id]:        ['https://forno.celo.org', 'https://celo.drpc.org'],
+  [celoSepolia.id]: ['https://forno.celo-sepolia.celo-testnet.org', 'https://celo-sepolia.drpc.org'],
+}
+
+function readTransport(chain: typeof celo | typeof celoSepolia, override?: string) {
+  const envFallbacks = (process.env.NEXT_PUBLIC_CELO_RPC_FALLBACK_URLS ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+  const primary = override ?? process.env.NEXT_PUBLIC_CELO_RPC_URL ?? undefined
+  const urls = [...new Set([primary, ...envFallbacks, ...(DEFAULT_RPCS[chain.id] ?? [])].filter(Boolean))] as string[]
+  return fallback(
+    urls.map(url => http(url, { retryCount: 1, retryDelay: 300 })),
+  )
+}
+
 export interface ContractConfig {
   contractAddress: `0x${string}`
   network: 'testnet' | 'mainnet'
@@ -102,7 +125,7 @@ export class PlagueContractClient {
   private get publicClient() {
     return createPublicClient({
       chain:     this.chain,
-      transport: http(this.rpcUrl, { retryCount: 0 }),
+      transport: readTransport(this.chain, this.rpcUrl),
     })
   }
 
@@ -460,7 +483,7 @@ export class FaucetClient {
   }
 
   private get publicClient() {
-    return createPublicClient({ chain: this.chain, transport: http(undefined, { retryCount: 0 }) })
+    return createPublicClient({ chain: this.chain, transport: readTransport(this.chain) })
   }
 
   private walletClient(account: `0x${string}`) {
@@ -539,7 +562,7 @@ export async function readCUSDBalance(
   network: 'testnet' | 'mainnet',
 ): Promise<bigint> {
   const chain = CHAINS[network]
-  const pc = createPublicClient({ chain, transport: http(undefined, { retryCount: 0 }) })
+  const pc = createPublicClient({ chain, transport: readTransport(chain) })
   return pc.readContract({
     address:      cUSDAddress,
     abi:          ERC20_BALANCE_ABI,
