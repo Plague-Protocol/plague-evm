@@ -7,6 +7,7 @@ import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib/contract'
+import { formatToken } from '@/lib/format'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
 
@@ -387,9 +388,9 @@ function RoomCard({
   const isMyRoom    = myActiveRoom?.id === room.id
   const isMyHost    = isMyRoom && !!address && room.host.toLowerCase() === address.toLowerCase()
   const lockedOut   = !!myActiveRoom && !isMyRoom
-  const stakeCUSD   = (Number(room.stakeAmount) / 1e18).toFixed(2)
-  const feeCUSD     = (Number(room.proofFee) / 1e18).toFixed(2)
-  const potCUSD     = (Number(room.pot) / 1e18).toFixed(2)
+  const stakeCUSD   = formatToken(room.stakeAmount)
+  const feeCUSD     = formatToken(room.proofFee)
+  const potCUSD     = formatToken(room.pot)
 
   const showEndRoom  = isMyHost && room.status === 'waiting' && isExpired && !isFull
   const joinBtn      = getJoinButtonState(room, isMyRoom, isFull, isExpired, lockedOut, isJoining)

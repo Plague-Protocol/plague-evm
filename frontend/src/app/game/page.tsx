@@ -9,6 +9,7 @@ import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
+import { formatToken } from '@/lib/format'
 import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import type { RoundPhase } from '@/types/game'
 import { toast } from 'sonner'
@@ -261,7 +262,7 @@ function GamePageInner() { // NOSONAR
   const activePlayers = room?.players?.filter(p => !p.isEliminated) ?? []
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
-  const potCUSD       = room ? (Number(room.stakeAmount) * totalPlayers / 1e18).toFixed(2) : '—'
+  const potCUSD       = room ? formatToken(Number(room.stakeAmount) * totalPlayers) : '—'
   const hasVoted      = Boolean(optimisticVotedFor || localPlayer?.hasVotedThisRound)
   const myVotedTarget = optimisticVotedFor ?? localPlayer?.voteTarget
   const hasProofThisRound = optimisticProofDone || Boolean(localPlayer?.hasProofThisRound)
