@@ -22,6 +22,16 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 // Token name shown to users — always USDm.
 const STABLE_TOKEN = 'USDm'
 
+// Turn raw viem/RPC errors into a calm, non-alarming message. A failed room load
+// is almost always a brief public-RPC hiccup, not a broken app.
+function friendlyRoomsError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (/failed to fetch|http request failed|fetch failed|timeout|timed out|network|load failed|econn|429|too many requests/i.test(msg)) {
+    return 'Network is busy right now — couldn’t reach Celo for a moment. Tap ↺ to retry.'
+  }
+  return 'Couldn’t load rooms just now. Tap ↺ to retry.'
+}
+
 const statusColor: Record<string, string> = {
   waiting:  '#1a7a4a',
   starting: '#6b8e23',
@@ -729,7 +739,7 @@ export default function LobbyPage() {
       }))
       setRooms(rows)
     } catch (err) {
-      setRoomsError(err instanceof Error ? err.message : 'Failed to load rooms from contract.')
+      setRoomsError(friendlyRoomsError(err))
     } finally {
       hasLoadedOnceRef.current = true
       setHasLoadedOnce(true)
@@ -1200,8 +1210,21 @@ export default function LobbyPage() {
                 </div>
               </div>
 
+              {/* Discoverability: most visitors won't realize they can play solo. */}
+              <div
+                className="mt-3 rounded border px-3 py-2 font-mono text-[11px] leading-relaxed"
+                style={{ borderColor: 'rgba(107,142,35,0.25)', backgroundColor: 'rgba(107,142,35,0.06)', color: '#8fa882' }}
+              >
+                🤖 Want to try it solo? <span style={{ color: '#d4c9b2' }}>Create a room</span> and add bots to fill the seats — no other players needed.
+              </div>
+
               {roomsError && (
-                <p className="mt-4 font-mono text-xs" style={{ color: '#e63329' }}>{roomsError}</p>
+                <div
+                  className="mt-4 flex items-center gap-2 rounded border px-3 py-2 font-mono text-xs"
+                  style={{ borderColor: 'rgba(245,197,24,0.35)', backgroundColor: 'rgba(245,197,24,0.08)', color: '#f5c518' }}
+                >
+                  <span>{roomsError}</span>
+                </div>
               )}
 
               {loadingRooms && rooms.length === 0 && (
@@ -1212,7 +1235,7 @@ export default function LobbyPage() {
 
               {!loadingRooms && rooms.filter(r => r.status !== 'ended').length === 0 && !roomsError && (
                 <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
-                  No open rooms. Create the first one.
+                  No open rooms yet — create one and add bots to play instantly.
                 </p>
               )}
 
