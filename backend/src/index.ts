@@ -8,6 +8,7 @@ import { roomRouter } from './routes/rooms'
 import { proveRouter } from './routes/prove'
 import { playerRouter } from './routes/players'
 import { leaderboardRouter } from './routes/leaderboard'
+import { botRouter } from './routes/bots'
 import {
   setupSocketHandlers,
   startRoomExpiryMonitor,
@@ -34,6 +35,7 @@ app.use('/api/rooms', roomRouter)
 app.use('/api/prove', proveRouter)
 app.use('/api/players', playerRouter)
 app.use('/api/leaderboard', leaderboardRouter)
+app.use('/api/bots', botRouter)
 
 // ─── Socket.io ──────────────────────────────────────────────────────────────
 
