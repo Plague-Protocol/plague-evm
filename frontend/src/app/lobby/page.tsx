@@ -8,6 +8,7 @@ import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
+import { BotControls } from '@/components/lobby/bot-controls'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
 
@@ -486,6 +487,11 @@ function RoomCard({
           </button>
         </div>
       </div>
+
+      {/* Host can fill an open room with bots to try the game solo. */}
+      {isMyHost && room.status === 'waiting' && !isFull && !isExpired && (
+        <BotControls roomId={room.id} stakeAmount={room.stakeAmount} freeSeats={room.maxPlayers - room.players} />
+      )}
 
     </li>
   )
