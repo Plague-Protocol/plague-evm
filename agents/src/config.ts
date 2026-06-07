@@ -37,6 +37,20 @@ export const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:4000'
 export const STAKE_AMOUNT = BigInt(process.env.STAKE_AMOUNT ?? '100000000000000') // 0.0001 USDm
 export const CYCLE_DELAY_MS = Number(process.env.CYCLE_DELAY_MS ?? 30_000)
 
+// ── Bot pool (human-plays-with-bots) ───────────────────────────────────────────
+
+// Max stake (wei) of a HUMAN room the bots will join. Caps attrition against the
+// bots' funding — they lose this stake to the human if they lose. Keep it low:
+// bots are a "try the game" convenience, not a real-money feature. 0.01 USDm.
+export const BOT_MAX_STAKE_WEI = BigInt(process.env.BOT_MAX_STAKE_WEI ?? '10000000000000000')
+
+// How long all bots must sit idle (no human demand) before they start a
+// self-play game to keep on-chain activity up. Default 5 minutes.
+export const SELF_PLAY_IDLE_MS = Number(process.env.SELF_PLAY_IDLE_MS ?? 300_000)
+
+// Shared secret for the runner's calls to the backend bot-coordination API.
+export const BOT_RUNNER_SECRET = process.env.BOT_RUNNER_SECRET ?? ''
+
 // Optional: pay gas in USDm instead of CELO.
 // Set to the USDm token address to avoid needing CELO on each bot wallet.
 // On mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
