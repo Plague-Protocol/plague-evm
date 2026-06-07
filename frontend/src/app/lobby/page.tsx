@@ -22,6 +22,36 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 // Token name shown to users — always USDm.
 const STABLE_TOKEN = 'USDm'
 
+// Floor for the per-extra-proof fee. The fee is 1% of stake, but tiny stakes
+// would round that to ~0 and make extra proofs look free. This fixed minimum
+// keeps it a real charge (covers typical proof-submission gas, with headroom).
+// 0.001 USDm = 1e15 wei. Override with NEXT_PUBLIC_MIN_PROOF_FEE_WEI.
+const MIN_PROOF_FEE_WEI = BigInt(process.env.NEXT_PUBLIC_MIN_PROOF_FEE_WEI ?? '1000000000000000')
+
+/** Proof fee for a given stake input: max(1% of stake, floor). */
+function proofFeeWeiFor(stakeInput: string): bigint {
+  const f = Number.parseFloat(stakeInput)
+  const stakeWei = Number.isFinite(f) && f > 0 ? BigInt(Math.round(f * 1e18)) : 0n
+  const onePct = stakeWei / 100n
+  return onePct > MIN_PROOF_FEE_WEI ? onePct : MIN_PROOF_FEE_WEI
+}
+
+// Notice for a player who already has a room. A waiting room can only be ended
+// after it expires, and an active game must play out — the wording reflects that.
+function activeRoomNotice(ar: RoomRow, now: number): string {
+  const id = ar.id.toString()
+  if (ar.status === 'active' || ar.status === 'starting') {
+    return `Your game in Room #${id} is in progress — you can create a new room once it ends.`
+  }
+  if (ar.players >= ar.maxPlayers) {
+    return `Room #${id} is full — auto-starting now.`
+  }
+  if (now >= ar.expiresAt) {
+    return `Room #${id} has expired — open it and tap “End Room” to free up, then create a new one.`
+  }
+  return `You have an open Room #${id} waiting for players. It frees up when it fills and plays out, or when it expires.`
+}
+
 // Turn raw viem/RPC errors into a calm, non-alarming message. A failed room load
 // is almost always a brief public-RPC hiccup, not a broken app.
 function friendlyRoomsError(err: unknown): string {
@@ -183,7 +213,8 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     throw new Error('Stake amount must be greater than zero.')
   }
 
-  const feeWei   = stakeWei / 100n
+  const onePctFee = stakeWei / 100n
+  const feeWei    = onePctFee > MIN_PROOF_FEE_WEI ? onePctFee : MIN_PROOF_FEE_WEI
   setCreating(true)
 
   try {
@@ -981,18 +1012,13 @@ export default function LobbyPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                    Proof fee: 1% of stake ({(Number.parseFloat(stakeInput || '0') * 0.01).toFixed(4)} {STABLE_TOKEN} per extra proof)
+                    Proof fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN} per extra proof
+                    {' '}(1% of stake, min {formatToken(MIN_PROOF_FEE_WEI)}). First proof is free.
                   </p>
 
-                  {myActiveRoom && myActiveRoom.players >= myActiveRoom.maxPlayers && (
-                    <p className="font-mono text-xs" style={{ color: '#6b8e23' }}>
-                      Room #{myActiveRoom.id.toString()} is full — auto-starting now.
-                    </p>
-                  )}
-
-                  {myActiveRoom && myActiveRoom.players < myActiveRoom.maxPlayers && (
-                    <p className="font-mono text-xs" style={{ color: '#f5c518' }}>
-                      You are in Room #{myActiveRoom.id.toString()}. End that game before creating a new one.
+                  {myActiveRoom && (
+                    <p className="font-mono text-xs" style={{ color: myActiveRoom.players >= myActiveRoom.maxPlayers ? '#6b8e23' : '#f5c518' }}>
+                      {activeRoomNotice(myActiveRoom, now)}
                     </p>
                   )}
 

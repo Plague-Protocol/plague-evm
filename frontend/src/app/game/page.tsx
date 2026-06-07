@@ -1276,7 +1276,12 @@ function GamePageInner() { // NOSONAR
                   <p className="font-mono text-xs uppercase tracking-[0.2em] flex-shrink-0" style={{ color: '#6b8e23' }}>Room Chat</p>
                   <div
                     className="mt-3 overflow-y-auto space-y-2 pr-1 flex-1 min-h-0"
-                    style={{ height: isMobile ? undefined : '16rem', scrollbarWidth: 'thin' }}
+                    style={{
+                      // Desktop has no fixed container height; cap so the list
+                      // scrolls instead of growing past the viewport.
+                      ...(isMobile ? {} : { flex: '0 1 auto', maxHeight: 'min(24rem, calc(100dvh - 300px))' }),
+                      scrollbarWidth: 'thin',
+                    }}
                   >
                     {chatMessages.length === 0 ? (
                       <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
