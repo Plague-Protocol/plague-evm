@@ -275,8 +275,11 @@ function GamePageInner() { // NOSONAR
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
   // Spectator: wallet connected but address not in players list (late viewer)
   const isSpectator   = !!address && !!room && room.status === 'active' && !room.players.some(p => p.walletAddress.toLowerCase() === address.toLowerCase())
+  // Infection is included: it has no countdown (resolves on-chain in seconds),
+  // so without polling the UI would sit on INFECTION until a — sometimes
+  // dropped — phase_changed socket event arrives, eating the discussion window.
   const isPhaseSyncing = room?.status === 'active'
-    && (phase === 'discussion' || phase === 'voting' || phase === 'reveal')
+    && (phase === 'infection' || phase === 'discussion' || phase === 'voting' || phase === 'reveal')
     && headerCountdownMs <= 0
   const headerTitle = getHeaderTitle(isLoading, round, room?.status)
   const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status, localPlayer?.status === 'infected')
@@ -668,7 +671,7 @@ function GamePageInner() { // NOSONAR
       return
     }
     if (phaseAdvanceNudgeKeyRef.current === key) return
-    if (phase !== 'discussion' && phase !== 'voting' && phase !== 'reveal') return
+    if (phase !== 'infection' && phase !== 'discussion' && phase !== 'voting' && phase !== 'reveal') return
 
     phaseAdvanceNudgeKeyRef.current = key
     socket.emit('request_phase_advance', { roomId })
