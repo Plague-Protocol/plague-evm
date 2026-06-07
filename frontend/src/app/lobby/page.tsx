@@ -24,9 +24,9 @@ const STABLE_TOKEN = 'USDm'
 
 // Floor for the per-extra-proof fee. The fee is 1% of stake, but tiny stakes
 // would round that to ~0 and make extra proofs look free. This fixed minimum
-// keeps it a real charge (covers typical proof-submission gas, with headroom).
-// 0.001 USDm = 1e15 wei. Override with NEXT_PUBLIC_MIN_PROOF_FEE_WEI.
-const MIN_PROOF_FEE_WEI = BigInt(process.env.NEXT_PUBLIC_MIN_PROOF_FEE_WEI ?? '1000000000000000')
+// keeps it a real charge — ~2-3x a proof tx's gas cost, leaving headroom for
+// gas spikes. 0.002 USDm = 2e15 wei. Override with NEXT_PUBLIC_MIN_PROOF_FEE_WEI.
+const MIN_PROOF_FEE_WEI = BigInt(process.env.NEXT_PUBLIC_MIN_PROOF_FEE_WEI ?? '2000000000000000')
 
 /** Proof fee for a given stake input: max(1% of stake, floor). */
 function proofFeeWeiFor(stakeInput: string): bigint {
