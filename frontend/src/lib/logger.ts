@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- this module is the single intentional console wrapper */
 const isDev = process.env.NODE_ENV === 'development'
 
 export const logger = {

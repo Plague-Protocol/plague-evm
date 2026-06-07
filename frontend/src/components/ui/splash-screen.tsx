@@ -291,7 +291,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
       stopAllTransients()
       setVisible(false); setFinaleStatic(false); setTitleSlam(false); onResolved?.()
     }, 900)
-  }, [exiting, finaleStatic, splashMuted, playOneShot, stopAllTransients])
+  }, [exiting, finaleStatic, splashMuted, playOneShot, stopAllTransients, onResolved])
 
   // ── Keyboard dismiss (only during story) ─────────────────────────────────────
   useEffect(() => {
