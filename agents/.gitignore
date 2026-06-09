@@ -1,5 +1,5 @@
 node_modules/
 dist/
 .env
-data/bot-proofs.json
+# data/bot-proofs.json
 data/agent-registrations.json
