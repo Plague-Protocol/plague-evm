@@ -39,7 +39,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
 
   const networkName = chainId ? (CHAIN_NAMES[chainId] ?? `Chain ${chainId}`) : '—'
   const shortAddress = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'
-  const isWrongNetwork = isConnected && chainId !== null && !CUSD_ADDRESSES[chainId]
+  const isWrongNetwork = isConnected && chainId !== null && !USDM_ADDRESSES[chainId]
 
   return (
     <section
