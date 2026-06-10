@@ -12,11 +12,10 @@ import { BotControls } from '@/components/lobby/bot-controls'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
 
-// ── Stablecoin contract addresses ───────────────────────────────────────────────
-// Mainnet token is USDm (formerly cUSD); testnet uses the mock cUSD faucet token.
+// ── USDm contract addresses ───────────────────────────────────────────────────
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD / test cUSD)
-  42220: '0x765DE816845861e75A25fCA122bb6022DB77Eaca',   // Celo Mainnet (USDm)
+  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (Mock USDm)
+  42220: '0x765DE816845861e75A25fCA122bb6898B8B1282a',   // Celo Mainnet (USDm)
 }
 
 // Token name shown to users — always USDm.

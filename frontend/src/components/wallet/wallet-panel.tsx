@@ -2,16 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useWallet } from '@/hooks/useWallet'
-import { createPublicClient, http, parseAbi } from 'viem'
-import { celoSepolia, celo } from 'viem/chains'
+import { readCUSDBalance } from '@/lib/contract'
 
-const CUSD_ABI = parseAbi([
-  'function balanceOf(address account) external view returns (uint256)',
-])
-
-const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
-  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (MockCUSD)
-  42220: '0x765DE816845861e75A25fCA122bb6898B8B1282a',   // Mainnet
+const USDM_ADDRESSES: Record<number, `0x${string}`> = {
+  11142220: '0xae10a9e08d979e7d154d3b0212fb7cbf70fa6bb1', // Celo Sepolia (Mock USDm)
+  42220: '0x765DE816845861e75A25fCA122bb6898B8B1282a',   // Mainnet (USDm)
 }
 
 const CHAIN_NAMES: Record<number, string> = {
@@ -23,13 +18,10 @@ function useBalance(address: `0x${string}` | null, chainId: number | null) {
   const [balance, setBalance] = useState<string | null>(null)
   useEffect(() => {
     if (!address || !chainId) { setBalance(null); return }
-    const cUSDAddress = CUSD_ADDRESSES[chainId]
-    if (!cUSDAddress) { setBalance(null); return }
-    const client = createPublicClient({
-      chain:     chainId === 42220 ? celo : celoSepolia,
-      transport: http(),
-    })
-    client.readContract({ address: cUSDAddress, abi: CUSD_ABI, functionName: 'balanceOf', args: [address] })
+    const usdmAddress = USDM_ADDRESSES[chainId]
+    if (!usdmAddress) { setBalance(null); return }
+    const network = chainId === 42220 ? 'mainnet' : 'testnet'
+    readCUSDBalance(address, usdmAddress, network)
       .then(raw => setBalance((Number(raw) / 1e18).toFixed(2)))
       .catch(() => setBalance(null))
   }, [address, chainId])
