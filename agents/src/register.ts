@@ -38,25 +38,14 @@ const REGISTRY_ABI = parseAbi([
 
 // ── Agent URI builder ─────────────────────────────────────────────────────────
 
-function buildAgentJson(botIndex: number, address: string): string {
+function buildAgentJson(botIndex: number): string {
   return JSON.stringify({
     type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
     name: `Zombie Plague Bot #${botIndex + 1}`,
-    description:
-      'Autonomous agent competing in Zombie Plague — ' +
-      'a ZK-powered social deduction game on Celo where players must identify and ' +
-      'eliminate infected zombies using on-chain commitments and zero-knowledge proofs.',
+    description: 'ZK social deduction game agent on Celo. Identifies and eliminates zombies using on-chain commitments.',
     image: 'https://z-plague.vercel.app/images/z-plague-image.png',
-    address,
-    services: [
-      {
-        name: 'game',
-        endpoint: 'https://z-plague.vercel.app/',
-      },
-    ],
-    capabilities: ['erc20:transfer', 'erc20:approve', 'game:create-room', 'game:join-room', 'game:cast-vote'],
-    active: true,
-    source: 'https://github.com/your-org/plague-celo',
+    services: [{ name: 'game', endpoint: 'https://z-plague.vercel.app/' }],
+    source: 'https://github.com/Plague-Protocol/plague-evm',
   })
 }
 
@@ -99,7 +88,7 @@ async function main(): Promise<void> {
       })
       if (existingId > 0n) {
         console.log(`   Already registered — agentId: ${existingId}`)
-        const agentUri = toDataUri(buildAgentJson(bot.index, bot.address))
+        const agentUri = toDataUri(buildAgentJson(bot.index))
         results.push({
           botIndex: bot.index,
           address: bot.address,
@@ -112,30 +101,29 @@ async function main(): Promise<void> {
       // Registry may not have agentOf — proceed with registration
     }
 
-    const agentJson = buildAgentJson(bot.index, bot.address)
+    const agentJson = buildAgentJson(bot.index)
     const agentUri = toDataUri(agentJson)
 
     console.log(`   Agent URI: data:application/json;base64,...(${agentUri.length} chars)`)
     console.log('   Submitting registration tx...')
 
     try {
-      // Simulate first
-      const { result: agentId } = await publicClient.simulateContract({
+      // Simulate — forno's eth_estimateGas reverts on this contract even though
+      // eth_call succeeds, so we use the simulation's prepared request directly
+      // to bypass re-estimation inside writeContract.
+      const { result: agentId, request } = await publicClient.simulateContract({
         account: bot.account,
         address: IDENTITY_REGISTRY,
         abi: REGISTRY_ABI,
         functionName: 'register',
         args: [agentUri],
+        ...feeCurrency(),
       })
 
       const hash = await bot.walletClient.writeContract({
-        account: bot.account,
+        ...request,
         chain: publicClient.chain,
-        ...feeCurrency(),
-        address: IDENTITY_REGISTRY,
-        abi: REGISTRY_ABI,
-        functionName: 'register',
-        args: [agentUri],
+        gas: request.gas ?? 800_000n,
       })
 
       await publicClient.waitForTransactionReceipt({ hash })
