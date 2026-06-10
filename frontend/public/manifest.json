@@ -1,0 +1,38 @@
+{
+  "name": "Zombie Plague",
+  "short_name": "Z-Plague",
+  "description": "A decentralised social deduction game powered by ZK proofs and Celo smart contracts.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#16a34a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/z-plague-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["games", "entertainment"],
+  "screenshots": [
+    {
+      "src": "/images/bg-home.webp",
+      "type": "image/webp",
+      "form_factor": "wide"
+    }
+  ]
+}

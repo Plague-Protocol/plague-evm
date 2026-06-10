@@ -42,6 +42,7 @@ export const metadata: Metadata = {
   title: 'Zombie Plague — On-Chain Social Deduction',
   description:
     'A decentralised social deduction game powered by ZK proofs and Celo EVM smart contracts.',
+  manifest: '/manifest.json',
   icons: {
     icon: '/z-plague-icon.png',
     apple: '/z-plague-icon.png',
@@ -53,6 +54,11 @@ export const metadata: Metadata = {
   },
   other: {
     'talentapp:project_verification': '734c0dd315dbccb48f9a22fb0dd3124c1ec99e4cc50610ee9c895db0b5739aaa353547cba1bba32353ac5c633a1a10287cc39939f6046ab17b845323baa09542',
+    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title': 'Z-Plague',
+    'theme-color': '#16a34a',
   },
 }
 
@@ -64,12 +70,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable} ${displayMobileFont.variable} ${monoMobileFont.variable}`}>
       <body className="antialiased">
-        {/* Unregister any stale service workers so cached JS chunks never
-            shadow fresh Next.js assets (prevents "undefined factory" errors). */}
-        <Script id="sw-cleanup" strategy="afterInteractive">{`
+        <Script id="sw-register" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-              registrations.forEach(function(r) { r.unregister(); });
+            window.addEventListener('load', function() {
+              navigator.serviceWorker.register('/sw.js');
             });
           }
         `}</Script>
