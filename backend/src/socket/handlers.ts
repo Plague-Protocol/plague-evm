@@ -57,6 +57,33 @@ const CHAIN_ID = NETWORK === 'mainnet' ? 42220 : 44787
 const earlyResolveRetryTimers = new Map<string, NodeJS.Timeout>()
 const earlyResolveRetryAttempts = new Map<string, number>()
 
+// Tracked "live" room IDs (Waiting=0, Starting=1, Active=2).
+// Populated once at startup via initLiveRoomIds(), then kept in sync by chain
+// events and socket join_room calls. Replaces the O(roomCount) full-scan that
+// was causing 429 rate-limit errors on the public forno.celo.org RPC.
+const liveRoomIds = new Set<bigint>()
+let liveRoomsInitialized = false
+
+async function initLiveRoomIds(): Promise<void> {
+  try {
+    const count = await chainAdapter.getRoomCount()
+    for (let id = 1n; id <= count; id++) {
+      try {
+        const room = await chainAdapter.getRoom(id)
+        if (Number(room.status) !== 3) liveRoomIds.add(id)
+      } catch {
+        // skip unreadable rooms
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logger.warn(`[live-rooms] init failed: ${message}`)
+  } finally {
+    liveRoomsInitialized = true
+    logger.info(`[live-rooms] tracking ${liveRoomIds.size} live room(s)`)
+  }
+}
+
 function clearEarlyResolveRetry(roomId: string): void {
   const timer = earlyResolveRetryTimers.get(roomId)
   if (timer) clearTimeout(timer)
@@ -383,17 +410,20 @@ async function collectExpiredRoomIds(nowSecs: number): Promise<Set<string>> {
   for (const room of expiredPersistedRooms) {
     ids.add(room.roomId)
   }
-  const count = await chainAdapter.getRoomCount()
-  for (let id = 1n; id <= count; id++) {
-    try {
-      const rawRoom = await chainAdapter.getRoom(id)
-      // RoomStatus.Waiting = 0
-      if (rawRoom.status !== 0) continue
-      if (Number(rawRoom.expiresAt) > nowSecs) continue
-      ids.add(id.toString())
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      logger.warn(`[expiry-monitor] failed to inspect room ${id}: ${message}`)
+  // Only scan live rooms — avoids an O(roomCount) full-chain scan each tick.
+  // Falls back to DB-only path until liveRoomsInitialized becomes true.
+  if (liveRoomsInitialized) {
+    for (const id of liveRoomIds) {
+      try {
+        const rawRoom = await chainAdapter.getRoom(id)
+        // RoomStatus.Waiting = 0
+        if (rawRoom.status !== 0) continue
+        if (Number(rawRoom.expiresAt) > nowSecs) continue
+        ids.add(id.toString())
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[expiry-monitor] failed to inspect room ${id}: ${message}`)
+      }
     }
   }
   return ids
@@ -402,6 +432,7 @@ async function collectExpiredRoomIds(nowSecs: number): Promise<Set<string>> {
 async function processExpiredRoom(io: Server, roomId: string): Promise<void> {
   try {
     await chainAdapter.expireRoom(BigInt(roomId))
+    liveRoomIds.delete(BigInt(roomId))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     logger.warn(`[expiry-monitor] failed to expire room ${roomId} on-chain: ${message}`)
@@ -552,11 +583,18 @@ export function setupSocketHandlers(io: Server) {
   // Map (roomId -> playerAddressLower -> socketId) for private events.
   const playerSockets = new Map<string, Map<string, string>>()
 
+  // Populate liveRoomIds once at startup (fire-and-forget).
+  void initLiveRoomIds()
+
   // Start a single chain watcher for the whole server process.
   // It will broadcast public events to the room, and route private events using playerSockets.
   const unwatch = chainAdapter.watchAll(async ({ eventName, args }) => {
     const roomId = (args.roomId as bigint | undefined)?.toString()
     if (!roomId) return
+
+    // Keep liveRoomIds in sync without extra RPC calls.
+    if (eventName === 'PlayerJoined') liveRoomIds.add(BigInt(roomId))
+    if (eventName === 'GameEnded' || eventName === 'RoomExpired') liveRoomIds.delete(BigInt(roomId))
 
     const timestamp = Date.now()
     const enrichedArgs = await enrichEventArgs(eventName, args, roomId)
@@ -638,6 +676,9 @@ export function setupSocketHandlers(io: Server) {
           BigInt(roomId),
           playerAddress,
         )
+        // Safety net: if this room slipped through init (e.g. created before
+        // the backend started or between init and the watchAll setup), track it now.
+        if (Number(rawRoom.status) !== 3) liveRoomIds.add(BigInt(roomId))
         const roomChatKey = cacheChatKey(roomId, rawRoom)
         socket.emit('room_state', serializeBigInts({ room: rawRoom, players: rawPlayers }))
         await emitRoomSnapshot(io, roomId, socket.id)
@@ -1238,11 +1279,11 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
 
 export function startRoleCommitmentMonitor(_io: Server, intervalMs = 5_000): NodeJS.Timeout {
   return setInterval(async () => {
+    if (!liveRoomsInitialized) return
     if (roleCommitmentTickInProgress) return
     roleCommitmentTickInProgress = true
     try {
-      const count = await chainAdapter.getRoomCount()
-      for (let id = 1n; id <= count; id++) {
+      for (const id of [...liveRoomIds]) {
         await processRoomForCommitment(id)
       }
     } catch (err) {
@@ -1393,20 +1434,25 @@ async function processActiveRoom(io: Server, id: bigint, rawRoom: RawRoom, now: 
 
 export function startPhaseAdvanceMonitor(io: Server, intervalMs = Number(process.env.PHASE_ADVANCE_INTERVAL_MS ?? 2_000)): NodeJS.Timeout {
   return setInterval(async () => {
+    if (!liveRoomsInitialized) return
     if (phaseAdvanceTickInProgress) return
     phaseAdvanceTickInProgress = true
     try {
-      const count = await chainAdapter.getRoomCount()
       const now = Date.now()
-      for (let id = 1n; id <= count; id++) {
-        const rawRoom = await chainAdapter.getRoom(id)
-        // RoomStatus.Active = 2
-        if (rawRoom.status !== 2) continue
-        await processActiveRoom(io, id, rawRoom, now)
+      for (const id of [...liveRoomIds]) {
+        try {
+          const rawRoom = await chainAdapter.getRoom(id)
+          // Clean up ended rooms discovered mid-cycle (belt-and-suspenders — the
+          // chain event handler is the primary removal path).
+          if (Number(rawRoom.status) === 3) { liveRoomIds.delete(id); continue }
+          // RoomStatus.Active = 2
+          if (rawRoom.status !== 2) continue
+          await processActiveRoom(io, id, rawRoom, now)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          logger.error(`[phase-advance-monitor] tick error for room ${id}: ${message}`)
+        }
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      logger.error(`[phase-advance-monitor] tick error: ${message}`)
     } finally {
       phaseAdvanceTickInProgress = false
     }

@@ -48,6 +48,11 @@ export const BOT_MAX_STAKE_WEI = BigInt(process.env.BOT_MAX_STAKE_WEI ?? '100000
 // self-play game to keep on-chain activity up. Default 5 minutes.
 export const SELF_PLAY_IDLE_MS = Number(process.env.SELF_PLAY_IDLE_MS ?? 300_000)
 
+// Set SELF_PLAY_DISABLED=true to prevent bots from ever starting a self-play
+// game. Bots will still join human rooms. Useful when bot wallets are low on
+// funds and you don't want them burning gas on maintenance games.
+export const SELF_PLAY_DISABLED = (process.env.SELF_PLAY_DISABLED ?? 'false').toLowerCase() === 'true'
+
 // Shared secret for the runner's calls to the backend bot-coordination API.
 export const BOT_RUNNER_SECRET = process.env.BOT_RUNNER_SECRET ?? ''
 

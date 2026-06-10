@@ -25,6 +25,7 @@ import {
   STAKE_AMOUNT,
   BOT_MAX_STAKE_WEI,
   SELF_PLAY_IDLE_MS,
+  SELF_PLAY_DISABLED,
   BOT_RUNNER_SECRET,
 } from './config.js'
 import {
@@ -342,6 +343,7 @@ async function poolTick(): Promise<void> {
 
   // 2. Idle self-play fallback — only when the whole pool is free and quiet.
   if (
+    !SELF_PLAY_DISABLED &&
     requests.length === 0 &&
     bots.length >= 4 &&
     freeIndices().length === bots.length &&
@@ -396,7 +398,7 @@ async function main(): Promise<void> {
   console.log('\nBot wallets:')
   for (const b of bots) console.log(`  Bot ${b.index + 1}: ${b.address}`)
   console.log(`\nMax human-room stake: ${BOT_MAX_STAKE_WEI} wei`)
-  console.log(`Self-play after idle: ${SELF_PLAY_IDLE_MS / 1000}s`)
+  console.log(`Self-play after idle: ${SELF_PLAY_DISABLED ? 'DISABLED' : `${SELF_PLAY_IDLE_MS / 1000}s`}`)
   console.log('\nPool running. Waiting for human rooms / idle self-play...\n')
 
   // eslint-disable-next-line no-constant-condition
