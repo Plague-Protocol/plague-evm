@@ -1195,13 +1195,22 @@ export default function LobbyPage() {
                     )}
                   </div>
                 ) : (
-                  <button
-                    onClick={connect}
-                    className="mt-3 w-full rounded-lg border py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
-                    style={{ borderColor: 'rgba(107,142,35,0.5)', color: '#6b8e23' }}
-                  >
-                    Sign In to Play
-                  </button>
+                  <div className="mt-3 space-y-2">
+                    <button
+                      onClick={connect}
+                      className="w-full rounded-lg border py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
+                      style={{ borderColor: 'rgba(107,142,35,0.5)', color: '#6b8e23' }}
+                    >
+                      Sign In to Play
+                    </button>
+                    <button
+                      onClick={() => router.push('/demo')}
+                      className="w-full rounded-lg py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80"
+                      style={{ color: '#4a5e44' }}
+                    >
+                      or try the free demo — no sign-in →
+                    </button>
+                  </div>
                 )}
               </article>
             </div>

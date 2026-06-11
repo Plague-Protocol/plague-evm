@@ -114,6 +114,13 @@ export default function HomePage() {
                 Play Now
               </Link>
               <Link
+                href="/demo"
+                className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                style={{ backgroundColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px rgba(107,142,35,0.25)' }}
+              >
+                Try Free Demo
+              </Link>
+              <Link
                 href="/how-to-play"
                 className="rounded-lg border px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
                 style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23', boxShadow: '4px 4px 0px rgba(107,142,35,0.2)' }}
@@ -121,6 +128,9 @@ export default function HomePage() {
                 How to Play
               </Link>
             </div>
+            <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+              No wallet, no sign-in — the demo runs instantly in your browser.
+            </p>
           </div>
 
           {/* Stats grid */}
