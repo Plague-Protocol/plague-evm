@@ -19,6 +19,14 @@ const nextConfig = {
       topLevelAwait: true,
     }
 
+    // pino (pulled in via Thirdweb → WalletConnect) optionally requires
+    // `pino-pretty` for dev log formatting. It's never used in the browser
+    // bundle, so resolve it to an empty module to silence the build warning.
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      'pino-pretty': false,
+    }
+
     // Tell webpack the client output environment supports async functions
     // (modern browsers all do). Without this webpack emits the noisy
     // "target environment does not appear to support async/await" warning

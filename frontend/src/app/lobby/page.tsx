@@ -980,8 +980,8 @@ export default function LobbyPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="maxPlayers" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Max Players <span style={{ color: '#2e4a2e' }}>(4 – 20)</span>
+                      <label htmlFor="maxPlayers" className="block whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.04em]" style={{ color: '#4a5e44' }}>
+                        Max Players <span style={{ color: '#2e4a2e' }}>(4–20)</span>
                       </label>
                       <input
                         id="maxPlayers"
@@ -995,8 +995,8 @@ export default function LobbyPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Stake <span style={{ color: '#2e4a2e' }}>(amount &gt; 0)</span>
+                      <label htmlFor="stakeInput" className="block whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.04em]" style={{ color: '#4a5e44' }}>
+                        Stake <span style={{ color: '#2e4a2e' }}>(&gt; 0)</span>
                       </label>
                       <input
                         id="stakeInput"

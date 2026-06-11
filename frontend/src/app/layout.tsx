@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Oswald, VT323, Rajdhani, Share_Tech_Mono } from 'next/font/google'
 import localFont from 'next/font/local'
 import Script from 'next/script'
@@ -37,6 +37,15 @@ const monoMobileFont = Share_Tech_Mono({
   weight: '400',
   variable: '--font-mono-mobile',
 })
+
+// maximum-scale=1 stops iOS Safari from auto-zooming the viewport when a form
+// field (including third-party ones like the Thirdweb sign-in modal) is focused.
+// iOS 10+ still permits manual pinch-zoom, so accessibility is preserved.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+}
 
 export const metadata: Metadata = {
   title: 'Zombie Plague — On-Chain Social Deduction',
