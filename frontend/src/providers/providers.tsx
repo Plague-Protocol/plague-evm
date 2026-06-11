@@ -1,5 +1,6 @@
 'use client'
 
+import { ThirdwebProvider } from 'thirdweb/react'
 import { WalletProvider } from '@/providers/wallet-provider'
 import { SoundProvider } from '@/providers/sound-provider'
 import { SplashScreen } from '@/components/ui/splash-screen'
@@ -10,6 +11,7 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
   const [splashResolved, setSplashResolved] = useState(false)
 
   return (
+    <ThirdwebProvider>
     <SoundProvider>
       <SplashScreen onResolved={() => setSplashResolved(true)} />
       <WalletProvider>
@@ -38,5 +40,6 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
         }}
       />
     </SoundProvider>
+    </ThirdwebProvider>
   )
 }

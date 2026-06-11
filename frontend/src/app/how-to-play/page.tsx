@@ -551,7 +551,7 @@ export default function HowToPlayPage() {
           >
             <h2 className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
             <p className="mt-3 font-mono text-sm" style={{ color: '#4a5e44' }}>
-              Connect your wallet, join a room in the lobby, and stake your USDm.
+              Sign in, join a room in the lobby, and stake your USDm.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <Link

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useWallet } from '@/hooks/useWallet'
 
 export function ConnectButton() {
-  const { isConnected, address, isLoading, connect, disconnect } = useWallet()
+  const { isConnected, address, isLoading, isMiniPay, connect, disconnect } = useWallet()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -17,6 +17,9 @@ export function ConnectButton() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
+
+  // MiniPay manages its own wallet — no connect UI needed
+  if (isMiniPay && !isConnected) return null
 
   const copy = () => {
     if (!address) return
@@ -42,7 +45,7 @@ export function ConnectButton() {
           boxShadow: '0 0 12px rgba(107,142,35,0.35)',
         }}
       >
-        {isLoading ? 'Connecting…' : 'Connect Wallet'}
+        {isLoading ? 'Signing In…' : 'Sign In'}
       </button>
     )
   }
@@ -80,7 +83,7 @@ export function ConnectButton() {
         >
           {/* Full address */}
           <div className="px-3 py-2">
-            <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#4a5e44' }}>Connected</p>
+            <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#4a5e44' }}>Signed In</p>
             <p className="mt-1 font-mono text-xs break-all" style={{ color: '#8fa882' }}>{address}</p>
           </div>
 
@@ -98,17 +101,19 @@ export function ConnectButton() {
             {copied ? 'Copied!' : 'Copy Address'}
           </button>
 
-          {/* Disconnect */}
-          <button
-            onClick={handleDisconnect}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80"
-            style={{ color: '#cc1414', backgroundColor: 'transparent' }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            Disconnect
-          </button>
+          {/* Sign Out — hidden in MiniPay (no concept of signing out) */}
+          {!isMiniPay && (
+            <button
+              onClick={handleDisconnect}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80"
+              style={{ color: '#cc1414', backgroundColor: 'transparent' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Sign Out
+            </button>
+          )}
         </div>
       )}
     </div>

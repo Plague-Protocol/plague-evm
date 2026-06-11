@@ -110,7 +110,7 @@ function claimSuccessMessage(claimed: boolean): string {
 
 function getCreateButtonLabel(isConnected: boolean, creating: boolean): string {
   if (creating) return 'Creating\u2026'
-  return isConnected ? 'Create Room' : 'Connect & Create'
+  return isConnected ? 'Create Room' : 'Sign In & Create'
 }
 
 interface RoomRow {
@@ -996,14 +996,14 @@ export default function LobbyPage() {
                     </div>
                     <div>
                       <label htmlFor="stakeInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                        Stake ({STABLE_TOKEN}) <span style={{ color: '#2e4a2e' }}>(amount &gt; 0)</span>
+                        Stake <span style={{ color: '#2e4a2e' }}>(amount &gt; 0)</span>
                       </label>
                       <input
                         id="stakeInput"
                         type="number"
                         min={0.000000000000000001}
                         step={0.1}
-                        placeholder="e.g. 0.5"
+                        placeholder="e.g. 0.5 USDm"
                         value={stakeInput}
                         onChange={e => setStakeInput(e.target.value)}
                         className="mt-2 w-full rounded-lg border bg-transparent px-4 py-3 font-mono text-sm focus:outline-none placeholder:opacity-40"
@@ -1060,7 +1060,7 @@ export default function LobbyPage() {
                 style={{ backgroundColor: '#0a100a', borderColor: 'rgba(143,168,130,0.2)', animationDelay: '100ms' }}
               >
                 <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#8fa882' }}>
-                  Wallet
+                  Account
                 </p>
                 {isConnected && address ? (
                   <div className="mt-3 space-y-3">
@@ -1200,7 +1200,7 @@ export default function LobbyPage() {
                     className="mt-3 w-full rounded-lg border py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
                     style={{ borderColor: 'rgba(107,142,35,0.5)', color: '#6b8e23' }}
                   >
-                    Connect Wallet
+                    Sign In to Play
                   </button>
                 )}
               </article>

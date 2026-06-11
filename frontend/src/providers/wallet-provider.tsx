@@ -8,14 +8,22 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { createWalletClient, custom, getAddress } from 'viem'
-import { celoSepolia, celo } from 'viem/chains'
-
-// ── EIP-1193 type ────────────────────────────────────────────────────────────
+import {
+  useActiveAccount,
+  useActiveWallet,
+  useActiveWalletChain,
+  useConnect,
+  useConnectModal,
+  useDisconnect,
+  useSwitchActiveWalletChain,
+} from 'thirdweb/react'
+import { createWallet } from 'thirdweb/wallets'
+import { thirdwebClient, supportedWallets, targetChain, celo, celoSepolia } from '@/lib/thirdweb'
 
 declare global {
   interface Window {
     ethereum?: {
+      isMiniPay?: boolean
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
       on: (event: string, handler: (...args: unknown[]) => void) => void
       removeListener: (event: string, handler: (...args: unknown[]) => void) => void
@@ -25,25 +33,18 @@ declare global {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface WalletState {
+interface WalletContextValue {
   isConnected: boolean
   address: `0x${string}` | null
   chainId: number | null
   isLoading: boolean
   error: string | null
-}
-
-interface WalletContextValue extends WalletState {
+  isMiniPay: boolean
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   switchToCelo: (network?: 'mainnet' | 'testnet') => Promise<void>
   signMessage: (message: string) => Promise<`0x${string}`>
 }
-
-const CELO_CHAINS = {
-  mainnet: celo,
-  testnet: celoSepolia,
-} as const
 
 // ── Context ──────────────────────────────────────────────────────────────────
 
@@ -52,184 +53,85 @@ const WalletContext = createContext<WalletContextValue | null>(null)
 // ── Provider ─────────────────────────────────────────────────────────────────
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<WalletState>({
-    isConnected: false,
-    address: null,
-    chainId: null,
-    isLoading: false,
-    error: null,
-  })
+  const account      = useActiveAccount()
+  const activeWallet = useActiveWallet()
+  const activeChain  = useActiveWalletChain()
+  const { disconnect: twDisconnect } = useDisconnect()
+  const switchChain  = useSwitchActiveWalletChain()
+  const { connect: twConnect }  = useConnect()
+  const { connect: openModal }  = useConnectModal()
 
-  // ── Silently restore existing session on mount (no prompt) ────────────────
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+  const [isMiniPay, setIsMiniPay] = useState(false)
 
+  // MiniPay injects window.ethereum — detect and auto-connect silently
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.ethereum) return
-
-    const restore = async () => {
-      try {
-        const accounts = (await window.ethereum!.request({ method: 'eth_accounts' })) as string[]
-        if (!accounts.length) return
-        const rawChainId = (await window.ethereum!.request({ method: 'eth_chainId' })) as string
-        setState({
-          isConnected: true,
-          address: getAddress(accounts[0]),
-          chainId: parseInt(rawChainId, 16),
-          isLoading: false,
-          error: null,
-        })
-      } catch {
-        // Silent — user hasn't connected yet
-      }
-    }
-
-    restore()
+    if (typeof window === 'undefined') return
+    if (!window.ethereum?.isMiniPay) return
+    setIsMiniPay(true)
+    twConnect(async () => {
+      const wallet = createWallet('io.metamask') // reads window.ethereum
+      await wallet.connect({ client: thirdwebClient })
+      return wallet
+    })
+  // twConnect is stable ref — only run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Wallet events ────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.ethereum) return
-
-    const handleAccountsChanged = (rawAccounts: unknown) => {
-      const accounts = rawAccounts as string[]
-      if (!accounts.length) {
-        setState({ isConnected: false, address: null, chainId: null, isLoading: false, error: null })
-      } else {
-        setState(prev => ({ ...prev, isConnected: true, address: getAddress(accounts[0]) }))
-      }
-    }
-
-    const handleChainChanged = (rawChainId: unknown) => {
-      setState(prev => ({ ...prev, chainId: parseInt(rawChainId as string, 16) }))
-    }
-
-    window.ethereum.on('accountsChanged', handleAccountsChanged)
-    window.ethereum.on('chainChanged', handleChainChanged)
-
-    return () => {
-      window.ethereum?.removeListener('accountsChanged', handleAccountsChanged)
-      window.ethereum?.removeListener('chainChanged', handleChainChanged)
-    }
-  }, [])
-
-  // ── Connect ──────────────────────────────────────────────────────────────────
+  const isConnected = !!account
+  const address     = (account?.address ?? null) as `0x${string}` | null
+  const chainId     = activeChain?.id ?? null
 
   const connect = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }))
+    setIsLoading(true)
+    setError(null)
     try {
-      if (typeof window === 'undefined' || !window.ethereum) {
-        throw new Error('No wallet detected. Install MetaMask or Valora.')
-      }
-      const accounts = (await window.ethereum.request({ method: 'eth_requestAccounts' })) as string[]
-      if (!accounts.length) throw new Error('No accounts returned from wallet.')
-      const rawChainId = (await window.ethereum.request({ method: 'eth_chainId' })) as string
-      const parsedChainId = parseInt(rawChainId, 16)
-      setState({
-        isConnected: true,
-        address: getAddress(accounts[0]),
-        chainId: parsedChainId,
-        isLoading: false,
-        error: null,
+      await openModal({
+        client: thirdwebClient,
+        wallets: supportedWallets,
+        chain: targetChain(),
+        // Social/email/phone sign-in (inAppWallet, first in supportedWallets)
+        // is surfaced as the primary option; external wallets sit below it.
+        title: 'Sign In',
+        showThirdwebBranding: false,
+        size: 'compact',
       })
-      // Auto-switch to the correct Celo chain for this deployment.
-      // Fires both when the user is on a non-Celo network AND when they are on
-      // the wrong Celo network (e.g. Mainnet wallet on a testnet build).
-      const network = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'mainnet' | 'testnet'
-      const targetChainId = CELO_CHAINS[network].id
-      if (parsedChainId !== targetChainId) {
-        const chain = CELO_CHAINS[network]
-        const chainHex = `0x${chain.id.toString(16)}`
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: chainHex }],
-          })
-        } catch (switchErr: unknown) {
-          if (typeof switchErr === 'object' && switchErr !== null && 'code' in switchErr && (switchErr as { code: number }).code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: chainHex,
-                chainName: chain.name,
-                nativeCurrency: chain.nativeCurrency,
-                rpcUrls: chain.rpcUrls.default.http,
-                blockExplorerUrls: chain.blockExplorers ? [chain.blockExplorers.default.url] : [],
-              }],
-            })
-          }
-          // If user rejects, that's okay — they can switch later
-        }
-      }
     } catch (err) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: err instanceof Error ? err.message : 'Unknown wallet error',
-      }))
+      // User dismissed modal or connection failed
+      setError(err instanceof Error ? err.message : 'Connection failed')
+    } finally {
+      setIsLoading(false)
     }
-  }, [])
-
-  // ── Disconnect ────────────────────────────────────────────────────────────────
+  }, [openModal])
 
   const disconnect = useCallback(async () => {
-    // Revoke dapp permissions so eth_accounts returns [] on next mount
-    try {
-      if (window.ethereum) {
-        await window.ethereum.request({
-          method: 'wallet_revokePermissions',
-          params: [{ eth_accounts: {} }],
-        })
-      }
-    } catch {
-      // wallet_revokePermissions may not be supported (e.g. Valora) — continue anyway
-    }
-    setState({ isConnected: false, address: null, chainId: null, isLoading: false, error: null })
-  }, [])
-
-  // ── Switch / add Celo network ─────────────────────────────────────────────────
+    if (activeWallet) twDisconnect(activeWallet)
+  }, [activeWallet, twDisconnect])
 
   const switchToCelo = useCallback(async (network: 'mainnet' | 'testnet' = 'testnet') => {
-    if (!window.ethereum) throw new Error('No wallet detected.')
-    const chain = CELO_CHAINS[network]
-    const chainHex = `0x${chain.id.toString(16)}`
-
-    try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: chainHex }],
-      })
-    } catch (err: unknown) {
-      if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: number }).code === 4902) {
-        await window.ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: chainHex,
-            chainName: chain.name,
-            nativeCurrency: chain.nativeCurrency,
-            rpcUrls: chain.rpcUrls.default.http,
-            blockExplorerUrls: chain.blockExplorers ? [chain.blockExplorers.default.url] : [],
-          }],
-        })
-      } else {
-        throw err
-      }
-    }
-  }, [])
-
-  // ── Sign message ──────────────────────────────────────────────────────────────
+    const chain = network === 'mainnet' ? celo : celoSepolia
+    await switchChain(chain)
+  }, [switchChain])
 
   const signMessage = useCallback(async (message: string): Promise<`0x${string}`> => {
-    if (!state.address || !window.ethereum) throw new Error('Wallet not connected.')
-    const wc = createWalletClient({
-      account: state.address,
-      chain: celoSepolia,
-      transport: custom(window.ethereum as Parameters<typeof custom>[0]),
-    })
-    return wc.signMessage({ message })
-  }, [state.address])
+    if (!account) throw new Error('Wallet not connected.')
+    return account.signMessage({ message })
+  }, [account])
 
   return (
-    <WalletContext.Provider value={{ ...state, connect, disconnect, switchToCelo, signMessage }}>
+    <WalletContext.Provider value={{
+      isConnected,
+      address,
+      chainId,
+      isLoading,
+      error,
+      isMiniPay,
+      connect,
+      disconnect,
+      switchToCelo,
+      signMessage,
+    }}>
       {children}
     </WalletContext.Provider>
   )

@@ -180,12 +180,12 @@
     min-height: 44px;
     padding-left: 1rem;
     padding-right: 1rem;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
   }
 
   .input-brutal {
     min-height: 44px;
-    font-size: 0.85rem;
+    /* font-size handled by the global input rule (16px, iPhone zoom fix) */
   }
 
   .player-token {
@@ -211,17 +211,42 @@
   input, button, label,
   [class*="font-mono"] {
     font-family: var(--font-mono-mobile), 'Share Tech Mono', monospace !important;
-    font-size: max(0.75rem, 1em);
   }
+}
 
-  /* Slightly boost small mono text on mobile for legibility */
-  .text-\[10px\], .text-\[11px\] {
-    font-size: 0.7rem !important;
-  }
+/* ── Global type scale (tiered legibility bump) ───────────────────────────────
+   Raises the floor for readable text while keeping the tracked HUD micro-labels
+   compact. Applied via utility-class overrides so it's a single source of truth
+   instead of editing hundreds of inline classNames. The smallest rendered text
+   is 12px (micro-labels); body text sits at 14–17px. Headings (text-lg and up)
+   are already large and left untouched. */
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\] {
+  font-size: 12px !important;
+}
 
-  .text-xs {
-    font-size: 0.75rem !important;
-  }
+.text-xs {
+  font-size: 0.875rem !important; /* 12px → 14px */
+}
+
+.text-sm {
+  font-size: 1rem !important;     /* 14px → 16px */
+  line-height: 1.4 !important;
+}
+
+.text-base {
+  font-size: 1.0625rem !important; /* 16px → 17px */
+}
+
+/* ── iPhone input-zoom fix ────────────────────────────────────────────────────
+   iOS Safari zooms the viewport when focusing a form field whose computed
+   font-size is below 16px. Forcing every input/textarea/select to 16px stops
+   the auto-zoom regardless of the utility class applied to it. */
+input,
+textarea,
+select {
+  font-size: 16px !important;
 }
 
 /* ── Game tab bar (mobile) ── */

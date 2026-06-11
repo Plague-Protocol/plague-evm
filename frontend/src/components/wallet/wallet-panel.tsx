@@ -51,10 +51,10 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className={`font-mono text-xs uppercase tracking-[0.2em] ${isDark ? 'text-plague-white/75' : 'text-plague-black/65'}`}>
-            Wallet Status
+            Account Status
           </p>
           <h3 className="mt-2 font-display text-2xl sm:text-4xl leading-none">
-            {isConnected ? 'Connected' : 'Disconnected'}
+            {isConnected ? 'Signed In' : 'Signed Out'}
           </h3>
         </div>
         <span className={`inline-block h-3 w-3 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`} />
@@ -104,7 +104,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
               className="rounded border px-4 py-3 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90"
               style={{ borderColor: 'rgba(230,51,41,0.5)', color: '#e63329' }}
             >
-              Disconnect
+              Sign Out
             </button>
           </>
         ) : (
@@ -114,7 +114,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
             className="rounded border px-4 py-3 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: '#a855f7', borderColor: '#a855f7', color: '#f0f4f8' }}
           >
-            {isLoading ? 'Connecting…' : 'Connect Wallet'}
+            {isLoading ? 'Signing In…' : 'Sign In'}
           </button>
         )}
       </div>
