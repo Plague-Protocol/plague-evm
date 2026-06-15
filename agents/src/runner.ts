@@ -37,6 +37,7 @@ import {
   castVote,
   getRoom,
   getRoomStatuses,
+  hasRoomCapacity,
 } from './chain.js'
 import type { BotWallet } from './config.js'
 import type { BotProof } from './setup.js'
@@ -349,12 +350,18 @@ async function poolTick(): Promise<void> {
     freeIndices().length === bots.length &&
     Date.now() - allIdleSince >= SELF_PLAY_IDLE_MS
   ) {
-    const take = freeIndices()
-    reserve(take)
-    console.log('[pool] no human demand — starting a self-play game')
-    void selfPlay(take)
-      .catch(err => console.warn(`[pool] self-play failed: ${err.message}`))
-      .finally(() => release(take))
+    // Backpressure: createRoom reverts with TooManyActiveRooms once the contract
+    // is at capacity. Skip quietly instead of burning gas on a doomed tx.
+    if (await hasRoomCapacity()) {
+      const take = freeIndices()
+      reserve(take)
+      console.log('[pool] no human demand — starting a self-play game')
+      void selfPlay(take)
+        .catch(err => console.warn(`[pool] self-play failed: ${err.message}`))
+        .finally(() => release(take))
+    } else {
+      console.log('[pool] at active-room capacity — skipping self-play this tick')
+    }
   }
 
   // 3. Heartbeat availability.
