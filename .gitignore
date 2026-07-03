@@ -30,6 +30,9 @@ zk/target/*_vk/
 # TypeScript incremental build info
 **/*.tsbuildinfo
 
+# Generated reports / exports
+plague-grant-readiness.pdf
+
 # OS
 .DS_Store
 Thumbs.db
