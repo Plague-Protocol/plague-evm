@@ -49,21 +49,31 @@ PlagueProtocol/
 
 ## ✅ Current Status
 
-- Frontend: responsive landing page and lobby scaffold shipped in `frontend/src/app`
-- Backend: room routes and socket handlers tracked in `backend/src`
-- Contracts: Solidity contracts and Foundry tests tracked in `contracts/src` and `contracts/test`
-- ZK: Noir circuit scaffolding tracked in `zk/circuits`
-- Leaderboard data: completed games are summarized in Postgres and exposed through the backend leaderboard API; nicknames are used for display when available.
+**Live on Celo Mainnet (chain 42220) with real USDm (cUSD) stakes.** All core contracts are deployed and source-verified.
+
+- **Play now:** [z-plague.vercel.app](https://z-plague.vercel.app/) — lobby, match, leaderboard, and a free demo mode
+- **Contracts:** deployed + [verified on Blockscout](https://celo.blockscout.com/address/0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710) (see [Deployments](#-deployments) below); Foundry suite passing 100/100
+- **Frontend:** shipped on Vercel (Next.js 14)
+- **Backend:** room routes, real-time socket events, and Postgres-backed leaderboard live in `backend/src`
+- **ZK:** Noir circuits (`role_commitment`, `innocence_proof`, `infection_proof`) in `zk/circuits`
+- **Agents:** self-play AI agents in `agents/src` that join and play rooms on-chain
 
 ---
 
-## 🎥 Demo Readiness
+## 🌐 Deployments
 
-- Live demo URL: `coming soon`
-- Demo artifacts to include before grant review:
-   - 30-60s UI walkthrough clip
-   - Screenshots of landing, lobby, and round view
-   - Quick local run instructions
+### Celo Mainnet (chain 42220) — live + verified
+
+| Contract | Address |
+|---|---|
+| PlagueGame | [`0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710`](https://celo.blockscout.com/address/0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710) |
+| FeeManager | [`0xc0a030a9C51c1aBc8273447EB889Fe3e96c4e2DB`](https://celo.blockscout.com/address/0xc0a030a9C51c1aBc8273447EB889Fe3e96c4e2DB) |
+| PotEscrow  | [`0xDB0858e4a10261431927c549163F3D0E1F7d2435`](https://celo.blockscout.com/address/0xDB0858e4a10261431927c549163F3D0E1F7d2435) |
+| Stake currency | `0x765DE816845861e75A25fCA122bb6898B8B1282a` (USDm / cUSD) |
+
+Celo Sepolia testnet (chain 11142220) PlagueGame: `0x63c020880f2dd7E357F4c2aB70d03fb67E12BF3d`.
+
+> Note for contributors: the real mainnet deploy is **not** recorded in `broadcast/` (it was deployed via `forge create`). Confirm on-chain state via Blockscout or RPC, not `broadcast/`. See `CLAUDE.md` for details.
 
 ---
 
@@ -162,11 +172,11 @@ nargo test
 
 ## 🌐 Roadmap
 
-- [ ] **v0.1** — Playable game without ZK (roles server-assigned, revealed at end)
-- [ ] **v0.2** — Solidity escrow + on-chain voting live on Celo Sepolia testnet
-- [ ] **v0.3** — ZK role commitments (Noir circuits + on-chain verifier)
-- [ ] **v0.4** — Full ZK: infection proofs + innocence proofs
-- [ ] **v0.5** — Mainnet launch + leaderboard
+- [x] **v0.1** — Playable game without ZK (roles server-assigned, revealed at end)
+- [x] **v0.2** — Solidity escrow + on-chain voting live on Celo Sepolia testnet
+- [x] **v0.3** — ZK role commitments (Noir circuits + on-chain verifier)
+- [x] **v0.4** — Full ZK: infection proofs + innocence proofs
+- [x] **v0.5** — Mainnet launch + leaderboard
 - [ ] **v1.0** — DAO governance, PLAGUE token, tournaments
 
 ---
