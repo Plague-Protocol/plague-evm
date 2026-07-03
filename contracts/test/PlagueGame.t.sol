@@ -1341,7 +1341,7 @@ contract PlagueGameExtendedTest is Test {
         game.castVote(1, players[0]);
 
         uint256 pot          = game.getRoom(1).pot;
-        uint256 platformFee  = (pot * 3) / 1000;
+        uint256 platformFee  = (pot * 15) / 1000;  // 1.5% — matches PlagueGame._distribute
         uint256 netPot       = pot - platformFee;
         uint256 winnerCount  = 5;
         uint256 share        = netPot / winnerCount;
