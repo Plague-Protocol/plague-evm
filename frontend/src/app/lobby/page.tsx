@@ -45,7 +45,7 @@ function isExpiredWaiting(room: RoomRow, now: number): boolean {
 /**
  * Whether a room belongs in the "Join Existing" list. Ended rooms and other
  * people's expired rooms are hidden (not joinable = clutter); the viewer's OWN
- * expired room stays visible so they can still tap "End Room".
+ * expired room stays visible so they can still tap "End & Refund".
  */
 function isVisibleRoom(room: RoomRow, now: number, myRoomId: bigint | null): boolean {
   if (room.status === 'ended') return false
@@ -64,7 +64,7 @@ function activeRoomNotice(ar: RoomRow, now: number): string {
     return `${label} is full — auto-starting now.`
   }
   if (now >= ar.expiresAt) {
-    return `${label} has expired — open it and tap “End Room” to free up, then create a new one.`
+    return `${label} has expired — tap “End & Refund” on its card to reclaim your stake and free up, then create a new one.`
   }
   return `You have an open room (${label}) waiting for players. It frees up when it fills and plays out, or when it expires.`
 }
@@ -451,7 +451,11 @@ function RoomCard({
   const feeCUSD     = formatToken(room.proofFee)
   const potCUSD     = formatToken(room.pot)
 
-  const showEndRoom  = isMyHost && room.status === 'waiting' && isExpired && !isFull
+  // Any participant (host OR a player who joined) can end their own expired room:
+  // expireRoom is permissionless on-chain and refunds every staker, so this frees
+  // a non-host from being locked out of creating/joining a new room. isMyRoom is
+  // true whenever the connected wallet hosts or has joined this room.
+  const showEndRoom  = isMyRoom && room.status === 'waiting' && isExpired && !isFull
   const joinBtn      = getJoinButtonState(room, isMyRoom, isFull, isExpired, lockedOut, isJoining)
 
   let cardBorderColor = 'rgba(107,142,35,0.2)'
@@ -529,10 +533,11 @@ function RoomCard({
             <button
               onClick={() => onEnd(room)}
               disabled={isEnding}
+              title="Ends this expired room and refunds all staked USDm to every player."
               className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
               style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.08)' }}
             >
-              {isEnding ? 'Ending\u2026' : 'End Room'}
+              {isEnding ? 'Ending\u2026' : 'End & Refund'}
             </button>
           )}
           <button
@@ -871,7 +876,7 @@ export default function LobbyPage() {
     })
   }, [isConnected, address, chainId, connect, pushToGame, myActiveRoom])
 
-  // ── End Room (host expires a timed-out waiting room) ───────────────────────
+  // ── End Room (any participant expires a timed-out waiting room; refunds all) ──
   const handleEndRoom = useCallback(async (room: RoomRow) => {
     if (!address) return
     const client = getContractClient()
