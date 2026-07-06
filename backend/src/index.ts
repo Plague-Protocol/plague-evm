@@ -24,8 +24,14 @@ const httpServer = createServer(app)
 
 // ─── Middleware ─────────────────────────────────────────────────────────────
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://zplague.xyz',
+  'https://www.zplague.xyz',
+]
+
 app.use(helmet())
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }))
+app.use(cors({ origin: allowedOrigins }))
 app.use(express.json())
 
 // ─── REST Routes ────────────────────────────────────────────────────────────
@@ -40,7 +46,7 @@ app.use('/api/bots', botRouter)
 // ─── Socket.io ──────────────────────────────────────────────────────────────
 
 const io = new Server(httpServer, {
-  cors: { origin: process.env.FRONTEND_URL || 'http://localhost:3000' },
+  cors: { origin: allowedOrigins },
 })
 
 setupSocketHandlers(io)
