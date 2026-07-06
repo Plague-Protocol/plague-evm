@@ -460,3 +460,9 @@ select {
   75% { transform: translate(-2px, -1px); filter: contrast(1.4) brightness(1.4); }
   100% { transform: translate(0, 0); filter: contrast(1.1) brightness(1.2); }
 }
+
+/* AmbientLayer vignette — slow breathing edge darkening (game surfaces) */
+@keyframes vignette-breathe {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}

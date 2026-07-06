@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
+import { AmbientLayer } from '@/components/game/AmbientLayer'
+import { PhaseTransition } from '@/components/game/PhaseTransition'
+import { PlayerCard } from '@/components/game/PlayersGrid'
+import { GameOverOverlay } from '@/components/game/GameOverOverlay'
 
 // ── Demo limits ──────────────────────────────────────────────────────────────
 
@@ -82,9 +86,31 @@ const INITIAL_STATE: DemoState = {
 const INFECTION_DURATION = 6_000
 const REVEAL_DURATION    = 5_000
 
+// ── Phase display (mirrors the real game page) ───────────────────────────────
+
+const DEMO_PHASE_LABEL: Record<DemoPhase, string> = {
+  welcome:    '',
+  starting:   'STARTING',
+  infection:  'INFECTION',
+  discussion: 'DISCUSS',
+  voting:     'VOTING',
+  reveal:     'ELIMINATION',
+  gameover:   '',
+}
+
+const DEMO_PHASE_COLOR: Record<DemoPhase, string> = {
+  welcome:    '#6b8e23',
+  starting:   '#6b8e23',
+  infection:  '#e63329',
+  discussion: '#6b8e23',
+  voting:     '#f5c518',
+  reveal:     '#d4c9b2',
+  gameover:   '#4a5e44',
+}
+
 // ── Styling helpers ───────────────────────────────────────────────────────────
 
-function playerCardStyle(p: DemoPlayer, selected: boolean, revealed: boolean): React.CSSProperties {
+function playerCardStyle(p: DemoPlayer, selected: boolean, revealed: boolean): { border: string; backgroundColor: string; color: string } {
   if (p.eliminated) return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
   if (revealed && p.trueStatus === 'infected') return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.15)', color: '#ff6b6b' }
   if (selected) return { border: '2px solid #f5c518', backgroundColor: 'rgba(245,197,24,0.1)', color: '#f5c518' }
@@ -98,6 +124,7 @@ export default function DemoPage() {
   const [demoCount, setDemoCount] = useState(0)
   const [state, setState] = useState<DemoState>(INITIAL_STATE)
   const [countdown, setCountdown] = useState(0)
+  const [gameOverSeen, setGameOverSeen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -135,6 +162,7 @@ export default function DemoPage() {
     if (getDemoCount() >= DEMO_LIMIT) return
     incrementDemoCount()
     setDemoCount(getDemoCount())
+    setGameOverSeen(false)
     setState({ ...INITIAL_STATE, phase: 'starting', round: 1 })
   }, [])
 
@@ -346,6 +374,21 @@ export default function DemoPage() {
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
+      <AmbientLayer />
+      <PhaseTransition
+        phaseKey={`${round}:${phase}`}
+        label={DEMO_PHASE_LABEL[phase]}
+        color={DEMO_PHASE_COLOR[phase]}
+        sublabel={`Round ${round}`}
+        glyphKey={phase}
+        enabled={phase !== 'gameover' && DEMO_PHASE_LABEL[phase] !== ''}
+      />
+      {phase === 'gameover' && outcome && !gameOverSeen && (
+        <GameOverOverlay
+          outcome={outcome}
+          onDismiss={() => setGameOverSeen(true)}
+        />
+      )}
       <div className="relative" style={{ zIndex: 1 }}>
 
         {/* Nav */}
@@ -441,24 +484,29 @@ export default function DemoPage() {
                     <span className="font-mono text-xs rounded border px-2 py-0.5" style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}>{alivePlayers.length} alive</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {players.map(p => {
+                    {players.map((p, i) => {
                       const selected = phase === 'voting' && votedFor === p.id
                       const revealed = isRevealing && p.id === eliminatedId
+                      const clickable = canVote && !p.isYou && !p.eliminated
                       return (
-                        <button
+                        <PlayerCard
                           key={p.id}
-                          onClick={() => canVote && !p.isYou && !p.eliminated && castVote(p.id)}
-                          disabled={!canVote || p.isYou || p.eliminated}
-                          className="relative rounded-lg px-2 py-4 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80 disabled:cursor-default"
+                          index={i}
+                          name={p.name}
                           style={playerCardStyle(p, selected, revealed)}
+                          isMe={p.isYou}
+                          selected={selected}
+                          eliminated={p.eliminated}
+                          justEliminated={revealed && p.eliminated}
+                          clickable={clickable}
+                          onClick={() => clickable && castVote(p.id)}
                         >
-                          {p.name}
                           {p.isYou && <span className="block font-mono text-[9px] font-normal lowercase tracking-wider mt-1" style={{ color: 'inherit', opacity: 0.7 }}>(you)</span>}
                           {p.eliminated && <span className="block font-mono text-[9px] font-normal lowercase tracking-wider mt-1">eliminated</span>}
                           {p.hasShield && !p.eliminated && <span className="block font-mono text-[9px] font-normal mt-1" style={{ color: '#84cc16' }}>⊕ shielded</span>}
                           {revealed && p.trueStatus === 'infected' && <span className="block font-mono text-[9px] font-normal mt-1" style={{ color: '#ff6b6b' }}>was infected!</span>}
                           {revealed && p.trueStatus === 'clean' && <span className="block font-mono text-[9px] font-normal mt-1" style={{ color: '#8fa882' }}>was clean</span>}
-                        </button>
+                        </PlayerCard>
                       )
                     })}
                   </div>

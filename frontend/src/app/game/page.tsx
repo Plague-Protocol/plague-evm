@@ -11,6 +11,10 @@ import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
 import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
+import { AmbientLayer } from '@/components/game/AmbientLayer'
+import { PhaseTransition } from '@/components/game/PhaseTransition'
+import { PlayersGrid } from '@/components/game/PlayersGrid'
+import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import type { RoundPhase } from '@/types/game'
 import { toast } from 'sonner'
 
@@ -32,20 +36,6 @@ const PHASE_COLOR: Record<RoundPhase, string> = {
   voting:     '#f5c518',
   reveal:     '#d4c9b2',
   ended:      '#4a5e44',
-}
-
-function playerStyle(status: string): { border: string; backgroundColor: string; color: string } {
-  if (status === 'infected')   return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.15)', color: '#ff6b6b' }
-  if (status === 'eliminated') return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
-  return { border: '2px solid #6b8e23', backgroundColor: 'rgba(107,142,35,0.08)', color: '#6b8e23' }
-}
-
-/** Only reveal 'infected' styling to the player themselves — hide it from others. */
-function visibleStatus(p: { walletAddress: string; status: string }, localAddress: string | null | undefined): string {
-  if (p.status === 'infected' && p.walletAddress.toLowerCase() !== (localAddress ?? '').toLowerCase()) {
-    return 'clean'
-  }
-  return p.status
 }
 
 function formatCountdown(ms: number): string {
@@ -188,6 +178,9 @@ function GamePageInner() { // NOSONAR
   const [proofError, setProofError] = useState<string | null>(null)
   const [optimisticProofDone, setOptimisticProofDone] = useState(false)
 
+  // ── Game-over reveal overlay ─────────────────────────────────────────────
+  const [gameOverDismissed, setGameOverDismissed] = useState(false)
+
   // ── Role commitment state (during Starting phase) ────────────────────────
   const [committing, setCommitting]               = useState(false)
   const [commitError, setCommitError]             = useState<string | null>(null)
@@ -297,33 +290,26 @@ function GamePageInner() { // NOSONAR
     potPerWinnerValue = Number(result.totalPot) / 1e18 / result.winners.length
   }
   const potPerWinnerDisplay = potPerWinnerValue.toFixed(4)
+  const winnerNames = result?.winners.map(w => {
+    const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())
+    return p?.displayName ?? `${w.slice(0, 6)}…`
+  }) ?? []
+  let gameOutcome: GameOutcome = 'draw'
+  if (result?.outcome === 'clean_win' || result?.outcome === 'infected_win') gameOutcome = result.outcome
+  // Red-pulse the vignette during the local player's final voting seconds.
+  const votingUrgent = phase === 'voting' && canVote && msLeft > 0 && msLeft <= 15_000
   let playersPanelBody: React.ReactNode
   if (isLoading) {
     playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Loading players…</p>
   } else if (room?.players?.length) {
     playersPanelBody = (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {room.players.map((p) => {
-          const isMe = p.walletAddress.toLowerCase() === address?.toLowerCase()
-          return (
-            <button
-              key={p.walletAddress}
-              onClick={() => canVote && setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
-              title={isMe ? `${p.displayName} (You)` : p.displayName}
-              className="relative truncate rounded-lg px-2 py-3 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-80"
-              style={{
-                ...playerStyle(visibleStatus(p, address)),
-                boxShadow: isMe
-                  ? '0 0 0 2px #6b8e23, 0 0 12px rgba(107,142,35,0.35)'
-                  : selectedVote === p.walletAddress ? `0 0 0 2px #f5c518` : undefined,
-                cursor: canVote && !p.isEliminated ? 'pointer' : 'default',
-              }}
-            >
-              {p.displayName}
-            </button>
-          )
-        })}
-      </div>
+      <PlayersGrid
+        players={room.players}
+        localAddress={address}
+        canVote={canVote}
+        selectedVote={selectedVote}
+        onToggleVote={(addr) => setSelectedVote(addr === selectedVote ? null : addr)}
+      />
     )
   } else {
     playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Waiting for players…</p>
@@ -348,6 +334,7 @@ function GamePageInner() { // NOSONAR
   useEffect(() => {
     setOptimisticCommitDone(false)
     setOptimisticProofDone(false)
+    setGameOverDismissed(false)
   }, [roomId])
 
   // If the room ended but live socket events were missed (result is still null),
@@ -742,6 +729,23 @@ function GamePageInner() { // NOSONAR
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
+      <AmbientLayer urgent={votingUrgent} />
+      <PhaseTransition
+        phaseKey={`${round}:${phase}`}
+        label={PHASE_LABEL[phase]}
+        color={PHASE_COLOR[phase]}
+        sublabel={round > 0 ? `Round ${round}` : undefined}
+        glyphKey={phase}
+        enabled={room?.status === 'active' && phase !== 'ended'}
+      />
+      {result && !gameOverDismissed && (
+        <GameOverOverlay
+          outcome={gameOutcome}
+          potPerWinner={potPerWinnerValue}
+          winners={winnerNames}
+          onDismiss={() => setGameOverDismissed(true)}
+        />
+      )}
       <div className="relative game-tab-content" style={{ zIndex: 1 }}>
       {/* Nav */}
       <div className="sticky top-0 z-50 px-4 pt-4 sm:px-8 sm:pt-6">
@@ -1151,10 +1155,7 @@ function GamePageInner() { // NOSONAR
                       <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>{getResultLabel(result.outcome)}</p>
                       <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} USDm</p>
                       <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                        Winners: {result.winners.map(w => {
-                          const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())
-                          return p?.displayName ?? `${w.slice(0, 6)}…`
-                        }).join(', ') || '—'}
+                        Winners: {winnerNames.join(', ') || '—'}
                       </p>
                     </article>
                   )}
