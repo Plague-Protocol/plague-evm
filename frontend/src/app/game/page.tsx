@@ -7,6 +7,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useGameState } from '@/hooks/useGameState'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscape'
+import { useHeartbeat } from '@/hooks/useHeartbeat'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
@@ -322,6 +323,9 @@ function GamePageInner() { // NOSONAR
   const { muted } = useSound()
   const soundScene = room?.status === 'ended' ? 'ended' : phase
   useSoundscape(soundScene, muted)
+  // Thumping heartbeat overlay during the local player's final voting seconds,
+  // synced with the red "lub-dub" vignette pulse (votingUrgent drives both).
+  useHeartbeat(votingUrgent, muted)
 
   // Reset optimistic vote when round changes
   const roundNumber = currentRound?.number ?? 0

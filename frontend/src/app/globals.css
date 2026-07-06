@@ -466,3 +466,13 @@ select {
   0%, 100% { opacity: 0.85; }
   50%      { opacity: 1; }
 }
+
+/* AmbientLayer urgent vignette — heartbeat "lub-dub" cadence (final vote seconds) */
+@keyframes vignette-heartbeat {
+  0%    { opacity: 0.55; }
+  8%    { opacity: 1;    }  /* lub */
+  16%   { opacity: 0.6;  }
+  26%   { opacity: 0.95; }  /* dub */
+  38%   { opacity: 0.5;  }
+  100%  { opacity: 0.5;  }  /* rest */
+}

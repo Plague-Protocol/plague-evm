@@ -115,6 +115,13 @@ export function AmbientLayer({ urgent = false }: { readonly urgent?: boolean }) 
   const reduced = usePrefersReducedMotion()
 
   const vignetteColor = urgent ? '204,20,20' : '6,11,6'
+  // Urgent → red "lub-dub" heartbeat cadence (~1.1s/beat); calm → slow breathe.
+  let animation = 'none'
+  if (!reduced) {
+    animation = urgent
+      ? 'vignette-heartbeat 1.1s ease-in-out infinite'
+      : 'vignette-breathe 9s ease-in-out infinite'
+  }
   return (
     <>
       {!reduced && <SporeField />}
@@ -123,8 +130,8 @@ export function AmbientLayer({ urgent = false }: { readonly urgent?: boolean }) 
         className="pointer-events-none fixed inset-0"
         style={{
           zIndex: 40,
-          background: `radial-gradient(ellipse at center, transparent 55%, rgba(${vignetteColor},${urgent ? 0.32 : 0.42}) 100%)`,
-          animation: reduced ? 'none' : `vignette-breathe ${urgent ? 1.6 : 9}s ease-in-out infinite`,
+          background: `radial-gradient(ellipse at center, transparent 55%, rgba(${vignetteColor},${urgent ? 0.4 : 0.42}) 100%)`,
+          animation,
           transition: 'background 0.8s ease',
         }}
       />
