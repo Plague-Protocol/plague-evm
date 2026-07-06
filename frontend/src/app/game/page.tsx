@@ -11,6 +11,7 @@ import { useHeartbeat } from '@/hooks/useHeartbeat'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
+import { quarantineCode } from '@/lib/roomLabel'
 import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
@@ -780,7 +781,7 @@ function GamePageInner() { // NOSONAR
                   className="font-display text-lg sm:text-2xl leading-none"
                   style={{ color: '#e63329', textShadow: '0 0 12px rgba(230,51,41,0.4)' }}
                 >
-                  {room?.name ? room.name : `Room #${roomId}`}
+                  {room?.name ? room.name : quarantineCode(BigInt(roomId))}
                 </span>
                 {isHost && !room?.name && room?.status !== 'ended' && (
                   <button
@@ -793,7 +794,7 @@ function GamePageInner() { // NOSONAR
                 )}
               </div>
               {room?.name && (
-                <span className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>#{roomId}</span>
+                <span className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>{quarantineCode(BigInt(roomId))}</span>
               )}
               {roomNameEditing && (
                 <form

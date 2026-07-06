@@ -8,6 +8,7 @@ import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
 import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
+import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -36,20 +37,36 @@ function proofFeeWeiFor(stakeInput: string): bigint {
   return onePct > MIN_PROOF_FEE_WEI ? onePct : MIN_PROOF_FEE_WEI
 }
 
+/** A waiting room whose join window has elapsed. */
+function isExpiredWaiting(room: RoomRow, now: number): boolean {
+  return room.status === 'waiting' && now >= room.expiresAt
+}
+
+/**
+ * Whether a room belongs in the "Join Existing" list. Ended rooms and other
+ * people's expired rooms are hidden (not joinable = clutter); the viewer's OWN
+ * expired room stays visible so they can still tap "End Room".
+ */
+function isVisibleRoom(room: RoomRow, now: number, myRoomId: bigint | null): boolean {
+  if (room.status === 'ended') return false
+  if (isExpiredWaiting(room, now) && room.id !== myRoomId) return false
+  return true
+}
+
 // Notice for a player who already has a room. A waiting room can only be ended
 // after it expires, and an active game must play out — the wording reflects that.
 function activeRoomNotice(ar: RoomRow, now: number): string {
-  const id = ar.id.toString()
+  const label = roomLabel(ar)
   if (ar.status === 'active' || ar.status === 'starting') {
-    return `Your game in Room #${id} is in progress — you can create a new room once it ends.`
+    return `Your game in ${label} is in progress — you can create a new room once it ends.`
   }
   if (ar.players >= ar.maxPlayers) {
-    return `Room #${id} is full — auto-starting now.`
+    return `${label} is full — auto-starting now.`
   }
   if (now >= ar.expiresAt) {
-    return `Room #${id} has expired — open it and tap “End Room” to free up, then create a new one.`
+    return `${label} has expired — open it and tap “End Room” to free up, then create a new one.`
   }
-  return `You have an open Room #${id} waiting for players. It frees up when it fills and plays out, or when it expires.`
+  return `You have an open room (${label}) waiting for players. It frees up when it fills and plays out, or when it expires.`
 }
 
 // Turn raw viem/RPC errors into a calm, non-alarming message. A failed room load
@@ -236,9 +253,9 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
         body: JSON.stringify({ name: trimmedName }),
       }).catch(() => null)
       if (nameRes?.status === 409) {
-        toast.error(`"${trimmedName}" is already taken by an active room. Your room was created as Room #${newId.toString()}.`)
+        toast.error(`"${trimmedName}" is already taken by an active room. Your room was created as ${quarantineCode(newId)}.`)
       } else if (!nameRes?.ok) {
-        toast.error(`Room created (#${newId.toString()}) but the name "${trimmedName}" could not be saved. You can set it from the game page.`)
+        toast.error(`Your room was created (${quarantineCode(newId)}) but the name "${trimmedName}" could not be saved. You can set it from the game page.`)
       }
     }
     await loadRooms()
@@ -450,7 +467,7 @@ function RoomCard({
       <div className="flex flex-wrap items-center gap-2">
         <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: statusColor[room.status], boxShadow: `0 0 6px ${statusColor[room.status]}` }} />
         <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
-          {room.name ? room.name : `Room #${room.id.toString()}`}
+          {roomLabel(room)}
         </span>
         {room.status === 'active' && (
           <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(245,197,24,0.15)', color: '#f5c518', border: '1px solid rgba(245,197,24,0.3)' }}>
@@ -811,7 +828,7 @@ export default function LobbyPage() {
 
   const handleCreateRoom = useCallback(async () => {
     if (myActiveRoom) {
-      toast.error(`You are already in Room #${myActiveRoom.id.toString()}. Leave or wait for it to end before creating a new one.`)
+      toast.error(`You are already in ${roomLabel(myActiveRoom)}. Leave or wait for it to end before creating a new one.`)
       return
     }
     await runCreateRoomAction({
@@ -840,7 +857,7 @@ export default function LobbyPage() {
     }
     // In a different active room — block
     if (myActiveRoom) {
-      toast.error(`You are already in Room #${myActiveRoom.id.toString()}. You cannot join another room until that one ends.`)
+      toast.error(`You are already in ${roomLabel(myActiveRoom)}. You cannot join another room until that one ends.`)
       return
     }
     await runJoinRoomAction({
@@ -929,7 +946,7 @@ export default function LobbyPage() {
                 <span className="font-mono text-sm" style={{ color: '#d4c9b2' }}>
                   You are in{' '}
                   <span style={{ color: '#6b8e23' }}>
-                    {myActiveRoom.name ?? `Room #${myActiveRoom.id.toString()}`}
+                    {roomLabel(myActiveRoom)}
                   </span>
                   {' — '}
                   <span className="uppercase tracking-widest" style={{ color: '#4a5e44' }}>
@@ -1229,7 +1246,7 @@ export default function LobbyPage() {
                     className="rounded-full border px-3 py-1 font-mono text-xs"
                     style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}
                   >
-                    {`${rooms.filter(r => r.status !== 'ended').length} rooms`}
+                    {`${rooms.filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null)).length} rooms`}
                     {loadingRooms && hasLoadedOnce && (
                       <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full animate-pulse align-middle" style={{ backgroundColor: '#6b8e23' }} />
                     )}
@@ -1268,7 +1285,7 @@ export default function LobbyPage() {
                 </p>
               )}
 
-              {!loadingRooms && rooms.filter(r => r.status !== 'ended').length === 0 && !roomsError && (
+              {!loadingRooms && rooms.filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null)).length === 0 && !roomsError && (
                 <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
                   No open rooms yet — create one and add bots to play instantly.
                 </p>
@@ -1276,7 +1293,7 @@ export default function LobbyPage() {
 
               <ul className="mt-6 space-y-4 max-h-[320px] sm:max-h-[480px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
                 {rooms
-                  .filter(r => r.status !== 'ended')
+                  .filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null))
                   .map((room, i) => (
                     <RoomCard
                       key={room.id.toString()}
