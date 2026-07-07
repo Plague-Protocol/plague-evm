@@ -22,7 +22,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     plan: free
-    region: oregon
+    region: virginia          # co-located with Neon + Upstash (AWS us-east-1)
     healthCheckPath: /health
     autoDeploy: true
     envVars:
