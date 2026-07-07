@@ -1,0 +1,77 @@
+# Render Blueprint — Plague backend (Celo MAINNET, chain 42220)
+#
+# Deploy: Render Dashboard → New → Blueprint → pick this repo.
+# Build context is the REPO ROOT (see backend/Dockerfile header); the native
+# `bb` ZK binary is installed during the Docker build, so first build takes a
+# few minutes.
+#
+# Secrets (sync:false) are NEVER stored here — set them in the Render dashboard
+# after the service is created:
+#   DATABASE_URL         → Neon *direct* connection string (not the -pooler one)
+#   REDIS_URL            → Upstash rediss://default:...@host:port
+#   BACKEND_PRIVATE_KEY  → mainnet signer key
+#   BOT_RUNNER_SECRET    → must match the agents runner
+#
+# Keep-alive: add an UptimeRobot HTTP monitor on /health every 5 min to avoid
+# the free-tier 15-min spin-down.
+
+services:
+  - type: web
+    name: plague-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # ── Network (Celo mainnet) ──────────────────────────────────────────
+      - key: NETWORK
+        value: mainnet
+      - key: CHAIN_ID          # leaderboard route defaults to testnet (11142220) without this
+        value: "42220"
+      - key: CELO_RPC_URL
+        value: https://forno.celo.org
+      - key: CONTRACT_ADDRESS
+        value: "0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710"
+      - key: FEE_MANAGER_ADDRESS
+        value: "0xc0a030a9C51c1aBc8273447EB889Fe3e96c4e2DB"
+      - key: POT_ESCROW_ADDRESS
+        value: "0xDB0858e4a10261431927c549163F3D0E1F7d2435"
+      - key: FEE_CURRENCY_ADDRESS
+        value: "0x765DE816845861e75A25fCA122bb6898B8B1282a"
+
+      # ── CORS / frontend origin ──────────────────────────────────────────
+      - key: FRONTEND_URL
+        value: https://zplague.xyz
+
+      # ── RPC transport tuning ────────────────────────────────────────────
+      - key: RPC_TIMEOUT_MS
+        value: "20000"
+      - key: RPC_RETRY_COUNT
+        value: "2"
+      - key: RPC_RETRY_DELAY_MS
+        value: "300"
+      - key: RPC_HEALTH_MONITOR_ENABLED
+        value: "true"
+      - key: RPC_HEALTH_CHECK_INTERVAL_MS
+        value: "30000"
+
+      # ── Game flow timing ────────────────────────────────────────────────
+      - key: ROLE_COMMIT_TIMEOUT_MS
+        value: "120000"
+      - key: ELIMINATION_PHASE_DURATION_MS
+        value: "6000"
+      - key: ROOM_SNAPSHOT_THROTTLE_MS
+        value: "250"
+
+      # ── Secrets — set in dashboard (sync:false) ─────────────────────────
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: BACKEND_PRIVATE_KEY
+        sync: false
+      - key: BOT_RUNNER_SECRET
+        sync: false
