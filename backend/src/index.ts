@@ -28,6 +28,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:3000',
   'https://zplague.xyz',
   'https://www.zplague.xyz',
+  'https://z-plague.vercel.app',
 ]
 
 app.use(helmet())
