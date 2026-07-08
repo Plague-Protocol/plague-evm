@@ -1,0 +1,142 @@
+# Plague Protocol — single-box stack (Tencent Lighthouse VPS, Celo MAINNET)
+#
+# Everything runs here: backend + agents + self-hosted Postgres + Redis, with
+# Caddy terminating TLS for the public API. Frontend stays on Vercel and calls
+# https://${API_DOMAIN}.
+#
+# Postgres/Redis are NOT published to the host (no `ports:`) — they're only
+# reachable on the internal compose network. Only Caddy (80/443) is public.
+#
+# Usage (from repo root on the VPS):
+#   cp deploy/.env.example deploy/.env    # then fill in secrets
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Build context is the repo root (`..`) because the backend/agents Dockerfiles
+# COPY workspace manifests + zk/target from there.
+
+name: plague
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plague
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: plague
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plague -d plague"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]  # persist chat history across restarts
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # Internal service hostnames — never leave the compose network
+      DATABASE_URL: postgresql://plague:${POSTGRES_PASSWORD}@postgres:5432/plague?schema=public
+      REDIS_URL: redis://redis:6379
+      # Celo mainnet
+      NETWORK: mainnet
+      CHAIN_ID: "42220"
+      CELO_RPC_URL: https://forno.celo.org
+      CONTRACT_ADDRESS: "0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710"
+      FEE_MANAGER_ADDRESS: "0xc0a030a9C51c1aBc8273447EB889Fe3e96c4e2DB"
+      POT_ESCROW_ADDRESS: "0xDB0858e4a10261431927c549163F3D0E1F7d2435"
+      FEE_CURRENCY_ADDRESS: "0x765DE816845861e75A25fCA122bb6898B8B1282a"
+      FRONTEND_URL: ${FRONTEND_URL:-https://zplague.xyz}
+      # Secrets (from deploy/.env)
+      BACKEND_PRIVATE_KEY: ${BACKEND_PRIVATE_KEY}
+      BOT_RUNNER_SECRET: ${BOT_RUNNER_SECRET}
+      # Tuning
+      RPC_TIMEOUT_MS: "20000"
+      RPC_RETRY_COUNT: "2"
+      RPC_RETRY_DELAY_MS: "300"
+      RPC_HEALTH_MONITOR_ENABLED: "true"
+      RPC_HEALTH_CHECK_INTERVAL_MS: "30000"
+      ROLE_COMMIT_TIMEOUT_MS: "120000"
+      ELIMINATION_PHASE_DURATION_MS: "6000"
+      ROOM_SNAPSHOT_THROTTLE_MS: "250"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s   # allow `prisma migrate deploy` + boot on first run
+
+  agents:
+    build:
+      context: ..
+      dockerfile: agents/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NETWORK: mainnet
+      CELO_RPC_URL: https://forno.celo.org
+      CONTRACT_ADDRESS: "0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710"
+      USDM_ADDRESS: "0x765DE816845861e75A25fCA122bb6898B8B1282a"
+      FEE_CURRENCY_ADDRESS: "0x765DE816845861e75A25fCA122bb6898B8B1282a"  # bots pay gas in USDm → no CELO needed
+      BACKEND_URL: http://backend:4000   # internal — no public round-trip / TLS
+      BOT_RUNNER_SECRET: ${BOT_RUNNER_SECRET}   # MUST match backend
+      STAKE_AMOUNT: ${STAKE_AMOUNT:-100000000000000}
+      BOT_MAX_STAKE_WEI: ${BOT_MAX_STAKE_WEI:-10000000000000000}
+      SELF_PLAY_IDLE_MS: ${SELF_PLAY_IDLE_MS:-300000}
+      CYCLE_DELAY_MS: ${CYCLE_DELAY_MS:-30000}
+      SELF_PLAY_DISABLED: ${SELF_PLAY_DISABLED:-false}
+      # Fund at least 3 wallets, contiguous from _1 (loader stops at first gap)
+      BOT_PRIVATE_KEY_1: ${BOT_PRIVATE_KEY_1}
+      BOT_PRIVATE_KEY_2: ${BOT_PRIVATE_KEY_2}
+      BOT_PRIVATE_KEY_3: ${BOT_PRIVATE_KEY_3}
+      BOT_PRIVATE_KEY_4: ${BOT_PRIVATE_KEY_4}
+      BOT_PRIVATE_KEY_5: ${BOT_PRIVATE_KEY_5}
+    volumes:
+      - agentdata:/app/agents/data   # persist bot-proofs.json so setup runs only once
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  pgdata:
+  redisdata:
+  agentdata:
+  caddydata:
+  caddyconfig:
