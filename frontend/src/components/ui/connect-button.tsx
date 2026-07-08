@@ -45,7 +45,7 @@ export function ConnectButton() {
           boxShadow: '0 0 12px rgba(107,142,35,0.35)',
         }}
       >
-        {isLoading ? 'Signing In…' : 'Sign In'}
+        {isLoading ? 'Connecting…' : 'Play Now'}
       </button>
     )
   }

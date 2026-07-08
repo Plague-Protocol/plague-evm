@@ -127,7 +127,8 @@ function claimSuccessMessage(claimed: boolean): string {
 
 function getCreateButtonLabel(isConnected: boolean, creating: boolean): string {
   if (creating) return 'Creating\u2026'
-  return isConnected ? 'Create Room' : 'Sign In & Create'
+  // Always "Create Room" \u2014 the flow prompts sign-in on click if needed.
+  return 'Create Room'
 }
 
 interface RoomRow {
@@ -1223,7 +1224,7 @@ export default function LobbyPage() {
                       className="w-full rounded-lg border py-2 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
                       style={{ borderColor: 'rgba(107,142,35,0.5)', color: '#6b8e23' }}
                     >
-                      Sign In to Play
+                      Play Now
                     </button>
                     <button
                       onClick={() => router.push('/demo')}

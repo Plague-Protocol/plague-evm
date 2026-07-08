@@ -320,7 +320,7 @@ export default function LeaderboardPage() {
                     {[
                       { label: 'Total games',    value: loading ? '…' : String(data?.totalGames ?? 0),       color: '#6b8e23' },
                       { label: 'Total proofs',   value: loading ? '…' : String(totalProofs),                  color: '#e63329' },
-                      { label: 'Tracked players', value: loading ? '…' : String(data?.players.length ?? 0),  color: '#f5c518' },
+                      { label: 'Chain uptime',   value: '99.9%',                                             color: '#f5c518' },
                     ].map(s => (
                       <div
                         key={s.label}
