@@ -54,37 +54,3 @@ export function HeroStats() {
     </>
   )
 }
-
-// ── CTA section mini-stats (3 inline) ────────────────────────────────────────
-
-export function CtaStats() {
-  const [stats, setStats] = useState<SiteStats | null>(null)
-
-  useEffect(() => {
-    fetch(`${BACKEND_URL}/api/leaderboard/stats`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: SiteStats | null) => { if (data) setStats(data) })
-      .catch(() => {})
-  }, [])
-
-  const items = [
-    { value: stats ? formatCount(stats.totalGames)    : '—', label: 'Matches Played' },
-    { value: '< 5s',                                          label: 'Per Move' },
-    { value: '99.9%',                                         label: 'Chain Uptime' },
-  ]
-
-  return (
-    <>
-      {items.map((s) => (
-        <div key={s.label} className="flex flex-col items-center gap-2 text-center">
-          <span className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>
-            {s.value}
-          </span>
-          <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>
-            {s.label}
-          </span>
-        </div>
-      ))}
-    </>
-  )
-}

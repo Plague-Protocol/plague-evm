@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
-import { HeroStats, CtaStats } from '@/components/ui/home-stats'
+import { HeroStats } from '@/components/ui/home-stats'
 
 const features = [
   {
@@ -302,10 +302,6 @@ export default function HomePage() {
               <p className="max-w-xl font-body text-base sm:text-xl" style={{ color: '#a0bb94' }}>
               Or become them. Every match is a fresh hunt.
             </p>
-          </div>
-
-          <div className="grid w-full grid-cols-1 gap-6 sm:grid-cols-3">
-            <CtaStats />
           </div>
 
           <Link
