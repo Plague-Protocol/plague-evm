@@ -102,7 +102,8 @@ services:
       CELO_RPC_URL: https://forno.celo.org
       CONTRACT_ADDRESS: "0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710"
       USDM_ADDRESS: "0x765DE816845861e75A25fCA122bb6898B8B1282a"
-      FEE_CURRENCY_ADDRESS: "0x765DE816845861e75A25fCA122bb6898B8B1282a"  # bots pay gas in USDm → no CELO needed
+      # No FEE_CURRENCY_ADDRESS → bots pay gas in native CELO (they're funded with it).
+      # USDm is reserved for stakes only, so it lasts far longer.
       BACKEND_URL: http://backend:4000   # internal — no public round-trip / TLS
       BOT_RUNNER_SECRET: ${BOT_RUNNER_SECRET}   # MUST match backend
       STAKE_AMOUNT: ${STAKE_AMOUNT:-100000000000000}
