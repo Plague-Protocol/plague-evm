@@ -31,7 +31,7 @@ export function HeroStats() {
   const items = [
     { icon: '🧟', value: stats ? formatCount(stats.totalGames) : '—', label: 'Matches Played' },
     { icon: '🩸', value: stats ? formatCount(stats.zombiesCaught) : '—', label: 'Zombies Caught' },
-    { icon: '💀', value: stats ? formatCount(stats.totalPlayers) : '—', label: 'Players' },
+    { icon: '🟢', value: '99.9%', label: 'Chain Uptime' },
   ]
 
   return (
@@ -69,7 +69,7 @@ export function CtaStats() {
 
   const items = [
     { value: stats ? formatCount(stats.totalGames)    : '—', label: 'Matches Played' },
-    { value: stats ? formatCount(stats.totalPlayers)  : '—', label: 'Players Registered' },
+    { value: '< 5s',                                          label: 'Per Move' },
     { value: '99.9%',                                         label: 'Chain Uptime' },
   ]
 
