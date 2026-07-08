@@ -9,7 +9,17 @@ import { celo, celoSepolia } from 'viem/chains'
 // ── Network ───────────────────────────────────────────────────────────────────
 
 export const NETWORK = (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
-export const CHAIN = NETWORK === 'mainnet' ? celo : celoSepolia
+
+// Celo's block base fee can rise between fee estimation and tx submission,
+// producing "max fee per gas less than block base fee" rejections that force the
+// bots to retry. viem's default only adds 20% headroom (baseFeeMultiplier 1.2);
+// bump it so a single tx stays valid across a base-fee bump. maxFeePerGas is only
+// a cap — the actual base fee is what's paid at inclusion — so this costs nothing.
+const _baseChain = NETWORK === 'mainnet' ? celo : celoSepolia
+export const CHAIN = {
+  ..._baseChain,
+  fees: { ..._baseChain.fees, baseFeeMultiplier: 2 },
+}
 export const RPC_URL =
   process.env.CELO_RPC_URL ??
   (NETWORK === 'mainnet'
@@ -58,7 +68,7 @@ export const BOT_RUNNER_SECRET = process.env.BOT_RUNNER_SECRET ?? ''
 
 // Optional: pay gas in USDm instead of CELO.
 // Set to the USDm token address to avoid needing CELO on each bot wallet.
-// On mainnet: 0x765DE816845861e75A25fCA122bb6022DB77Eaca
+// On mainnet: 0x765DE816845861e75A25fCA122bb6898B8B1282a
 // On testnet: leave unset (MockCUSD doesn't support fee currency)
 export const FEE_CURRENCY_ADDRESS = envAddress('FEE_CURRENCY_ADDRESS', false)
 
