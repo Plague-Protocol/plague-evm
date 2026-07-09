@@ -228,26 +228,31 @@
 /* ── Global type scale (tiered legibility bump) ───────────────────────────────
    Raises the floor for readable text while keeping the tracked HUD micro-labels
    compact. Applied via utility-class overrides so it's a single source of truth
-   instead of editing hundreds of inline classNames. The smallest rendered text
-   is 12px (micro-labels); body text sits at 14–17px. Headings (text-lg and up)
-   are already large and left untouched. */
+   instead of editing hundreds of inline classNames. Accessibility floor: ALL
+   reading text (chat, feed, descriptions — text-xs and up) renders at ≥16px;
+   micro-labels (short uppercase eyebrows/badges, never prose) at 13px.
+   Headings (text-lg and up) are already large and left untouched. */
+/* Fluid tiers: rem-based (respects the user's browser font-size setting) and
+   clamp()-scaled so text grows gently on larger screens/displays while the
+   16px reading floor holds on phones. */
 .text-\[9px\],
 .text-\[10px\],
 .text-\[11px\] {
-  font-size: 12px !important;
+  font-size: clamp(0.8125rem, 0.76rem + 0.2vw, 0.875rem) !important; /* 13px → 14px */
 }
 
 .text-xs {
-  font-size: 0.875rem !important; /* 12px → 14px */
+  font-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem) !important;     /* 16px → 18px */
+  line-height: 1.45 !important;
 }
 
 .text-sm {
-  font-size: 1rem !important;     /* 14px → 16px */
-  line-height: 1.4 !important;
+  font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem) !important;   /* 17px → 19px */
+  line-height: 1.45 !important;
 }
 
 .text-base {
-  font-size: 1.0625rem !important; /* 16px → 17px */
+  font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.25rem) !important;  /* 18px → 20px */
 }
 
 /* ── iPhone input-zoom fix ────────────────────────────────────────────────────
