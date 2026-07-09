@@ -67,11 +67,30 @@ matches your frontend origin (CORS).
 
 ## 6. Backups
 
-Test once, then install the nightly cron (runs as the `ubuntu` user):
+**How it works:** `pg-backup.sh` runs `pg_dump` *inside* the Postgres container,
+gzips a full logical dump of the `plague` DB to
+`/opt/plague/backups/plague-<timestamp>.sql.gz`, and keeps the 14 most recent
+(older ones auto-pruned). Nothing else touches the DB — it's a plain SQL snapshot.
+
+Test once, then install the nightly cron (3am, runs as the `ubuntu` user):
 ```bash
 chmod +x deploy/pg-backup.sh
-./deploy/pg-backup.sh && ls -lh /opt/plague/backups/     # test run
+./deploy/pg-backup.sh && ls -lh /opt/plague/backups/     # manual / test run
 (crontab -l 2>/dev/null; echo '0 3 * * * /opt/plague/deploy/pg-backup.sh >> /opt/plague/backups/backup.log 2>&1') | crontab -
+crontab -l                                                # confirm it registered
+```
+
+**When to run what:**
+- *Nightly* — the cron handles it; you run nothing.
+- *On demand* (e.g. before a risky change) — `./deploy/pg-backup.sh`
+- *List backups* — `ls -lh /opt/plague/backups/`
+
+**Restore** a dump into the running Postgres (replaces current data — the dump
+drops+recreates objects via `--clean`):
+```bash
+cd /opt/plague/deploy
+gunzip -c /opt/plague/backups/plague-<timestamp>.sql.gz \
+  | docker compose exec -T postgres psql -U plague plague
 ```
 
 ## Funding the wallets (mainnet = real money)

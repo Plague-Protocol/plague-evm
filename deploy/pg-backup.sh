@@ -12,7 +12,9 @@ TS=$(date +%Y%m%d-%H%M%S)
 # Run from the deploy dir so `docker compose` loads deploy/.env and resolves the
 # project cleanly (no unset-variable warnings under cron's minimal environment).
 cd "$DEPLOY_DIR"
-docker compose exec -T postgres pg_dump -U plague plague | gzip > "$BACKUP_DIR/plague-$TS.sql.gz"
+# --clean --if-exists → the dump drops existing objects before recreating them,
+# so a restore reliably replaces current data instead of erroring on conflicts.
+docker compose exec -T postgres pg_dump -U plague --clean --if-exists plague | gzip > "$BACKUP_DIR/plague-$TS.sql.gz"
 
 # Retain the 14 most recent dumps
 ls -1t "$BACKUP_DIR"/plague-*.sql.gz | tail -n +15 | xargs -r rm -f
