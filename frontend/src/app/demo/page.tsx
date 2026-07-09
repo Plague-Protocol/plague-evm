@@ -1015,10 +1015,9 @@ export default function DemoPage() {
                   />
                 )}
 
-                {/* Desktop: feed + role balance the left column (like the live game) */}
-                <div className="hidden lg:flex lg:flex-col gap-6">
+                {/* Desktop: feed balances the left column (like the live game) */}
+                <div className="hidden lg:block">
                   {feedCard}
-                  {roleCard}
                 </div>
               </div>
 
@@ -1068,10 +1067,12 @@ export default function DemoPage() {
                   )}
                 </div>
 
-                {/* Mobile: feed + role stack under the chat */}
-                <div className="flex flex-col gap-6 lg:hidden">
+                {/* Your role — stays beside the chat on desktop */}
+                {roleCard}
+
+                {/* Mobile: feed stacks under the chat */}
+                <div className="lg:hidden">
                   {feedCard}
-                  {roleCard}
                 </div>
 
                 <Link

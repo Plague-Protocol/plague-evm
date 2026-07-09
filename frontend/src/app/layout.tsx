@@ -1,15 +1,23 @@
 import type { Metadata, Viewport } from 'next'
-import { Oswald, VT323, Rajdhani, Share_Tech_Mono } from 'next/font/google'
-import localFont from 'next/font/local'
+import { Oswald, VT323, Rajdhani, Share_Tech_Mono, Eater, Nosifer } from 'next/font/google'
 import Script from 'next/script'
 import { Providers } from '@/providers/providers'
 import './globals.css'
 
-const displayFont = localFont({
-  src: '../../public/fonts/Zombie_Holocaust.ttf',
+// Decayed "eaten" display face — headers, player names, stats.
+const displayFont = Eater({
+  subsets: ['latin'],
   weight: '400',
-  style: 'normal',
   variable: '--font-display',
+  display: 'swap',
+})
+
+// Dripping-blood face reserved for the scream moments: phase stamps,
+// game-over verdict. Kept separate so it stays scary on mobile too.
+const horrorFont = Nosifer({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-horror',
   display: 'swap',
 })
 
@@ -77,7 +85,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable} ${displayMobileFont.variable} ${monoMobileFont.variable}`}>
+    <html lang="en" className={`${displayFont.variable} ${horrorFont.variable} ${bodyFont.variable} ${monoFont.variable} ${displayMobileFont.variable} ${monoMobileFont.variable}`}>
       <body className="antialiased">
         <Script id="sw-register" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {

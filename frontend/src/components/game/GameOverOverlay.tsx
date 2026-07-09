@@ -101,7 +101,7 @@ export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDis
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.45 }}
             onAnimationComplete={() => setStampDone(true)}
-            className="font-display text-6xl font-bold leading-none sm:text-8xl"
+            className="font-horror text-5xl leading-none sm:text-7xl"
             style={{ color: meta.color, textShadow: `0 0 32px ${meta.color}55, 5px 5px 0 #060b06` }}
           >
             {meta.label}

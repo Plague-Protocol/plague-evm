@@ -68,7 +68,7 @@ export function PlayerCard({
         filter: eliminated ? 'saturate(0.4)' : undefined,
       }}
     >
-      <span className="block truncate">{name}</span>
+      <span className="block truncate font-display text-base font-normal tracking-wide">{name}</span>
       {children}
       {/* Persistent skull stamp on eliminated cards */}
       <AnimatePresence>

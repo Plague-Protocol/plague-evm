@@ -3,9 +3,10 @@
 @tailwind utilities;
 
 :root {
-  --font-display: 'Zombie Holocaust', 'Creepster', cursive;
-  --font-body: 'Oswald', sans-serif;
-  --font-mono: 'VT323', monospace;
+  /* NOTE: --font-display / --font-horror / --font-body / --font-mono are set
+     by next/font on <html> (layout.tsx). Do NOT redefine them here — a :root
+     redefinition overrides next/font's self-hosted families and silently
+     falls back to system fonts (this is why Zombie Holocaust never rendered). */
 
   /* Zombie / Horror palette */
   --bg-primary: #060b06;
@@ -198,12 +199,22 @@
   }
 }
 
+/* Scream-moment face (phase stamps, game-over verdict). Not swapped on
+   mobile — it only ever renders at hero sizes, which stay readable. */
+.font-horror {
+  font-family: var(--font-horror), 'Nosifer', cursive;
+}
+
 /* ── Mobile font swap — readable alternatives ── */
 @media (max-width: 640px) {
   .font-display,
   h1, h2, h3, h4 {
     font-family: var(--font-display-mobile), 'Rajdhani', sans-serif !important;
     letter-spacing: 0.02em;
+  }
+
+  .font-horror {
+    font-family: var(--font-horror), 'Nosifer', cursive !important;
   }
 
   .font-mono,

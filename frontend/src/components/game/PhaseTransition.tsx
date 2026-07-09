@@ -101,7 +101,7 @@ export function PhaseTransition({ phaseKey, label, color, sublabel, glyphKey, en
                 ? { opacity: 1 }
                 : { opacity: [0, 1, 0.65, 1], y: 0, letterSpacing: '0.12em' }}
               transition={{ duration: 0.5, delay: 0.12, ease: 'easeOut' }}
-              className="font-display text-5xl font-bold uppercase leading-none sm:text-7xl"
+              className="font-horror text-4xl uppercase leading-none sm:text-6xl"
               style={{ color: snap.color, textShadow: `0 0 28px ${snap.color}66, 4px 4px 0 #060b06` }}
             >
               {snap.label}
