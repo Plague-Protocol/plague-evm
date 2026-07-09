@@ -67,20 +67,24 @@ matches your frontend origin (CORS).
 
 ## 6. Backups
 
+Test once, then install the nightly cron (runs as the `ubuntu` user):
 ```bash
 chmod +x deploy/pg-backup.sh
-crontab -e
-# 0 3 * * * /opt/plague/deploy/pg-backup.sh >> /var/log/plague-backup.log 2>&1
+./deploy/pg-backup.sh && ls -lh /opt/plague/backups/     # test run
+(crontab -l 2>/dev/null; echo '0 3 * * * /opt/plague/deploy/pg-backup.sh >> /opt/plague/backups/backup.log 2>&1') | crontab -
 ```
 
-## Funding the bots (mainnet = real money)
+## Funding the wallets (mainnet = real money)
 
-- With `FEE_CURRENCY_ADDRESS` set to mainnet USDm, bots pay gas in USDm — fund
-  each wallet with **USDm only**, enough for `STAKE_AMOUNT × expected games` +
-  headroom. No CELO required.
+Gas is paid in **native CELO** (cheaper than USDm fee-currency — no ERC-20 debit
++ oracle overhead), so every wallet needs CELO:
+- **Bot wallets** (`BOT_PRIVATE_KEY_*`): CELO for gas **plus** a little **USDm**
+  for stakes (`STAKE_AMOUNT` per game).
+- **Backend signer** (`BACKEND_PRIVATE_KEY`): CELO for gas — it drives round
+  resolution / phase advances.
+- If any wallet runs out of CELO, its transactions fail — monitor balances.
 - Keep `STAKE_AMOUNT` / `BOT_MAX_STAKE_WEI` low — bots lose real USDm to humans.
-- Set `SELF_PLAY_DISABLED=true` if you don't want bots burning funds on
-  maintenance games (they still join human rooms).
+- Set `SELF_PLAY_DISABLED=true` to stop bots self-playing (they still join human rooms).
 
 ## Updating
 

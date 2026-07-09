@@ -1,7 +1,7 @@
 # Plague Protocol — Project State & Guide
 
 > Authoritative source of truth for the current state of this project.
-> **Read this before assuming anything about deployment status.** Updated 2026-07-03.
+> **Read this before assuming anything about deployment status.** Updated 2026-07-09.
 
 ---
 
@@ -19,8 +19,22 @@ It is not a testnet-only prototype. All three core contracts are deployed AND so
 | PotEscrow  | `0xDB0858e4a10261431927c549163F3D0E1F7d2435` | [Blockscout ✓](https://celo.blockscout.com/address/0xDB0858e4a10261431927c549163F3D0E1F7d2435) |
 | Stake currency | `0x765DE816845861e75A25fCA122bb6898B8B1282a` | USDm (cUSD), 18 decimals |
 
-- **Live frontend:** https://z-plague.vercel.app/  (routes: `/lobby`, `/game`, `/leaderboard`, `/demo`)
+- **Live frontend:** https://zplague.xyz  (also https://z-plague.vercel.app) — routes: `/lobby`, `/game`, `/leaderboard`, `/demo`
 - **Deployer EOA:** `0xF9aa21D3921C7F292738D4E5864EaE3543081E98` (deployed ~2026-06-10)
+
+### Backend / agents / DB — self-hosted VPS (as of 2026-07-08)
+
+The backend, self-play agents, Postgres, and Redis all run on **one Tencent
+Lighthouse VPS** (Frankfurt, Ubuntu 22.04 + Docker), fronted by **Caddy** for
+auto-TLS. Neon/Upstash/Render were evaluated and dropped in favour of this single
+self-hosted box. Full stack + runbook: [`deploy/`](deploy/) (`docker-compose.yml`,
+`Caddyfile`, `.env.example`, `pg-backup.sh`, `README.md`).
+
+- **Public API:** `https://api.zplague.xyz` (health: `/health` → `{"ok":true}`). Frontend sets `NEXT_PUBLIC_BACKEND_URL` to this.
+- **VPS:** `43.131.58.132`, user `ubuntu`, repo at `/opt/plague`; compose runs from `/opt/plague/deploy` (`docker compose up -d`).
+- **Gas:** every wallet (5 bot agents + backend signer `0xb895af9AA23451314601822B403E4e6f7456E950`) pays gas in **native CELO**, NOT USDm fee-currency. USDm = stakes/pot only. If a wallet runs out of CELO its txns fail.
+- **Bots:** 5 ERC-8004 agents self-play every 12h (`SELF_PLAY_IDLE_MS=43200000`); bot proofs persist on the `agentdata` docker volume (setup runs once).
+- Update a service: `cd /opt/plague && git pull && cd deploy && docker compose up -d --build <svc>`.
 
 ### Testnet (Celo Sepolia, chain 11142220)
 
