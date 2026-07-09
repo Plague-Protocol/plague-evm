@@ -1,7 +1,19 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 
 // ─── Section data ──────────────────────────────────────────────────────────
+
+const quickStart = [
+  { icon: '🚪', text: 'Join a room in the Lobby by staking USDm.' },
+  { icon: '🔑', text: 'Game starts → set a secret Shield Password.' },
+  { icon: '🦠', text: 'Each round someone is secretly infected — starting with a random Patient Zero.' },
+  { icon: '🛡️', text: "Being framed? Activate your Shield to prove you're clean. Infected players can't." },
+  { icon: '🗳️', text: 'Vote out a suspect every round. No vote = a self-vote against you.' },
+  { icon: '💰', text: 'Eliminate all infected to split the pot — get outnumbered and you lose your stake.' },
+]
 
 const phases = [
   {
@@ -138,7 +150,7 @@ const endgame = [
     icon: '✅',
     color: '#84cc16',
     condition: 'All infected players are eliminated.',
-    payout: 'The entire pot (minus 0.3% platform fee) is split equally among surviving Clean players.',
+    payout: 'The entire pot (minus 1.5% platform fee) is split equally among surviving Clean players.',
   },
   {
     title: 'Infected Win',
@@ -185,7 +197,7 @@ export default function HowToPlayPage() {
 
       {/* Hero */}
       <header
-        className="relative overflow-hidden px-4 sm:px-6 py-10 sm:py-20"
+        className="relative overflow-hidden px-4 sm:px-6 py-8 sm:py-20"
         style={{ borderBottom: '1px solid rgba(107,142,35,0.2)' }}
       >
         <div className="relative mx-auto w-full max-w-6xl text-center">
@@ -195,7 +207,7 @@ export default function HowToPlayPage() {
           >
             Rules & Instructions
           </span>
-          <h1 className="mt-6 font-display text-3xl font-bold leading-none sm:text-6xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
+          <h1 className="mt-4 sm:mt-6 font-display text-3xl font-bold leading-none sm:text-6xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
             HOW TO PLAY
           </h1>
           <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#4a5e44' }}>
@@ -206,11 +218,53 @@ export default function HowToPlayPage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-20 px-4 sm:px-6 py-10 sm:py-16">
+      <div className="mx-auto w-full max-w-6xl space-y-6 sm:space-y-20 px-4 sm:px-6 py-8 sm:py-16">
+
+        {/* ── Quick Start — everything you need, in 6 lines ─────────────────── */}
+        <section
+          className="rounded-2xl border p-5 sm:p-8"
+          style={{ borderColor: 'rgba(204,20,20,0.35)', backgroundColor: 'rgba(6,11,6,0.7)' }}
+        >
+          <div className="flex items-baseline gap-4">
+            <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#cc1414' }}>⚡</span>
+            <h2 className="font-display text-2xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>Quick Start</h2>
+          </div>
+          <ol className="mt-5 space-y-3">
+            {quickStart.map((step, i) => (
+              <li key={step.text} className="flex items-start gap-3 font-mono text-sm leading-snug" style={{ color: '#8fa882' }}>
+                <span
+                  className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full font-mono text-[10px] font-bold"
+                  style={{ backgroundColor: 'rgba(107,142,35,0.15)', color: '#6b8e23', border: '1px solid rgba(107,142,35,0.4)' }}
+                >
+                  {i + 1}
+                </span>
+                <span><span className="mr-1.5">{step.icon}</span>{step.text}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/demo"
+              className="flex-1 rounded-xl px-6 py-3 text-center font-mono text-sm font-bold uppercase tracking-wider transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #cc1414, #c97a12)', color: '#060b06' }}
+            >
+              Try the Free Demo →
+            </Link>
+            <Link
+              href="/lobby"
+              className="flex-1 rounded-xl border px-6 py-3 text-center font-mono text-sm font-bold uppercase tracking-wider transition-opacity hover:opacity-80"
+              style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23' }}
+            >
+              Play for Real
+            </Link>
+          </div>
+          <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] sm:hidden" style={{ color: '#4a5e44' }}>
+            Tap any section below for the full rules ↓
+          </p>
+        </section>
 
         {/* ── Overview ────────────────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="00" title="The Objective" />
+        <CollapsibleSection number="00" title="The Objective">
           <div className="mt-6 sm:mt-8 grid gap-4 md:grid-cols-3">
             {roles.map((role) => (
               <div
@@ -235,11 +289,10 @@ export default function HowToPlayPage() {
               </div>
             ))}
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Room Lifecycle ───────────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="01" title="Room Lifecycle" />
+        <CollapsibleSection number="01" title="Room Lifecycle">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
             Every game goes through four distinct statuses before it ends.
           </p>
@@ -267,7 +320,7 @@ export default function HowToPlayPage() {
                 status: 'Ended',
                 color: '#4a5e44',
                 desc: 'The game is over. The smart contract has determined the winner faction and distributed the pot automatically. No admin action needed.',
-                actions: ['Pot distributed automatically to winners', 'Platform takes 0.3% fee from pot', 'Results finalized on-chain'],
+                actions: ['Pot distributed automatically to winners', 'Platform takes 1.5% fee from pot', 'Results finalized on-chain'],
               },
             ].map((item, i, arr) => (
               <div key={item.status} className="flex gap-4">
@@ -304,11 +357,10 @@ export default function HowToPlayPage() {
               </div>
             ))}
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Round Structure ──────────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="02" title="Round Structure" />
+        <CollapsibleSection number="02" title="Round Structure">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
             Each round cycles through four phases. Understanding phase timing is critical to using proofs strategically.
           </p>
@@ -336,11 +388,10 @@ export default function HowToPlayPage() {
               </div>
             ))}
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Patient Zero Succession ──────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="03" title="Patient Zero Succession" />
+        <CollapsibleSection number="03" title="Patient Zero Succession">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
             The infection has a chain of command. Eliminating Patient Zero doesn&apos;t stop the plague — it just promotes the next infected player.
           </p>
@@ -371,11 +422,10 @@ export default function HowToPlayPage() {
               </p>
             </div>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Voting & Resolution ──────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="04" title="Vote Resolution Rules" />
+        <CollapsibleSection number="04" title="Vote Resolution Rules">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
             The smart contract applies deterministic rules to resolve every vote. There is no ambiguity or moderator discretion.
           </p>
@@ -416,11 +466,10 @@ export default function HowToPlayPage() {
               Any player who does not cast a vote during the Voting phase automatically has a self-vote recorded against them. Silence equals guilt — abstaining is actively dangerous regardless of who else is leading. There is no safe way to skip your vote.
             </p>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Innocence Proofs ─────────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="05" title="Shields" />
+        <CollapsibleSection number="05" title="Shields">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
             Shields are your insurance policy. Use them wisely — they are limited.
           </p>
@@ -449,11 +498,10 @@ export default function HowToPlayPage() {
               The Groth16 proof is verified on-chain before the Shield is accepted.
             </p>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Endgame & Payouts ────────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="06" title="Endgame & Payouts" />
+        <CollapsibleSection number="06" title="Endgame & Payouts">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
             Win conditions are checked automatically by the contract after every Reveal phase. Payouts are instant and trustless.
           </p>
@@ -491,14 +539,13 @@ export default function HowToPlayPage() {
           >
             <p className="font-mono text-xs font-bold" style={{ color: '#f5c518' }}>Platform Fee</p>
             <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-              A 0.3% platform fee is deducted from the pot at game end before distribution to winners. Proof fees (paid for proofs after your first free one) are collected separately and do not come from the pot.
+              A 1.5% platform fee is deducted from the pot at game end before distribution to winners. Proof fees (paid for proofs after your first free one) are collected separately and do not come from the pot.
             </p>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Tips ────────────────────────────────────────────────────────── */}
-        <section>
-          <SectionTitle number="07" title="Strategy Tips" />
+        <CollapsibleSection number="07" title="Strategy Tips">
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {[
               {
@@ -541,7 +588,7 @@ export default function HowToPlayPage() {
               </div>
             ))}
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── CTA ────────────────────────────────────────────────────────── */}
         <section className="text-center">
@@ -578,13 +625,41 @@ export default function HowToPlayPage() {
   )
 }
 
-// ─── Helper ────────────────────────────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────────────────────
 
-function SectionTitle({ number, title }: Readonly<{ number: string; title: string }>) {
+/**
+ * Detail section that stays fully expanded on desktop but collapses to a
+ * tap-to-open header on mobile, so phone users aren't forced to scroll
+ * through every rule before they can play.
+ */
+function CollapsibleSection({
+  number,
+  title,
+  children,
+}: Readonly<{ number: string; title: string; children: React.ReactNode }>) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="flex items-baseline gap-4">
-      <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#6b8e23' }}>{number}</span>
-      <h2 className="font-display text-2xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
-    </div>
+    <section
+      className="rounded-xl border px-4 py-4 sm:rounded-none sm:border-0 sm:p-0"
+      style={{ borderColor: 'rgba(107,142,35,0.25)' }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-4 text-left sm:pointer-events-none sm:cursor-default"
+      >
+        <div className="flex items-baseline gap-4">
+          <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#6b8e23' }}>{number}</span>
+          <h2 className="font-display text-xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
+        </div>
+        <span className="sm:hidden font-mono text-xl leading-none flex-shrink-0" style={{ color: '#6b8e23' }} aria-hidden="true">
+          {open ? '−' : '+'}
+        </span>
+      </button>
+      <div className={`${open ? 'block' : 'hidden'} sm:block`}>
+        {children}
+      </div>
+    </section>
   )
 }
