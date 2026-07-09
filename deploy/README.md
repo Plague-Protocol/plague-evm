@@ -93,6 +93,22 @@ gunzip -c /opt/plague/backups/plague-<timestamp>.sql.gz \
   | docker compose exec -T postgres psql -U plague plague
 ```
 
+**⚠️ Off-server copies (important):** these dumps live on the *same VPS*, so they
+protect against data mistakes (bad migration, accidental delete) but **not** loss
+of the whole box. For real disaster recovery, keep a copy off-server:
+- Pull to your machine: `scp ubuntu@43.131.58.132:/opt/plague/backups/plague-*.sql.gz ~/plague-backups/`
+- Or push to cloud storage (S3 / Cloudflare R2 / Backblaze B2 / Tencent COS) from the script.
+
+**Whole-machine recovery:** for OS + Docker + data together, also take a periodic
+**Lighthouse Snapshot** from the Tencent console — it images the entire disk and
+complements the data-only `pg_dump` above.
+
+| Backup type | Captures | Recover from |
+|---|---|---|
+| `pg_dump` cron (this script) | `plague` DB only | bad data / rollback |
+| off-server copy (scp/cloud) | `plague` DB, off-box | VPS loss |
+| Lighthouse Snapshot | entire VPS disk | rebuild the whole machine |
+
 ## Funding the wallets (mainnet = real money)
 
 Gas is paid in **native CELO** (cheaper than USDm fee-currency — no ERC-20 debit
