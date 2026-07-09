@@ -657,6 +657,26 @@ export default function DemoPage() {
   const voteTally: Record<string, number> = {}
   for (const target of Object.values(votes)) voteTally[target] = (voteTally[target] ?? 0) + 1
 
+  // Feed + role cards render in the left column on desktop (mirrors the real
+  // game page) but stay below the chat in the single-column mobile stack.
+  const feedCard = (
+    <div className="rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.15)' }}>
+      <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#6b8e23' }}>Live Feed</p>
+      <ul className="space-y-2 font-mono text-xs overflow-y-auto" style={{ color: '#8fa882', maxHeight: '16rem', scrollbarWidth: 'thin' }}>
+        {feed.length === 0 ? (
+          <li style={{ color: '#4a5e44' }}>No events yet.</li>
+        ) : (
+          [...feed].reverse().map((msg, i) => (
+            <li key={`${msg}-${i}`} className="flex gap-2">
+              <span style={{ color: '#4a5e44' }}>→</span> {msg}
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
+  )
+  const roleCard = <YourRoleCard you={you} />
+
   // ── Welcome / limit screens ────────────────────────────────────────────────
 
   if (demoCount >= DEMO_LIMIT && phase === 'welcome') {
@@ -994,6 +1014,12 @@ export default function DemoPage() {
                     onReset={resetDemo}
                   />
                 )}
+
+                {/* Desktop: feed + role balance the left column (like the live game) */}
+                <div className="hidden lg:flex lg:flex-col gap-6">
+                  {feedCard}
+                  {roleCard}
+                </div>
               </div>
 
               {/* Right: chat + feed + role */}
@@ -1042,24 +1068,11 @@ export default function DemoPage() {
                   )}
                 </div>
 
-                {/* Live feed */}
-                <div className="rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.15)' }}>
-                  <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#6b8e23' }}>Live Feed</p>
-                  <ul className="space-y-2 font-mono text-xs overflow-y-auto" style={{ color: '#8fa882', maxHeight: '16rem', scrollbarWidth: 'thin' }}>
-                    {feed.length === 0 ? (
-                      <li style={{ color: '#4a5e44' }}>No events yet.</li>
-                    ) : (
-                      [...feed].reverse().map((msg, i) => (
-                        <li key={`${msg}-${i}`} className="flex gap-2">
-                          <span style={{ color: '#4a5e44' }}>→</span> {msg}
-                        </li>
-                      ))
-                    )}
-                  </ul>
+                {/* Mobile: feed + role stack under the chat */}
+                <div className="flex flex-col gap-6 lg:hidden">
+                  {feedCard}
+                  {roleCard}
                 </div>
-
-                {/* Your role */}
-                <YourRoleCard you={you} />
 
                 <Link
                   href="/how-to-play"
