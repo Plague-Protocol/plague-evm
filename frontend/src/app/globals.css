@@ -205,18 +205,10 @@
   font-family: var(--font-horror), 'Nosifer', cursive;
 }
 
-/* ── Mobile font swap — readable alternatives ── */
+/* ── Mobile font swap ── Only the mono/reading text swaps to the cleaner
+   Share Tech Mono for legibility. Display (Eater) and horror (Nosifer) faces
+   render on mobile too — they only appear at heading/hero sizes. */
 @media (max-width: 640px) {
-  .font-display,
-  h1, h2, h3, h4 {
-    font-family: var(--font-display-mobile), 'Rajdhani', sans-serif !important;
-    letter-spacing: 0.02em;
-  }
-
-  .font-horror {
-    font-family: var(--font-horror), 'Nosifer', cursive !important;
-  }
-
   .font-mono,
   code, pre, kbd, samp,
   input, button, label,

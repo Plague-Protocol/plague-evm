@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Oswald, VT323, Rajdhani, Share_Tech_Mono, Eater, Nosifer } from 'next/font/google'
+import { Oswald, VT323, Share_Tech_Mono, Eater, Nosifer } from 'next/font/google'
 import Script from 'next/script'
 import { Providers } from '@/providers/providers'
 import './globals.css'
@@ -33,13 +33,8 @@ const monoFont = VT323({
   variable: '--font-mono',
 })
 
-// Mobile-friendly alternatives — readable but still gamey
-const displayMobileFont = Rajdhani({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-display-mobile',
-})
-
+// Mobile-friendly mono — chat/feed reading text swaps to this under 640px.
+// Display/horror faces are NOT swapped on mobile (heading sizes stay readable).
 const monoMobileFont = Share_Tech_Mono({
   subsets: ['latin'],
   weight: '400',
@@ -85,7 +80,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${displayFont.variable} ${horrorFont.variable} ${bodyFont.variable} ${monoFont.variable} ${displayMobileFont.variable} ${monoMobileFont.variable}`}>
+    <html lang="en" className={`${displayFont.variable} ${horrorFont.variable} ${bodyFont.variable} ${monoFont.variable} ${monoMobileFont.variable}`}>
       <body className="antialiased">
         <Script id="sw-register" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {
