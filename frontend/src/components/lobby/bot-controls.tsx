@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { formatToken } from '@/lib/format'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
@@ -31,6 +32,12 @@ export function BotControls({
   const [count, setCount] = useState(1)
   const [adding, setAdding] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const reduced = useReducedMotion()
+  // Pulse the free-bot counter when it changes while mounted.
+  // Render-time state adjustment — the React-endorsed "previous value" pattern.
+  const [prevAvail, setPrevAvail] = useState<number | null>(null)
+  const availJustChanged = prevAvail !== null && avail !== null && prevAvail !== avail.available
+  if ((avail?.available ?? null) !== prevAvail) setPrevAvail(avail?.available ?? null)
 
   const load = useCallback(async () => {
     try {
@@ -94,9 +101,15 @@ export function BotControls({
           </span>
         ) : (
           <>
-            <span className="font-mono text-xs" style={{ color: '#d4c9b2' }}>
+            <motion.span
+              key={avail.available}
+              initial={availJustChanged && !reduced ? { scale: 1.35, color: '#f5c518' } : false}
+              animate={{ scale: 1, color: '#d4c9b2' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 16 }}
+              className="inline-block font-mono text-xs"
+            >
               {avail.available}/{avail.total} free
-            </span>
+            </motion.span>
             <select
               value={effectiveCount}
               onChange={e => setCount(Number(e.target.value))}

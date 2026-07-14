@@ -88,7 +88,7 @@ export default function HomePage() {
                 INFECT THE
               </span>
               <span
-                className="block text-4xl sm:text-7xl lg:text-9xl"
+                className="flicker-slow block text-4xl sm:text-7xl lg:text-9xl"
                 style={{
                   background: 'linear-gradient(135deg, #cc1414, #c97a12)',
                   WebkitBackgroundClip: 'text',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface SiteStats {
   totalGames: number
@@ -16,6 +16,37 @@ function formatCount(n: number): string {
   return n.toString()
 }
 
+/** Count 0→target over ~1.2s (ease-out cubic) when the value first arrives.
+ *  Jumps straight to the target under prefers-reduced-motion. */
+function useCountUp(target: number | null): number | null {
+  const [display, setDisplay] = useState<number | null>(null)
+  const startedRef = useRef(false)
+  useEffect(() => {
+    if (target === null) return
+    if (startedRef.current) {
+      setDisplay(target) // later refreshes jump straight there
+      return
+    }
+    startedRef.current = true
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setDisplay(target)
+      return
+    }
+    const t0 = performance.now()
+    const DURATION = 1_200
+    let raf = 0
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / DURATION)
+      const eased = 1 - Math.pow(1 - p, 3)
+      setDisplay(Math.round(target * eased))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target])
+  return display
+}
+
 // ── Hero stat strip (3 columns) ──────────────────────────────────────────────
 
 export function HeroStats() {
@@ -28,9 +59,12 @@ export function HeroStats() {
       .catch(() => {/* keep static fallback */})
   }, [])
 
+  const gamesCount   = useCountUp(stats ? stats.totalGames : null)
+  const zombiesCount = useCountUp(stats ? stats.zombiesCaught : null)
+
   const items = [
-    { icon: '🧟', value: stats ? formatCount(stats.totalGames) : '—', label: 'Matches Played' },
-    { icon: '🩸', value: stats ? formatCount(stats.zombiesCaught) : '—', label: 'Zombies Caught' },
+    { icon: '🧟', value: gamesCount !== null ? formatCount(gamesCount) : '—', label: 'Matches Played' },
+    { icon: '🩸', value: zombiesCount !== null ? formatCount(zombiesCount) : '—', label: 'Zombies Caught' },
     { icon: '🟢', value: '99.9%', label: 'Chain Uptime' },
   ]
 

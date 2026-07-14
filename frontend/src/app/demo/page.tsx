@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
+import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayerCard } from '@/components/game/PlayersGrid'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 
@@ -647,6 +648,44 @@ export default function DemoPage() {
   const { phase, round, players, votes, eliminatedIds, noElimination, outcome, maxRoundsHit, winners, potPerWinner, shieldSet, feed, chat } = state
 
   const you = players.find(p => p.isYou)!
+
+  // ── Personal moment overlays (same beats as the live game) ────────────────
+  const [moment, setMoment] = useState<{ key: string; data: Moment } | null>(null)
+  // Infection reveal — fires on your clean→infected flip, any code path.
+  const prevYouStatusRef = useRef(you.status)
+  useEffect(() => {
+    const prev = prevYouStatusRef.current
+    prevYouStatusRef.current = you.status
+    if (prev !== 'infected' && you.status === 'infected') {
+      setMoment({
+        key: `infected:${Date.now()}`,
+        data: {
+          label: 'You Are Infected',
+          color: '#e63329',
+          glyph: '☣',
+          sublabel: 'Hide it. Spread it. Survive the votes.',
+          intense: true,
+        },
+      })
+    }
+  }, [you.status])
+  // Shield activation — fires when your shieldRound lands on a new round.
+  const prevShieldRoundRef = useRef(you.shieldRound)
+  useEffect(() => {
+    const prev = prevShieldRoundRef.current
+    prevShieldRoundRef.current = you.shieldRound
+    if (you.shieldRound > 0 && you.shieldRound !== prev) {
+      setMoment({
+        key: `shield:${you.shieldRound}`,
+        data: {
+          label: 'Shield Active',
+          color: '#6b8e23',
+          glyph: '✚',
+          sublabel: `Round ${you.shieldRound} — provably clean`,
+        },
+      })
+    }
+  }, [you.shieldRound])
   const alivePlayers = players.filter(p => !p.eliminated)
   const infectedAlive = alivePlayers.filter(p => p.status === 'infected').length
   const youVoted = Boolean(votes[YOU_ID])
@@ -783,6 +822,7 @@ export default function DemoPage() {
         glyphKey={phase}
         enabled={phase !== 'gameover' && DEMO_PHASE_LABEL[phase] !== ''}
       />
+      <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
       {phase === 'gameover' && outcome && !gameOverSeen && (
         <GameOverOverlay
           outcome={outcome}
@@ -902,6 +942,7 @@ export default function DemoPage() {
                           selected={selected}
                           eliminated={p.eliminated}
                           justEliminated={justRevealed}
+                          votedByMe={phase === 'voting' && votes[YOU_ID] === p.id}
                           clickable={clickable}
                           onClick={() => clickable && setSelectedVote(prev => prev === p.id ? null : p.id)}
                         >

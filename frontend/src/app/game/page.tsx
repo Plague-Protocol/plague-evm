@@ -15,6 +15,7 @@ import { quarantineCode } from '@/lib/roomLabel'
 import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
+import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayersGrid } from '@/components/game/PlayersGrid'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import type { RoundPhase } from '@/types/game'
@@ -183,6 +184,9 @@ function GamePageInner() { // NOSONAR
   // ── Game-over reveal overlay ─────────────────────────────────────────────
   const [gameOverDismissed, setGameOverDismissed] = useState(false)
 
+  // ── Personal moment overlay (private beats: infection reveal, shield) ────
+  const [moment, setMoment] = useState<{ key: string; data: Moment } | null>(null)
+
   // ── Role commitment state (during Starting phase) ────────────────────────
   const [committing, setCommitting]               = useState(false)
   const [commitError, setCommitError]             = useState<string | null>(null)
@@ -310,6 +314,7 @@ function GamePageInner() { // NOSONAR
         localAddress={address}
         canVote={canVote}
         selectedVote={selectedVote}
+        myVotedTarget={phase === 'voting' ? myVotedTarget : null}
         onToggleVote={(addr) => setSelectedVote(addr === selectedVote ? null : addr)}
       />
     )
@@ -327,6 +332,35 @@ function GamePageInner() { // NOSONAR
   // Thumping heartbeat overlay during the local player's final voting seconds,
   // synced with the red "lub-dub" vignette pulse (votingUrgent drives both).
   useHeartbeat(votingUrgent, muted)
+
+  // ── Private infection reveal ──────────────────────────────────────────────
+  // Fire the "YOU ARE INFECTED" moment only on a LIVE clean→infected flip.
+  // The first observed status is treated as baseline so a page refresh while
+  // already infected doesn't replay the reveal.
+  const prevMyStatusRef = useRef<string | null>(null)
+  useEffect(() => {
+    const status = localPlayer?.status ?? null
+    if (status === null) return
+    const prev = prevMyStatusRef.current
+    prevMyStatusRef.current = status
+    if (prev === null || prev === status) return
+    if (status === 'infected') {
+      setMoment({
+        key: `infected:${roomId}:${Date.now()}`,
+        data: {
+          label: 'You Are Infected',
+          color: '#e63329',
+          glyph: '☣',
+          sublabel: 'Hide it. Spread it. Survive the votes.',
+          intense: true,
+        },
+      })
+      playSting(GAME_OVER_TRACKS.infected, muted, 0.35)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localPlayer?.status])
+  // Re-baseline when switching rooms.
+  useEffect(() => { prevMyStatusRef.current = null }, [roomId])
 
   // Reset optimistic vote when round changes
   const roundNumber = currentRound?.number ?? 0
@@ -515,6 +549,15 @@ function GamePageInner() { // NOSONAR
       setOptimisticProofDone(true)
       socket?.emit('request_room_refresh', { roomId })
       toast.success('Shield activated!')
+      setMoment({
+        key: `shield:${roomId}:${round}`,
+        data: {
+          label: 'Shield Active',
+          color: '#6b8e23',
+          glyph: '✚',
+          sublabel: `Round ${round} — innocence proven on-chain`,
+        },
+      })
       schedulePostTxRefresh()
     } catch (err) {
       const msg = parseContractError(err)
@@ -743,6 +786,7 @@ function GamePageInner() { // NOSONAR
         glyphKey={phase}
         enabled={room?.status === 'active' && phase !== 'ended'}
       />
+      <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
       {result && !gameOverDismissed && (
         <GameOverOverlay
           outcome={gameOutcome}

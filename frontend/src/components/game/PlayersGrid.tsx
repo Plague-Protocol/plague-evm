@@ -25,6 +25,8 @@ export interface PlayerCardProps {
   readonly eliminated?: boolean
   /** Fires the one-shot elimination animation. */
   readonly justEliminated?: boolean
+  /** Shows the "my vote" ⚖ stamp (local player's own vote — public once cast). */
+  readonly votedByMe?: boolean
   readonly clickable?: boolean
   readonly onClick?: () => void
   readonly title?: string
@@ -34,7 +36,7 @@ export interface PlayerCardProps {
 
 export function PlayerCard({
   name, style, isMe = false, selected = false, eliminated = false,
-  justEliminated = false, clickable = false, onClick, title, index = 0, children,
+  justEliminated = false, votedByMe = false, clickable = false, onClick, title, index = 0, children,
 }: PlayerCardProps) {
   const reduced = useReducedMotion()
 
@@ -70,6 +72,22 @@ export function PlayerCard({
     >
       <span className="block truncate font-display text-base font-normal tracking-wide">{name}</span>
       {children}
+      {/* "My vote" stamp — slams in when the local player's cast vote lands */}
+      <AnimatePresence>
+        {votedByMe && !eliminated && (
+          <motion.span
+            initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 2.8, rotate: 16 }}
+            animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1, rotate: 8 }}
+            exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            transition={{ type: 'spring', stiffness: 420, damping: 17 }}
+            className="pointer-events-none absolute -left-1.5 -top-2 text-lg leading-none"
+            style={{ color: '#f5c518', textShadow: '0 0 10px rgba(245,197,24,0.8)' }}
+            aria-label="your vote"
+          >
+            ⚖
+          </motion.span>
+        )}
+      </AnimatePresence>
       {/* Persistent skull stamp on eliminated cards */}
       <AnimatePresence>
         {eliminated && (
@@ -117,10 +135,12 @@ export interface PlayersGridProps {
   readonly localAddress: string | null | undefined
   readonly canVote: boolean
   readonly selectedVote: string | null
+  /** Address the local player has already voted for this round (shows ⚖ stamp). */
+  readonly myVotedTarget?: string | null
   readonly onToggleVote: (walletAddress: string) => void
 }
 
-export function PlayersGrid({ players, localAddress, canVote, selectedVote, onToggleVote }: PlayersGridProps) {
+export function PlayersGrid({ players, localAddress, canVote, selectedVote, myVotedTarget, onToggleVote }: PlayersGridProps) {
   // Track eliminations that happen while mounted so we can fire the one-shot
   // animation only for NEW eliminations (not players already dead on load).
   const prevEliminatedRef = useRef<Set<string> | null>(null)
@@ -162,6 +182,7 @@ export function PlayersGrid({ players, localAddress, canVote, selectedVote, onTo
             selected={selectedVote === p.walletAddress}
             eliminated={p.isEliminated}
             justEliminated={justEliminated.has(addrLower)}
+            votedByMe={(myVotedTarget ?? '').toLowerCase() === addrLower}
             clickable={canVote && !p.isEliminated}
             onClick={() => canVote && onToggleVote(p.walletAddress)}
           />

@@ -135,6 +135,23 @@
     animation: rise-in 0.55s ease-out both;
   }
 
+  /* Occasional horror flicker — long cycle so it reads as a dying bulb, not a strobe. */
+  .flicker-slow {
+    animation: none;
+  }
+  /* Slow bio-green glow breathe — for singling out one element (e.g. rank #1). */
+  .toxic-pulse {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .flicker-slow {
+      animation: flicker 7s linear infinite;
+    }
+    .toxic-pulse {
+      animation: toxic-pulse 3.2s ease-in-out infinite;
+    }
+  }
+
   .float-y {
     animation: float-y 4s ease-in-out infinite;
   }

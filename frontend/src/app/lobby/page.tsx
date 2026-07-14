@@ -12,6 +12,7 @@ import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
 // ── USDm contract addresses ───────────────────────────────────────────────────
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
@@ -437,6 +438,12 @@ function RoomCard({
   joiningId, endingRoomId,
   onJoin, onEnd,
 }: Readonly<RoomCardProps>) {
+  const reduced = useReducedMotion()
+  // Pulse the player count when it changes while mounted (someone joined/left).
+  // Render-time state adjustment — the React-endorsed "previous value" pattern.
+  const [prevPlayers, setPrevPlayers] = useState(room.players)
+  const playersJustChanged = prevPlayers !== room.players
+  if (playersJustChanged) setPrevPlayers(room.players)
   const secsLeft    = room.status === 'waiting'
     ? Math.max(0, Math.floor((room.expiresAt - now) / 1000))
     : 0
@@ -464,9 +471,19 @@ function RoomCard({
   else if (isExpiring) cardBorderColor = 'rgba(245,197,24,0.35)'
 
   return (
-    <li
-      className="rise-in rounded-lg border p-5 transition-all duration-200 hover:scale-[1.01]"
-      style={{ backgroundColor: '#0e180d', borderColor: cardBorderColor, animationDelay: `${160 + index * 80}ms` }}
+    <motion.li
+      layout={!reduced}
+      initial={reduced ? false : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+      whileHover={reduced ? undefined : { scale: 1.01 }}
+      transition={{
+        layout: { type: 'spring', stiffness: 350, damping: 32 },
+        default: { duration: 0.4, ease: 'easeOut', delay: Math.min(index * 0.06, 0.35) },
+        exit: { duration: 0.25, ease: 'easeIn', delay: 0 },
+      }}
+      className="rounded-lg border p-5"
+      style={{ backgroundColor: '#0e180d', borderColor: cardBorderColor }}
     >
       {/* Top row */}
       <div className="flex flex-wrap items-center gap-2">
@@ -503,7 +520,14 @@ function RoomCard({
         <div className="flex flex-wrap gap-4">
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
-            <p className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>{room.players}/{room.maxPlayers}</p>
+            {/* Keyed remount pulses gold when the count changes while mounted */}
+            <motion.p
+              key={room.players}
+              initial={playersJustChanged && !reduced ? { scale: 1.5, color: '#f5c518' } : false}
+              animate={{ scale: 1, color: '#d4c9b2' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 16 }}
+              className="font-display text-lg leading-none"
+            >{room.players}/{room.maxPlayers}</motion.p>
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
@@ -557,7 +581,7 @@ function RoomCard({
         <BotControls roomId={room.id} stakeAmount={room.stakeAmount} freeSeats={room.maxPlayers - room.players} />
       )}
 
-    </li>
+    </motion.li>
   )
 }
 
@@ -1298,22 +1322,24 @@ export default function LobbyPage() {
               )}
 
               <ul className="mt-6 space-y-4 max-h-[320px] sm:max-h-[480px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
-                {rooms
-                  .filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null))
-                  .map((room, i) => (
-                    <RoomCard
-                      key={room.id.toString()}
-                      room={room}
-                      index={i}
-                      now={now}
-                      address={address}
-                      myActiveRoom={myActiveRoom}
-                      joiningId={joiningId}
-                      endingRoomId={endingRoomId}
-                      onJoin={handleJoin}
-                      onEnd={handleEndRoom}
-                    />
-                  ))}
+                <AnimatePresence mode="popLayout">
+                  {rooms
+                    .filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null))
+                    .map((room, i) => (
+                      <RoomCard
+                        key={room.id.toString()}
+                        room={room}
+                        index={i}
+                        now={now}
+                        address={address}
+                        myActiveRoom={myActiveRoom}
+                        joiningId={joiningId}
+                        endingRoomId={endingRoomId}
+                        onJoin={handleJoin}
+                        onEnd={handleEndRoom}
+                      />
+                    ))}
+                </AnimatePresence>
               </ul>
             </article>
           </div>

@@ -68,11 +68,12 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
         gridTemplateColumns: ROW_GRID,
         borderColor: isTop3 ? `${rankColor}44` : 'rgba(107,142,35,0.12)',
         backgroundColor: isTop3 ? `${rankColor}0a` : '#0e180d',
+        animationDelay: `${Math.min((rank - 1) * 45, 450)}ms`,
       }}
     >
-      {/* Rank */}
+      {/* Rank — #1 gets the slow toxic glow */}
       <div
-        className="flex h-9 w-9 items-center justify-center rounded-lg font-display text-lg leading-none"
+        className={`flex h-9 w-9 items-center justify-center rounded-lg font-display text-lg leading-none${rank === 1 ? ' toxic-pulse' : ''}`}
         style={{ backgroundColor: `${rankColor}22`, color: rankColor }}
       >
         {rank}
