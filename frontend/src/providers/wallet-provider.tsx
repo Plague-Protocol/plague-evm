@@ -9,12 +9,14 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  AutoConnect,
   useActiveAccount,
   useActiveWallet,
   useActiveWalletChain,
   useConnect,
   useConnectModal,
   useDisconnect,
+  useIsAutoConnecting,
   useSwitchActiveWalletChain,
 } from 'thirdweb/react'
 import { createWallet } from 'thirdweb/wallets'
@@ -64,6 +66,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [isMiniPay, setIsMiniPay] = useState(false)
+  // True while <AutoConnect> below is re-hydrating the last session on page
+  // load — surfaced as isLoading so the UI doesn't flash "Connect Wallet".
+  const isAutoConnecting = useIsAutoConnecting()
 
   // MiniPay injects window.ethereum — detect and auto-connect silently
   useEffect(() => {
@@ -124,7 +129,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       isConnected,
       address,
       chainId,
-      isLoading,
+      isLoading: isLoading || isAutoConnecting,
       error,
       isMiniPay,
       connect,
@@ -132,6 +137,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       switchToCelo,
       signMessage,
     }}>
+      {/* Restore the last-connected session on page load. thirdweb persists
+          the wallet id in localStorage but only replays it when AutoConnect
+          (or a prebuilt ConnectButton) is mounted — our headless
+          useConnectModal flow never triggered it, so refresh = disconnect. */}
+      <AutoConnect client={thirdwebClient} wallets={supportedWallets} />
       {children}
     </WalletContext.Provider>
   )
