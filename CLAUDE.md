@@ -60,6 +60,12 @@ The real mainnet deploy (`0xe157…2710`) was done via an ad-hoc `forge create`-
 - `agents/` — self-play AI agents (identity, registration, runner) that play on-chain.
 - `zk/circuits/` — Noir circuits: `role_commitment`, `innocence_proof`, `infection_proof`.
 
+## Incident runbook
+
+Live-ops playbook (stuck game phases, benched bots / gas floor, gas-drain
+diagnosis, chat names, wallet session): [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+Check it before re-deriving a diagnosis for a production symptom.
+
 ## Key facts that have caused confusion before
 
 - **Platform fee is 1.5%**, i.e. `(pot * 15) / 1000` in `PlagueGame.sol` (~L1235). It was raised from 0.3% in commit `4834ea0` (2026-05-14). Any code/test/doc still saying 0.3% is stale.
