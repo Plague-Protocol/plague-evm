@@ -356,6 +356,13 @@ async function refreshAffordability(): Promise<void> {
     }
     if (bal >= MIN_GAME_CELO_WEI) {
       funded.add(i)
+      if (affordCheckedAt !== 0 && !affordFunded.has(i)) {
+        // broke→funded recovery (e.g. a top-up landed) — announce the rejoin.
+        console.log(
+          `[pool] bot-${i} (${bots[i].address}) back above gas floor ` +
+          `(${bal} wei CELO) — rejoining the pool`,
+        )
+      }
     } else if (affordFunded.has(i) || affordCheckedAt === 0) {
       // Warn on funded→broke transitions (and once at startup), not every refresh.
       console.warn(
