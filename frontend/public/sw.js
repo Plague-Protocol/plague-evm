@@ -1,4 +1,4 @@
-const CACHE_NAME = 'z-plague-v1'
+const CACHE_NAME = 'z-plague-v2'
 
 const PRECACHE_URLS = [
   '/',
@@ -76,6 +76,13 @@ self.addEventListener('fetch', (event) => {
         }
         return res
       })
-      .catch(() => caches.match(request))
+      // On a genuine network failure (e.g. a transient RPC/API blip taking the
+      // backend unreachable), fall back to cache. caches.match resolves to
+      // `undefined` on a miss, and respondWith(undefined) throws
+      // "Failed to convert value to 'Response'" — which previously broke the
+      // whole /game navigation. Always resolve to a real Response: the cached
+      // copy if we have one, otherwise a network-error Response the browser can
+      // handle gracefully (and a reload recovers once the network returns).
+      .catch(async () => (await caches.match(request)) || Response.error())
   )
 })
