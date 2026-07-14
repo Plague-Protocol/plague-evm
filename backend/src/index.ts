@@ -57,10 +57,34 @@ startRoomExpiryMonitor(io)
 startRoleCommitmentMonitor(io)
 startPhaseAdvanceMonitor(io)
 
-// Live presence: connected socket count (players + lobby visitors). Declared
-// after `io` exists; route registration order doesn't matter for Express.
+// ─── Live presence ──────────────────────────────────────────────────────────
+// Heartbeat model: every open tab POSTs a ping every ~30s; "online" = distinct
+// identities seen within the TTL. Keyed by wallet address when connected
+// (multiple tabs of one player dedupe) or an anonymous per-tab id otherwise
+// (demo/lobby visitors count too). Deliberately NOT io.engine.clientsCount:
+// sockets only exist on lobby/game pages (home visitors were invisible) and
+// every bot opens one per game (a bot match read as "6 online").
+const PRESENCE_TTL_MS = 90_000
+const presenceSeen = new Map<string, number>()
+
+function presenceCount(): number {
+  const now = Date.now()
+  for (const [key, at] of presenceSeen) {
+    if (now - at > PRESENCE_TTL_MS) presenceSeen.delete(key)
+  }
+  return presenceSeen.size
+}
+
+app.post('/api/presence/ping', (req, res) => {
+  const key = (req.body as { key?: unknown } | undefined)?.key
+  if (typeof key === 'string' && key.length > 0 && key.length <= 80) {
+    presenceSeen.set(key, Date.now())
+  }
+  res.json({ online: presenceCount() })
+})
+
 app.get('/api/presence', (_req, res) => {
-  res.json({ online: io.engine.clientsCount })
+  res.json({ online: presenceCount() })
 })
 
 // ─── Start ──────────────────────────────────────────────────────────────────
