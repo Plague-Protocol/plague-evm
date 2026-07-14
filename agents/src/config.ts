@@ -54,6 +54,16 @@ export const CYCLE_DELAY_MS = Number(process.env.CYCLE_DELAY_MS ?? 30_000)
 // bots are a "try the game" convenience, not a real-money feature. 0.01 USDm.
 export const BOT_MAX_STAKE_WEI = BigInt(process.env.BOT_MAX_STAKE_WEI ?? '10000000000000000')
 
+// Minimum native CELO (wei) a bot must hold before it's allowed into a game.
+// A full game SPENDS ≈0.55 CELO at recent gas prices, dominated by the ZK
+// role-commitment verify (~2.1M gas ≈ 0.42 CELO). But the node's pre-flight
+// balance check requires gasLimit × maxFeePerGas — and with baseFeeMultiplier 2
+// above, that CAP is ~0.92 CELO for the commit alone (observed on-chain
+// 2026-07-13: "balance 0.646, tx cost 0.921" rejection). A bot that can afford
+// joinRoom but not the commitment deadlocks the room for everyone, so gate on
+// the worst-case cap up-front. Default 1.5 CELO for headroom.
+export const MIN_GAME_CELO_WEI = BigInt(process.env.MIN_GAME_CELO_WEI ?? '1500000000000000000')
+
 // How long all bots must sit idle (no human demand) before they start a
 // self-play game to keep on-chain activity up. Default 5 minutes.
 export const SELF_PLAY_IDLE_MS = Number(process.env.SELF_PLAY_IDLE_MS ?? 300_000)

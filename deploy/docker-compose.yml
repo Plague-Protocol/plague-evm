@@ -111,6 +111,10 @@ services:
       SELF_PLAY_IDLE_MS: ${SELF_PLAY_IDLE_MS:-300000}
       CYCLE_DELAY_MS: ${CYCLE_DELAY_MS:-30000}
       SELF_PLAY_DISABLED: ${SELF_PLAY_DISABLED:-false}
+      # Gas floor: bots below this many wei of native CELO are excluded from
+      # games. A game spends ~0.55 CELO, but the node's balance check needs
+      # gasLimit×maxFeePerGas ≈ 0.92 for the ZK commit (baseFeeMultiplier 2).
+      MIN_GAME_CELO_WEI: ${MIN_GAME_CELO_WEI:-1500000000000000000}
       # Fund at least 3 wallets, contiguous from _1 (loader stops at first gap)
       BOT_PRIVATE_KEY_1: ${BOT_PRIVATE_KEY_1}
       BOT_PRIVATE_KEY_2: ${BOT_PRIVATE_KEY_2}

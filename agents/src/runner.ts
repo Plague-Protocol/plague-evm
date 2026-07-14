@@ -21,9 +21,11 @@ import { fileURLToPath } from 'url'
 import { io, Socket } from 'socket.io-client'
 import {
   buildBotWallets,
+  publicClient,
   BACKEND_URL,
   STAKE_AMOUNT,
   BOT_MAX_STAKE_WEI,
+  MIN_GAME_CELO_WEI,
   SELF_PLAY_IDLE_MS,
   SELF_PLAY_DISABLED,
   BOT_RUNNER_SECRET,
@@ -323,6 +325,58 @@ const busy: boolean[] = []
 let allIdleSince = Date.now()
 
 const freeIndices = () => bots.map((_, i) => i).filter(i => !busy[i])
+
+/**
+ * Pre-flight gas guard: filter bot indices down to those whose native CELO
+ * balance covers a FULL game (create/join + ZK role commitment + votes).
+ * A bot that can afford joinRoom (~0.04 CELO) but not submitRoleCommitment
+ * (~0.42 CELO) joins fine, then stalls the room at the commit phase — the
+ * game never ends, never pays out, and every other player's gas is wasted.
+ * Checking join-affordability alone (or reordering who commits first) can't
+ * prevent that; only refusing entry to under-funded bots does.
+ *
+ * Balances are cached (AFFORD_TTL_MS) because the heartbeat needs the funded
+ * count every pool tick. Game-entry paths pass { fresh: true } — they're
+ * about to spend real gas, so a stale "funded" answer isn't good enough.
+ */
+const AFFORD_TTL_MS = 60_000
+let affordFunded = new Set<number>()
+let affordCheckedAt = 0
+
+async function refreshAffordability(): Promise<void> {
+  const balances = await Promise.all(
+    bots.map(b => publicClient.getBalance({ address: b.address }).catch(() => null)),
+  )
+  const funded = new Set<number>()
+  balances.forEach((bal, i) => {
+    if (bal === null) {
+      // RPC hiccup — keep the bot's last known standing for this cycle.
+      if (affordFunded.has(i)) funded.add(i)
+      return
+    }
+    if (bal >= MIN_GAME_CELO_WEI) {
+      funded.add(i)
+    } else if (affordFunded.has(i) || affordCheckedAt === 0) {
+      // Warn on funded→broke transitions (and once at startup), not every refresh.
+      console.warn(
+        `[pool] bot-${i} (${bots[i].address}) below gas floor: ` +
+        `${bal} < ${MIN_GAME_CELO_WEI} wei CELO — excluded from games until topped up`,
+      )
+    }
+  })
+  affordFunded = funded
+  affordCheckedAt = Date.now()
+}
+
+async function affordableIndices(
+  indices: number[],
+  opts: { fresh?: boolean } = {},
+): Promise<number[]> {
+  if (opts.fresh || Date.now() - affordCheckedAt > AFFORD_TTL_MS) {
+    await refreshAffordability()
+  }
+  return indices.filter(i => affordFunded.has(i))
+}
 const reserve = (idx: number[]) => idx.forEach(i => { busy[i] = true })
 function release(idx: number[]): void {
   idx.forEach(i => { busy[i] = false })
@@ -335,7 +389,9 @@ async function poolTick(): Promise<void> {
   for (const req of requests) {
     const free = freeIndices()
     if (free.length === 0) break
-    const take = free.slice(0, Math.min(req.count, free.length))
+    const funded = await affordableIndices(free, { fresh: true })
+    if (funded.length === 0) break
+    const take = funded.slice(0, Math.min(req.count, funded.length))
     reserve(take)
     void joinHumanRoom(BigInt(req.roomId), take)
       .catch(err => console.warn(`[pool] human room ${req.roomId} failed: ${err.message}`))
@@ -350,10 +406,23 @@ async function poolTick(): Promise<void> {
     freeIndices().length === bots.length &&
     Date.now() - allIdleSince >= SELF_PLAY_IDLE_MS
   ) {
-    // Backpressure: createRoom reverts with TooManyActiveRooms once the contract
-    // is at capacity. Skip quietly instead of burning gas on a doomed tx.
-    if (await hasRoomCapacity()) {
-      const take = freeIndices()
+    // Pre-flight gas guard: a self-play game needs at least 4 bots that can
+    // each afford the FULL game. Starting with fewer funded bots deadlocks
+    // the room at the commit phase and wastes the funded bots' gas.
+    const funded = await affordableIndices(freeIndices(), { fresh: true })
+    if (funded.length < 4) {
+      // Push the idle clock back so we don't re-check (and re-warn) every
+      // 5s tick — retry after the next full idle period.
+      console.warn(
+        `[pool] only ${funded.length}/${bots.length} bot(s) can afford a full game — ` +
+        `skipping self-play (next check in ${SELF_PLAY_IDLE_MS / 1000}s)`,
+      )
+      allIdleSince = Date.now()
+    } else if (await hasRoomCapacity()) {
+      // Backpressure: createRoom reverts with TooManyActiveRooms once the
+      // contract is at capacity. Skip quietly instead of burning gas on a
+      // doomed tx.
+      const take = funded
       reserve(take)
       console.log('[pool] no human demand — starting a self-play game')
       void selfPlay(take)
@@ -364,8 +433,11 @@ async function poolTick(): Promise<void> {
     }
   }
 
-  // 3. Heartbeat availability.
-  await postState(freeIndices().length, bots.length)
+  // 3. Heartbeat availability — count only bots funded enough to FINISH a
+  //    game, so the lobby never offers "add bots" the pool would stall on.
+  //    (Balance reads are cached, so this doesn't hit the RPC every tick.)
+  const fundedFree = await affordableIndices(freeIndices())
+  await postState(fundedFree.length, bots.length)
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
