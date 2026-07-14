@@ -63,7 +63,13 @@ services:
       # Celo mainnet
       NETWORK: mainnet
       CHAIN_ID: "42220"
-      CELO_RPC_URL: https://forno.celo.org
+      # Primary RPC + comma-separated fallbacks. Default is the public forno node,
+      # but the whole floor's browser polling funnels through this backend's
+      # /api/rpc proxy on ONE IP, and public nodes rate-limit by IP. Set
+      # CELO_RPC_URL in deploy/.env to a keyed endpoint (Alchemy/dRPC/…) so the
+      # proxy leans on that instead; forno/drpc stay as fallbacks. See .env.example.
+      CELO_RPC_URL: ${CELO_RPC_URL:-https://forno.celo.org}
+      CELO_RPC_FALLBACK_URLS: ${CELO_RPC_FALLBACK_URLS:-https://celo.drpc.org}
       CONTRACT_ADDRESS: "0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710"
       FEE_MANAGER_ADDRESS: "0xc0a030a9C51c1aBc8273447EB889Fe3e96c4e2DB"
       POT_ESCROW_ADDRESS: "0xDB0858e4a10261431927c549163F3D0E1F7d2435"
@@ -99,7 +105,8 @@ services:
     environment:
       NODE_ENV: production
       NETWORK: mainnet
-      CELO_RPC_URL: https://forno.celo.org
+      CELO_RPC_URL: ${CELO_RPC_URL:-https://forno.celo.org}
+      CELO_RPC_FALLBACK_URLS: ${CELO_RPC_FALLBACK_URLS:-https://celo.drpc.org}
       CONTRACT_ADDRESS: "0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710"
       USDM_ADDRESS: "0x765DE816845861e75A25fCA122bb6898B8B1282a"
       # No FEE_CURRENCY_ADDRESS → bots pay gas in native CELO (they're funded with it).
