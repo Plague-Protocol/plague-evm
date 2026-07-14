@@ -841,7 +841,7 @@ function GamePageInner() { // NOSONAR
               <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Room</p>
               <div className="flex flex-wrap items-center gap-2">
                 <span
-                  className="font-display text-lg sm:text-2xl leading-none"
+                  className="font-heading text-lg sm:text-2xl leading-none"
                   style={{ color: '#e63329', textShadow: '0 0 12px rgba(230,51,41,0.4)' }}
                 >
                   {room?.name ? room.name : quarantineCode(BigInt(roomId))}
@@ -935,7 +935,7 @@ function GamePageInner() { // NOSONAR
                 style={{ borderColor: 'rgba(107,142,35,0.45)', backgroundColor: 'rgba(107,142,35,0.06)' }}
               >
                 <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Time Left</p>
-                <p className="mt-1 font-display text-3xl sm:text-6xl font-bold leading-none tabular-nums" style={{ color: '#6b8e23', textShadow: '0 0 20px rgba(107,142,35,0.5)' }}>
+                <p className="mt-1 font-mono text-3xl sm:text-6xl font-bold leading-none tabular-nums" style={{ color: '#6b8e23', textShadow: '0 0 20px rgba(107,142,35,0.5)' }}>
                   {formatCountdown(headerCountdownMs)}
                 </p>
               </div>
@@ -1024,7 +1024,7 @@ function GamePageInner() { // NOSONAR
                 style={{ backgroundColor: '#0a100a', borderColor: `${stat.accent}33` }}
               >
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>{stat.label}</p>
-                <p className="mt-2 font-display text-xl sm:text-3xl leading-none" style={{ color: stat.accent }}>{stat.value}</p>
+                <p className="mt-2 font-heading text-xl sm:text-3xl leading-none" style={{ color: stat.accent }}>{stat.value}</p>
               </div>
             ))}
           </div>
@@ -1076,7 +1076,7 @@ function GamePageInner() { // NOSONAR
                     </div>
                   )}
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Current Phase</p>
-                  <p className="mt-2 font-display text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>{PHASE_LABEL[phase]}</p>
+                  <p className="mt-2 font-heading text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>{PHASE_LABEL[phase]}</p>
                   <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{phaseCardDescription}</p>
                   {localPlayer?.isEliminated && (
                     <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>⊘ You have been eliminated — spectator only.</p>
@@ -1096,7 +1096,7 @@ function GamePageInner() { // NOSONAR
               {showOnTab('board') && (
                 <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
                   <div className="flex items-center justify-between gap-4">
-                    <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
+                    <h2 className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
                     <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(107,142,35,0.35)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.1)' }}>
                       {activePlayers.length} alive
                     </span>
@@ -1241,7 +1241,7 @@ function GamePageInner() { // NOSONAR
 
                   {result && (
                     <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.3)' }}>
-                      <h3 className="font-display text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
+                      <h3 className="font-heading text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
                       <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>{getResultLabel(result.outcome)}</p>
                       <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} USDm</p>
                       <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
@@ -1279,7 +1279,7 @@ function GamePageInner() { // NOSONAR
               {/* Vote Panel — Board tab (mobile) / always (desktop) */}
               {showOnTab('board') && (
                 <div className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
-                  <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
+                  <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
                   <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>{votePanelLabel}</p>
 
                   {phase === 'voting' && hasVoted && (

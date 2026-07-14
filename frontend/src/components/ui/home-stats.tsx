@@ -77,7 +77,7 @@ export function HeroStats() {
           style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: 'rgba(12,19,9,0.85)' }}
         >
           <span className="text-3xl sm:text-5xl">{stat.icon}</span>
-          <span className="font-display text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
+          <span className="font-heading text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
             {stat.value}
           </span>
           <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>

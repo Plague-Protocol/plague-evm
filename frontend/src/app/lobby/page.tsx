@@ -488,7 +488,7 @@ function RoomCard({
       {/* Top row */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: statusColor[room.status], boxShadow: `0 0 6px ${statusColor[room.status]}` }} />
-        <span className="font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
+        <span className="font-heading text-lg leading-none" style={{ color: '#d4c9b2' }}>
           {roomLabel(room)}
         </span>
         {room.status === 'active' && (
@@ -526,21 +526,21 @@ function RoomCard({
               initial={playersJustChanged && !reduced ? { scale: 1.5, color: '#f5c518' } : false}
               animate={{ scale: 1, color: '#d4c9b2' }}
               transition={{ type: 'spring', stiffness: 300, damping: 16 }}
-              className="font-display text-lg leading-none"
+              className="font-heading text-lg leading-none"
             >{room.players}/{room.maxPlayers}</motion.p>
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
-            <p className="font-display text-lg leading-none" style={{ color: '#84cc16' }}>{stakeCUSD} {STABLE_TOKEN}</p>
+            <p className="font-heading text-lg leading-none" style={{ color: '#84cc16' }}>{stakeCUSD} {STABLE_TOKEN}</p>
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
-            <p className="font-display text-lg leading-none" style={{ color: '#8fa882' }}>{feeCUSD} {STABLE_TOKEN}</p>
+            <p className="font-heading text-lg leading-none" style={{ color: '#8fa882' }}>{feeCUSD} {STABLE_TOKEN}</p>
           </div>
           {room.status === 'active' && (
             <div className="text-center">
               <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
-              <p className="font-display text-lg leading-none" style={{ color: '#f5c518' }}>{potCUSD} {STABLE_TOKEN}</p>
+              <p className="font-heading text-lg leading-none" style={{ color: '#f5c518' }}>{potCUSD} {STABLE_TOKEN}</p>
             </div>
           )}
           {room.status === 'waiting' && room.expiresAt > 0 && (
@@ -1006,7 +1006,7 @@ export default function LobbyPage() {
                 className="rise-in rounded-lg border p-5 sm:p-8"
                 style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.3)' }}
               >
-                <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
+                <h2 className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                   Create Room
                 </h2>
                 <div className="mt-6 space-y-4">
@@ -1093,7 +1093,7 @@ export default function LobbyPage() {
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
                         {s.label}
                       </p>
-                      <p className="mt-2 font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                      <p className="mt-2 font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
                         {s.value}
                       </p>
                     </div>
@@ -1268,7 +1268,7 @@ export default function LobbyPage() {
               style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)', animationDelay: '80ms' }}
             >
               <div className="flex items-end justify-between gap-4">
-                <h2 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
+                <h2 className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                   Join Existing
                 </h2>
                 <div className="flex items-center gap-3">

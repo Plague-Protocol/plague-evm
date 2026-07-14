@@ -53,7 +53,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
           <p className={`font-mono text-xs uppercase tracking-[0.2em] ${isDark ? 'text-plague-white/75' : 'text-plague-black/65'}`}>
             Account Status
           </p>
-          <h3 className="mt-2 font-display text-2xl sm:text-4xl leading-none">
+          <h3 className="mt-2 font-heading text-2xl sm:text-4xl leading-none">
             {isConnected ? 'Signed In' : 'Signed Out'}
           </h3>
         </div>
@@ -72,7 +72,7 @@ export function WalletPanel({ variant = 'dark' }: WalletPanelProps) {
           </div>
           <div className={`border p-3 rounded ${isDark ? 'border-white/20 bg-white/5' : 'border-black/20 bg-black/5'}`}>
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400">USDm Balance</p>
-            <p className="mt-2 font-display text-2xl leading-none">{balance === null ? '…' : `${balance} USDm`}</p>
+            <p className="mt-2 font-heading text-2xl leading-none">{balance === null ? '…' : `${balance} USDm`}</p>
           </div>
         </div>
       )}

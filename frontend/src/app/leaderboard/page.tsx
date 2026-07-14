@@ -73,7 +73,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
     >
       {/* Rank — #1 gets the slow toxic glow */}
       <div
-        className={`flex h-9 w-9 items-center justify-center rounded-lg font-display text-lg leading-none${rank === 1 ? ' toxic-pulse' : ''}`}
+        className={`flex h-9 w-9 items-center justify-center rounded-lg font-heading text-lg leading-none${rank === 1 ? ' toxic-pulse' : ''}`}
         style={{ backgroundColor: `${rankColor}22`, color: rankColor }}
       >
         {rank}
@@ -81,7 +81,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
       {/* Player info */}
       <div className="min-w-0">
-        <p className="truncate font-display text-lg leading-none" style={{ color: '#d4c9b2' }}>
+        <p className="truncate font-heading text-lg leading-none" style={{ color: '#d4c9b2' }}>
           {player.displayName}
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -110,12 +110,12 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
       {/* Wins */}
       <div className="text-center">
-        <p className="font-display text-2xl leading-none" style={{ color: '#6b8e23' }}>{player.wins}</p>
+        <p className="font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{player.wins}</p>
       </div>
 
       {/* Proofs */}
       <div className="text-center">
-        <p className="font-display text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
+        <p className="font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
       </div>
     </div>
   )
@@ -329,7 +329,7 @@ export default function LeaderboardPage() {
                         style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}
                       >
                         <span className="font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</span>
-                        <span className="font-display text-2xl leading-none" style={{ color: s.color }}>{s.value}</span>
+                        <span className="font-heading text-2xl leading-none" style={{ color: s.color }}>{s.value}</span>
                       </div>
                     ))}
                   </div>
@@ -343,19 +343,19 @@ export default function LeaderboardPage() {
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>This Week&apos;s Champion</p>
                   {thisWeekTop ? (
                     <>
-                      <p className="mt-3 font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>{thisWeekTop.displayName}</p>
+                      <p className="mt-3 font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>{thisWeekTop.displayName}</p>
                       <div className="mt-3 flex gap-4">
                         <div className="text-center">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
-                          <p className="mt-1 font-display text-2xl leading-none" style={{ color: '#6b8e23' }}>{thisWeekTop.wins}</p>
+                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{thisWeekTop.wins}</p>
                         </div>
                         <div className="text-center">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Proofs</p>
-                          <p className="mt-1 font-display text-2xl leading-none" style={{ color: '#e63329' }}>{thisWeekTop.proofs}</p>
+                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{thisWeekTop.proofs}</p>
                         </div>
                         <div className="text-center">
                           <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Rate</p>
-                          <p className="mt-1 font-display text-2xl leading-none" style={{ color: '#f5c518' }}>
+                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>
                             {Math.round(thisWeekTop.winRate * 100)}%
                           </p>
                         </div>
@@ -374,7 +374,7 @@ export default function LeaderboardPage() {
                   style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.12)', animationDelay: '240ms' }}
                 >
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Viewing</p>
-                  <p className="mt-2 font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                  <p className="mt-2 font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
                     {TABS.find(t => t.id === activeTab)?.label}
                   </p>
                   <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>

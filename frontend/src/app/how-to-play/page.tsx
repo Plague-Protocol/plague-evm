@@ -227,7 +227,7 @@ export default function HowToPlayPage() {
         >
           <div className="flex items-baseline gap-4">
             <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#cc1414' }}>⚡</span>
-            <h2 className="font-display text-2xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>Quick Start</h2>
+            <h2 className="font-heading text-2xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>Quick Start</h2>
           </div>
           <ol className="mt-5 space-y-3">
             {quickStart.map((step, i) => (
@@ -274,7 +274,7 @@ export default function HowToPlayPage() {
               >
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{role.icon}</span>
-                  <h3 className="font-display text-2xl font-bold" style={{ color: role.color }}>{role.name}</h3>
+                  <h3 className="font-heading text-2xl font-bold" style={{ color: role.color }}>{role.name}</h3>
                 </div>
                 <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#8fa882' }}>
                   {role.desc}
@@ -382,7 +382,7 @@ export default function HowToPlayPage() {
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>{phase.number}</span>
-                  <h3 className="font-display text-xl font-bold" style={{ color: phase.color }}>{phase.name}</h3>
+                  <h3 className="font-heading text-xl font-bold" style={{ color: phase.color }}>{phase.name}</h3>
                 </div>
                 <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>{phase.desc}</p>
               </div>
@@ -514,7 +514,7 @@ export default function HowToPlayPage() {
               >
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{e.icon}</span>
-                  <h3 className="font-display text-xl font-bold" style={{ color: e.color }}>{e.title}</h3>
+                  <h3 className="font-heading text-xl font-bold" style={{ color: e.color }}>{e.title}</h3>
                 </div>
                 <div
                   className="mt-3 rounded border px-3 py-2"
@@ -576,7 +576,7 @@ export default function HowToPlayPage() {
                 className="rounded-xl border p-5"
                 style={{ borderColor: `${section.color}35`, backgroundColor: `${section.color}07` }}
               >
-                <h3 className="font-display text-xl font-bold" style={{ color: section.color }}>{section.title}</h3>
+                <h3 className="font-heading text-xl font-bold" style={{ color: section.color }}>{section.title}</h3>
                 <ul className="mt-4 space-y-2">
                   {section.tips.map((tip) => (
                     <li key={`${section.side}-${tip}`} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#4a5e44' }}>
@@ -596,7 +596,7 @@ export default function HowToPlayPage() {
             className="mx-auto max-w-xl rounded-2xl border p-6 sm:p-10"
             style={{ borderColor: 'rgba(204,20,20,0.35)', backgroundColor: 'rgba(6,11,6,0.7)' }}
           >
-            <h2 className="font-display text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
+            <h2 className="font-heading text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
             <p className="mt-3 font-mono text-sm" style={{ color: '#4a5e44' }}>
               Sign in, join a room in the lobby, and stake your USDm.
             </p>
@@ -651,7 +651,7 @@ function CollapsibleSection({
       >
         <div className="flex items-baseline gap-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#6b8e23' }}>{number}</span>
-          <h2 className="font-display text-xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
+          <h2 className="font-heading text-xl font-bold sm:text-3xl md:text-4xl" style={{ color: '#d4c9b2' }}>{title}</h2>
         </div>
         <span className="sm:hidden font-mono text-xl leading-none flex-shrink-0" style={{ color: '#6b8e23' }} aria-hidden="true">
           {open ? '−' : '+'}

@@ -70,7 +70,7 @@ export function PlayerCard({
         filter: eliminated ? 'saturate(0.4)' : undefined,
       }}
     >
-      <span className="block truncate font-display text-base font-normal tracking-wide">{name}</span>
+      <span className="block truncate font-heading text-base">{name}</span>
       {children}
       {/* "My vote" stamp — slams in when the local player's cast vote lands */}
       <AnimatePresence>

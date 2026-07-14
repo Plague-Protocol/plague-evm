@@ -181,7 +181,7 @@
   }
 
   .avatar-chip {
-    @apply flex h-10 w-10 items-center justify-center rounded-full border-2 font-display text-lg;
+    @apply flex h-10 w-10 items-center justify-center rounded-full border-2 font-body text-lg font-bold uppercase;
     border-color: var(--accent-bio);
     background-color: var(--bg-tertiary);
     color: var(--accent-bio);
@@ -220,6 +220,17 @@
    mobile — it only ever renders at hero sizes, which stay readable. */
 .font-horror {
   font-family: var(--font-horror), 'Nosifer', cursive;
+}
+
+/* Clean signage face for everything below the page-title tier: section
+   headings, card/player names, stat values. Eater (font-display) is reserved
+   for the wordmark, page-title h1s, poster statements and verdicts — it turns
+   to mush below hero sizes, so mid-tier headings use this instead. */
+.font-heading {
+  font-family: var(--font-body), 'Oswald', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* ── Mobile font swap ── Only the mono/reading text swaps to the cleaner

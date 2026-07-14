@@ -193,7 +193,7 @@ export default function HomePage() {
                   </span>
                 </div>
                 <div>
-                  <h3 className="font-display text-2xl leading-none" style={{ color: '#d4c9b2' }}>
+                  <h3 className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                     {f.title}
                   </h3>
                   <p className="mt-3 font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
@@ -239,7 +239,7 @@ export default function HomePage() {
                   {m.icon}
                 </div>
                 <div>
-                  <h3 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                  <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
                     {m.title}
                   </h3>
                   <p className="mt-2 font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>

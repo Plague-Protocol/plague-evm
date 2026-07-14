@@ -100,7 +100,7 @@ export function HeroScene() {
           {sceneChips.map((chip) => (
             <div key={chip.label} className={["rounded-[18px] border-2 border-plague-black p-3", chipClasses(chip.tone)].join(' ')}>
               <p className="font-mono text-[10px] uppercase tracking-[0.18em]">{chip.label}</p>
-              <p className="mt-2 font-display text-2xl leading-none">{chip.value}</p>
+              <p className="mt-2 font-heading text-2xl leading-none">{chip.value}</p>
             </div>
           ))}
         </div>
@@ -128,7 +128,7 @@ export function ModeCard({ title, eyebrow, tone }: ModeCardProps) {
       <div className="absolute -left-5 bottom-3 h-16 w-16 rotate-12 border-2 border-current opacity-25" />
       <div className="relative z-10">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] opacity-80">{eyebrow}</p>
-        <h3 className="mt-3 font-display text-2xl leading-none">{title}</h3>
+        <h3 className="mt-3 font-heading text-2xl leading-none">{title}</h3>
         <div className="mt-5 h-32 rounded-[20px] border-2 border-current/90 bg-white/10 p-3">
           <svg viewBox="0 0 240 120" className="h-full w-full" aria-hidden="true">
             <rect x="8" y="8" width="224" height="104" rx="18" fill="none" stroke="currentColor" strokeWidth="4" opacity="0.5" />
@@ -163,7 +163,7 @@ export function FactionBanner() {
                 <circle cx="80" cy="66" r="28" fill="#0a0a0a" opacity="0.15" />
                 <path d="M54 122 L80 44 L106 122" fill="none" stroke="#0a0a0a" strokeWidth="8" strokeLinecap="round" />
                 <path d="M48 134 H112" fill="none" stroke="#0a0a0a" strokeWidth="8" strokeLinecap="round" />
-                <text x="80" y="154" textAnchor="middle" fontFamily="var(--font-display)" fontSize="26" fill={text}>
+                <text x="80" y="154" textAnchor="middle" fontFamily="var(--font-body)" fontWeight="700" fontSize="26" fill={text}>
                   {label}
                 </text>
               </svg>
@@ -223,7 +223,7 @@ export function LobbyPosters() {
             <p className="font-mono text-[10px] uppercase tracking-[0.18em]">{room.status}</p>
             <span className="status-dot online" />
           </div>
-          <h3 className="mt-3 font-display text-3xl leading-none">{room.name}</h3>
+          <h3 className="mt-3 font-heading text-3xl leading-none">{room.name}</h3>
           <div className="mt-4 rounded-[18px] border-2 border-current/90 bg-white/10 p-2">
             <svg viewBox="0 0 260 160" className="h-auto w-full" aria-hidden="true">
               <rect x="10" y="10" width="240" height="140" rx="18" fill="none" stroke="currentColor" strokeWidth="4" opacity="0.7" />

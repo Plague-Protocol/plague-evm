@@ -867,7 +867,7 @@ export default function DemoPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Demo Room</p>
-                <p className="font-display text-2xl leading-none" style={{ color: '#e63329' }}>The Cursed Village</p>
+                <p className="font-heading text-2xl leading-none" style={{ color: '#e63329' }}>The Cursed Village</p>
               </div>
               {phase !== 'gameover' && (
                 <span
@@ -886,19 +886,19 @@ export default function DemoPage() {
             <div className="mt-4 flex flex-wrap gap-4">
               <div className="text-center">
                 <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Round</p>
-                <p className="font-display text-3xl leading-none" style={{ color: '#d4c9b2' }}>{round}</p>
+                <p className="font-heading text-3xl leading-none" style={{ color: '#d4c9b2' }}>{round}</p>
               </div>
               <div className="text-center">
                 <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Alive</p>
-                <p className="font-display text-3xl leading-none" style={{ color: '#d4c9b2' }}>{alivePlayers.length}/{TOTAL_PLAYERS}</p>
+                <p className="font-heading text-3xl leading-none" style={{ color: '#d4c9b2' }}>{alivePlayers.length}/{TOTAL_PLAYERS}</p>
               </div>
               <div className="text-center">
                 <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
-                <p className="font-display text-3xl leading-none" style={{ color: '#f5c518' }}>{POT_TOTAL} USDm</p>
+                <p className="font-heading text-3xl leading-none" style={{ color: '#f5c518' }}>{POT_TOTAL} USDm</p>
               </div>
               <div className="text-center">
                 <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Infected</p>
-                <p className="font-display text-3xl leading-none" style={{ color: '#e63329' }}>
+                <p className="font-heading text-3xl leading-none" style={{ color: '#e63329' }}>
                   {phase === 'gameover' ? infectedAlive : '?'}
                 </p>
               </div>
@@ -923,7 +923,7 @@ export default function DemoPage() {
                 {/* Player grid */}
                 <article className="rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
                   <div className="flex items-center justify-between gap-3 mb-4">
-                    <h2 className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
+                    <h2 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
                     <span className="font-mono text-xs rounded border px-2 py-0.5" style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}>{alivePlayers.length} alive</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
