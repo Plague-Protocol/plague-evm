@@ -72,6 +72,42 @@ cast call 0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710 "getRoom(uint256)" <ROOM_ID
 
 ---
 
+## 1b. Console flooded with forno CORS errors / lobby & game won't load
+
+Symptom: `No 'Access-Control-Allow-Origin' header is present` for
+`forno.celo.org`, plus `celo.drpc.org` 500s, repeated thousands of times.
+
+Cause: the frontend reads chain state directly from the browser. Public Celo
+RPCs rate-limit **by browser origin** and, when throttling, return error
+responses **without CORS headers** — so every read from a busy game floor
+surfaces as a CORS failure and the UI freezes (all reads fail). It is NOT an
+actual CORS-policy misconfiguration; it is rate-limiting in disguise. Confirm
+the upstream itself is healthy server-side (no browser = no CORS):
+
+```bash
+curl -s -X POST https://forno.celo.org -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
+# → {"result":"0xa4ec"} means forno is fine; the browser is just being throttled.
+```
+
+Fix (shipped): browser reads route through the backend proxy `POST /api/rpc`
+(`backend/src/routes/rpc.ts`) — same-origin (our CORS allowlist covers it),
+read-method allowlist, forwards server-to-server to the backend's healthy
+upstreams. The frontend read transport (`frontend/src/lib/contract.ts`,
+`readTransport`) uses it as PRIMARY with public RPCs as fallback.
+
+If it recurs:
+- Check the proxy is reachable: `curl -s -X POST https://api.zplague.xyz/api/rpc
+  -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'`
+- If that 502s, all the backend's own upstreams are down — check
+  `docker compose logs backend | grep rpc-proxy` and the `CELO_RPC_URL` /
+  `CELO_RPC_FALLBACK_URLS` backend env. Consider adding a paid/keyed RPC
+  (Alchemy/Ankr) to `CELO_RPC_FALLBACK_URLS` for real load.
+- A stale `NEXT_PUBLIC_CELO_RPC_URL=https://forno.celo.org` on Vercel does NOT
+  reintroduce the bug — the proxy is ordered ahead of it in `readTransport`.
+
+---
+
 ## 2. Bots not joining / lobby shows fewer than 5 bots free
 
 The agents runner has a **gas-floor guard** (`MIN_GAME_CELO_WEI`, default

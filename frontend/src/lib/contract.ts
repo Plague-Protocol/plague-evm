@@ -79,13 +79,25 @@ const CHAINS = {
 } as const
 
 // ── RPC fallback transport ──────────────────────────────────────────────────────
-// The public Celo RPCs occasionally fail/rate-limit ("Failed to fetch"). Reads go
-// through a fallback transport that rotates to a backup endpoint when the primary
-// is unhealthy, so a momentary blip doesn't surface as a broken lobby.
+// Reads go through a fallback transport that rotates to a backup endpoint when
+// the primary is unhealthy, so a momentary blip doesn't surface as a broken lobby.
+//
+// PRIMARY is our own backend's /api/rpc proxy: public Celo RPCs (forno, drpc)
+// rate-limit by browser origin and drop CORS headers on throttled responses,
+// which under load floods the console with "No 'Access-Control-Allow-Origin'"
+// errors and freezes the UI. The same-origin proxy sidesteps that entirely and
+// forwards server-side to healthy upstreams. Public RPCs remain as fallbacks
+// for the case where our backend is unreachable.
 
 const DEFAULT_RPCS: Record<number, string[]> = {
   [celo.id]:        ['https://forno.celo.org', 'https://celo.drpc.org'],
   [celoSepolia.id]: ['https://forno.celo-sepolia.celo-testnet.org', 'https://celo-sepolia.drpc.org'],
+}
+
+function backendRpcProxyUrl(): string | undefined {
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL
+  if (!base) return undefined
+  return `${base.replace(/\/$/, '')}/api/rpc`
 }
 
 function readTransport(chain: typeof celo | typeof celoSepolia, override?: string) {
@@ -93,8 +105,19 @@ function readTransport(chain: typeof celo | typeof celoSepolia, override?: strin
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
-  const primary = override ?? process.env.NEXT_PUBLIC_CELO_RPC_URL ?? undefined
-  const urls = [...new Set([primary, ...envFallbacks, ...(DEFAULT_RPCS[chain.id] ?? [])].filter(Boolean))] as string[]
+  // Priority order (deduped, first wins in viem's fallback transport):
+  //   1. explicit per-client override (rarely used)
+  //   2. backend same-origin proxy — the reliable path; must beat a stale
+  //      NEXT_PUBLIC_CELO_RPC_URL=forno on the deploy or the CORS storm returns
+  //   3. env primary / extra fallbacks
+  //   4. public RPCs as last-ditch (will CORS-fail in-browser, but harmless tail)
+  const urls = [...new Set([
+    override,
+    backendRpcProxyUrl(),
+    process.env.NEXT_PUBLIC_CELO_RPC_URL || undefined,
+    ...envFallbacks,
+    ...(DEFAULT_RPCS[chain.id] ?? []),
+  ].filter(Boolean))] as string[]
   return fallback(
     urls.map(url => http(url, { retryCount: 1, retryDelay: 300 })),
   )

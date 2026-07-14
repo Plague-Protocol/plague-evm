@@ -243,6 +243,13 @@ export function startRpcHealthMonitor(intervalMs = Number(process.env.RPC_HEALTH
 }
 
 export const chainAdapter = {
+  /** Upstream RPC URLs (primary + fallbacks) this backend is configured with.
+   *  Used by the browser-facing /api/rpc proxy so frontend reads go through
+   *  our server (same-origin, no public-RPC CORS/rate-limit exposure). */
+  getRpcUrls(): string[] {
+    return clients().rpcUrls
+  },
+
   // ── Reads ──────────────────────────────────────────────────────────────────
 
   async getRoom(roomId: bigint) {
