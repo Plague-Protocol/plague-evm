@@ -41,6 +41,7 @@ import {
   getRoomStatuses,
   hasRoomCapacity,
 } from './chain.js'
+import { pickChatLine } from './chat.js'
 import type { BotWallet } from './config.js'
 import type { BotProof } from './setup.js'
 
@@ -62,21 +63,10 @@ const STATUS_ELIMINATED = 2
 const POOL_TICK_MS = 5_000
 const GAME_TIMEOUT_MS = 20 * 60 * 1000 // safety cap on a single game
 const CHAT_MIN_INTERVAL_MS = 15_000
+const MENTION_WINDOW_MS = 30_000
 
-// ── Zombie-themed chat lines bots send during discussion ──────────────────────
-const CHAT_LINES = [
-  "I'm definitely clean, check my commitment 🧪",
-  'Something feels off about this round...',
-  "I haven't seen anyone act suspicious yet.",
-  'Who do we trust? Nobody, probably.',
-  'The infected are among us — I can feel it.',
-  'My symptoms are zero. Purely human here.',
-  "Don't look at me like that.",
-  "Let's eliminate someone who isn't talking.",
-  'The plague spreads through silence.',
-  "I'll survive this round. Probably.",
-]
-const randomLine = () => CHAT_LINES[Math.floor(Math.random() * CHAT_LINES.length)]
+/** Same short-address format the backend falls back to for unnamed players. */
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 // ── Globals (set in main) ───────────────────────────────────────────────────────
 let bots: BotWallet[] = []
@@ -91,6 +81,12 @@ interface PlayState {
   votedRound: number
   votedTargets: Set<string>
   lastChatAt: number
+  // Chat context (all learned from PUBLIC socket traffic):
+  names: Map<string, string>            // lowercased address → display name
+  usedLines: Set<string>                // no-repeat memory for this game
+  lastHeard: { name: string; at: number } | null
+  mentionedAt: number                   // last time someone said our name
+  seenEliminated: Set<string>           // eliminations already reacted to
 }
 
 function mkState(index: number): PlayState {
@@ -102,6 +98,11 @@ function mkState(index: number): PlayState {
     votedRound: 0,
     votedTargets: new Set(),
     lastChatAt: 0,
+    names: new Map(),
+    usedLines: new Set(),
+    lastHeard: null,
+    mentionedAt: 0,
+    seenEliminated: new Set(),
   }
 }
 
@@ -136,10 +137,40 @@ async function fetchRequests(): Promise<BotJoinRequest[]> {
 
 // ── Chat socket (best-effort presence + flavor) ─────────────────────────────────
 
-function connectChatSocket(bot: BotWallet, roomId: bigint): Socket {
+/** Absorb display names from any player-shaped objects the backend sends. */
+function learnNames(state: PlayState, players: unknown): void {
+  if (!Array.isArray(players)) return
+  for (const p of players) {
+    if (typeof p !== 'object' || p === null) continue
+    const rec = p as Record<string, unknown>
+    const addr = (rec.walletAddress ?? rec.addr ?? rec.address) as string | undefined
+    const name = (rec.displayName ?? rec.displayNameSnapshot) as string | undefined
+    if (typeof addr === 'string' && typeof name === 'string' && name) {
+      state.names.set(addr.toLowerCase(), name)
+    }
+  }
+}
+
+function connectChatSocket(state: PlayState, roomId: bigint): Socket {
+  const bot = state.bot
+  const self = bot.address.toLowerCase()
   const socket = io(BACKEND_URL, { transports: ['websocket'] })
   socket.on('connect', () => {
     socket.emit('join_room', { roomId: roomId.toString(), playerAddress: bot.address })
+  })
+  // Learn display names from the room snapshot sent on join.
+  socket.on('room_state', (payload: { players?: unknown }) => learnNames(state, payload?.players))
+  // Track the conversation: names, last speaker, and mentions of us.
+  socket.on('chat_message', (msg: { sender?: string; displayName?: string; message?: string }) => {
+    const sender = (msg.sender ?? '').toLowerCase()
+    if (!sender || sender === self) return
+    const name = msg.displayName ?? shortAddr(sender)
+    state.names.set(sender, name)
+    state.lastHeard = { name, at: Date.now() }
+    const myName = state.names.get(self) ?? shortAddr(self)
+    if (typeof msg.message === 'string' && msg.message.toLowerCase().includes(myName.toLowerCase())) {
+      state.mentionedAt = Date.now()
+    }
   })
   return socket
 }
@@ -191,15 +222,47 @@ function castVoteForBot(
     })
 }
 
-function maybeChat(state: PlayState, roomId: bigint): void {
+function maybeChat(
+  state: PlayState,
+  roomId: bigint,
+  round: number,
+  roster: { addr: string; status: number }[],
+): void {
   const now = Date.now()
   if (now - state.lastChatAt < CHAT_MIN_INTERVAL_MS) return
-  if (Math.random() > 0.4) return
+  const self = state.bot.address.toLowerCase()
+  const mentioned = now - state.mentionedAt < MENTION_WINDOW_MS
+  // Being called out warrants a prompt defense; otherwise chat sparsely.
+  if (Math.random() > (mentioned ? 0.8 : 0.4)) return
+
+  const me = roster.find(p => p.addr === self)
+  if (!me || me.status === STATUS_ELIMINATED) return
+  const nameOf = (a: string) => state.names.get(a) ?? shortAddr(a)
+
+  const freshlyEliminated: string[] = []
+  for (const p of roster) {
+    if (p.status === STATUS_ELIMINATED && !state.seenEliminated.has(p.addr)) {
+      state.seenEliminated.add(p.addr)
+      freshlyEliminated.push(nameOf(p.addr))
+    }
+  }
+
+  const line = pickChatLine(state.bot.index, {
+    round,
+    aliveNames: roster.filter(p => p.status !== STATUS_ELIMINATED && p.addr !== self).map(p => nameOf(p.addr)),
+    freshlyEliminated,
+    ownInfected: me.status === STATUS_INFECTED, // own role only — fair-info model
+    lastHeard: state.lastHeard,
+    mentioned,
+  }, state.usedLines)
+  if (!line) return
+
   state.lastChatAt = now
+  if (mentioned) state.mentionedAt = 0 // one defense per call-out
   state.socket?.emit('chat_message', {
     roomId: roomId.toString(),
     playerAddress: state.bot.address,
-    message: randomLine(),
+    message: line,
   })
 }
 
@@ -210,7 +273,7 @@ async function runChainDrivenGame(
   states: PlayState[],
   opts: { hostIndex?: number; maxPlayers?: number },
 ): Promise<void> {
-  for (const s of states) s.socket = connectChatSocket(s.bot, roomId)
+  for (const s of states) s.socket = connectChatSocket(s, roomId)
 
   await new Promise<void>(resolveGame => {
     let done = false
@@ -268,7 +331,9 @@ async function runChainDrivenGame(
               }
             }
           } else if (phase === PHASE_DISCUSSION) {
-            for (const s of states) maybeChat(s, roomId)
+            const roster = await getRoomStatuses(roomId)
+            const round = Number(room.currentRound)
+            for (const s of states) maybeChat(s, roomId, round, roster)
           }
         }
       } catch {
