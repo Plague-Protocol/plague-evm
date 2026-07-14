@@ -432,6 +432,32 @@ export class PlagueContractClient {
     })
   }
 
+  /**
+   * Batch-read many rooms in a single round-trip via Multicall3, instead of one
+   * eth_call per room. Collapses the lobby's N getRoom reads into ONE request
+   * through the proxy — the difference between a snappy lobby and a frozen one
+   * once the contract has accumulated a hundred-plus rooms. Returns one entry
+   * per requested id (in order); `room` is null for ids that revert.
+   */
+  async getRooms(
+    roomIds: bigint[],
+  ): Promise<{ id: bigint; room: Awaited<ReturnType<PlagueContractClient['getRoom']>> | null }[]> {
+    if (roomIds.length === 0) return []
+    const results = await this.publicClient.multicall({
+      allowFailure: true,
+      contracts: roomIds.map(id => ({
+        address:      this.address,
+        abi:          PLAGUE_GAME_ABI,
+        functionName: 'getRoom' as const,
+        args:         [id] as const,
+      })),
+    })
+    return roomIds.map((id, i) => {
+      const r = results[i]
+      return { id, room: r.status === 'success' ? r.result : null }
+    })
+  }
+
   async getPlayer(roomId: bigint, playerAddress: `0x${string}`) {
     return this.publicClient.readContract({
       address:      this.address,

@@ -132,6 +132,11 @@ function getCreateButtonLabel(isConnected: boolean, creating: boolean): string {
   return 'Create Room'
 }
 
+// How many of the newest rooms the lobby loads. roomCount only grows, and older
+// rooms are all ended/expired; waiting rooms and live games are always recent
+// (rooms expire in minutes), so a bounded window keeps the lobby fast forever.
+const RECENT_ROOM_LIMIT = 60
+
 interface RoomRow {
   id: bigint
   status: 'waiting' | 'starting' | 'active' | 'ended'
@@ -780,28 +785,33 @@ export default function LobbyPage() {
     setRoomsError(null)
     try {
       const count = await client.getRoomCount()
-      const ids = Array.from({ length: Number(count) }, (_, i) => BigInt(i + 1))
+      // Only load the most recent window of rooms, newest first. roomCount grows
+      // forever on mainnet, and older rooms are ended/expired — loading all of
+      // them made the lobby slower every day. Recent rooms cover everything a
+      // player cares about: waiting rooms and in-progress games are always fresh
+      // (rooms expire in minutes). All reads collapse into ONE multicall.
+      const total  = Number(count)
+      const window = Math.min(total, RECENT_ROOM_LIMIT)
+      const ids = Array.from({ length: window }, (_, i) => BigInt(total - i)) // newest → oldest
       const rows: RoomRow[] = []
-      await Promise.all(ids.map(async (id) => {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const raw: any = await client.getRoom(id)
-          rows.push({
-            id,
-            status:          ROOM_STATUS_MAP[Number(raw.status)] ?? 'ended',
-            players:         raw.players?.length ?? 0,
-            playerAddresses: (raw.players ?? []) as string[],
-            maxPlayers:      Number(raw.config.maxPlayers),
-            stakeAmount: raw.config.stakeAmount,
-            proofFee:   raw.config.proofFee,
-            expiresAt:  Number(raw.expiresAt) * 1000,
-            pot:        raw.pot,
-            host:       raw.host,
-          })
-        } catch {
-          // skip rooms that fail to load (e.g. non-existent)
-        }
-      }))
+      const batch = await client.getRooms(ids)
+      for (const { id, room } of batch) {
+        if (!room) continue // reverted / non-existent — skip
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw: any = room
+        rows.push({
+          id,
+          status:          ROOM_STATUS_MAP[Number(raw.status)] ?? 'ended',
+          players:         raw.players?.length ?? 0,
+          playerAddresses: (raw.players ?? []) as string[],
+          maxPlayers:      Number(raw.config.maxPlayers),
+          stakeAmount: raw.config.stakeAmount,
+          proofFee:   raw.config.proofFee,
+          expiresAt:  Number(raw.expiresAt) * 1000,
+          pot:        raw.pot,
+          host:       raw.host,
+        })
+      }
       // Sort: waiting first, then by id desc
       rows.sort(sortLobbyRooms)
       // Fetch room names from backend
