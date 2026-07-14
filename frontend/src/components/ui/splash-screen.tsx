@@ -625,8 +625,10 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             {lines.map((line, i) => {
               const isAct3   = line.act === 3
               const isClimax = isAct3 && i === STORY.length - 1 && done
-              let fontSize = '0.82rem'
-              if (isAct3) fontSize = i === STORY.length - 1 ? '1.15rem' : '0.95rem'
+              // 16px reading floor (project type-scale policy) — story text is
+              // body copy, not decoration.
+              let fontSize = '1rem'
+              if (isAct3) fontSize = i === STORY.length - 1 ? '1.3rem' : '1.1rem'
               let marginBottom: string | number = isAct3 ? '0.55rem' : '0.32rem'
               if (line.collapsed) marginBottom = 0
               let textColor = '#7a8c74'
@@ -638,7 +640,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               return (
                 <div key={line.full} style={{
                   opacity:      line.opacity,
-                  maxHeight:    line.collapsed ? '0px' : '3rem',
+                  maxHeight:    line.collapsed ? '0px' : '4.5rem',
                   overflow:     'hidden',
                   transition:   `opacity ${ACT_FADE_MS}ms ease, max-height ${ACT_FADE_MS + 200}ms ease, margin-bottom ${ACT_FADE_MS + 200}ms ease`,
                   marginBottom,
@@ -649,6 +651,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
                     margin:        0,
                     fontFamily:    'var(--font-mono)',
                     fontSize,
+                    lineHeight:    1.45,
                     letterSpacing: isAct3 ? '0.04em' : '0.06em',
                     paddingRight:  '0.12em',
                     color:      textColor,

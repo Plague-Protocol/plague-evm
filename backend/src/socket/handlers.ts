@@ -5,6 +5,7 @@ import { chainAdapter } from '../services/chainAdapter'
 import { listExpiredWaitingRooms, setRoomStatus, upsertGameSummary } from '../repositories/rooms'
 import { keccak256, toBytes } from 'viem'
 import { redis } from '../db/redis'
+import { prisma } from '../db/prisma'
 
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
 type RawPlayer = Awaited<ReturnType<typeof chainAdapter.getPlayer>>
@@ -988,14 +989,21 @@ export function setupSocketHandlers(io: Server) {
       const safe = String(message).slice(0, 256).trim()
       if (!safe) return
 
+      // Resolved server-side below (nickname → "Player N" by join order →
+      // short address) so chat names always match the player cards and a
+      // client can't spoof someone else's name. The client-sent displayName
+      // is intentionally ignored.
+      let playerNum = 0
+
       try {
         const roomIdBigInt = BigInt(roomId)
         const rawRoom = await chainAdapter.getRoom(roomIdBigInt)
-        const inRoom = rawRoom.players.some(addr => addr.toLowerCase() === playerAddress.toLowerCase())
-        if (!inRoom) {
+        const playerIdx = rawRoom.players.findIndex(addr => addr.toLowerCase() === playerAddress.toLowerCase())
+        if (playerIdx === -1) {
           socket.emit('chat_error', { roomId, message: 'Only joined room players can use chat.' })
           return
         }
+        playerNum = playerIdx + 1
 
         // Active room restrictions: only alive players can chat, and voting is silent.
         if (rawRoom.status === 2) {
@@ -1020,10 +1028,24 @@ export function setupSocketHandlers(io: Server) {
         return
       }
 
+      // Authoritative name: DB nickname → "Player N" (join order, matching the
+      // frontend's player cards) → short address as the last resort.
+      let resolvedName = playerNum > 0
+        ? `Player ${playerNum}`
+        : `${playerAddress.slice(0, 6)}…${playerAddress.slice(-4)}`
+      try {
+        const rec = await prisma.playerNickname.findFirst({
+          where: { address: { equals: playerAddress, mode: 'insensitive' } },
+        })
+        if (rec?.nickname) resolvedName = rec.nickname
+      } catch {
+        // DB hiccup — the join-order fallback above still matches the cards.
+      }
+
       const chatMsg = {
         roomId,
         sender:      playerAddress,
-        displayName: displayName ?? `${playerAddress.slice(0, 6)}…${playerAddress.slice(-4)}`,
+        displayName: resolvedName,
         message:     safe,
         timestamp:   Date.now(),
       }
@@ -1314,6 +1336,9 @@ function isExpectedPhaseRevert(message: string): boolean {
   )
 }
 
+// Rooms already warned about a no-clean-target infection stall (once per round).
+const noTargetWarned = new Set<string>()
+
 async function handleInfectionPhase(io: Server, id: bigint, rawRoom: RawRoom): Promise<void> {
   if (roomPhaseInProgress.has(id)) return
   roomPhaseInProgress.add(id)
@@ -1326,7 +1351,20 @@ async function handleInfectionPhase(io: Server, id: bigint, rawRoom: RawRoom): P
     for (let i = 0; i < playerAddrs.length; i++) {
       if (playerStates[i].status === 0) cleanAlive.push(playerAddrs[i])
     }
-    if (cleanAlive.length === 0) return
+    if (cleanAlive.length === 0) {
+      // No valid infection target → this room can never leave the Infection
+      // phase via assignInfection. Surface it loudly (once per round) instead
+      // of skipping silently — a room stuck here needs investigation.
+      const key = `${id}:${rawRoom.currentRound}`
+      if (!noTargetWarned.has(key)) {
+        noTargetWarned.add(key)
+        logger.warn(
+          `[phase-advance-monitor] room ${id} round ${rawRoom.currentRound}: ` +
+          'no clean alive players to infect — room cannot advance out of Infection phase',
+        )
+      }
+      return
+    }
     const patientZero = await chainAdapter.getCurrentPatientZero(id)
     const patientZeroSeed = (patientZero ?? ZERO_ADDRESS).toLowerCase()
     const blockHash = await chainAdapter.getLatestBlockHash()

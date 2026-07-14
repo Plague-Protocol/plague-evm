@@ -55,6 +55,12 @@ startRoomExpiryMonitor(io)
 startRoleCommitmentMonitor(io)
 startPhaseAdvanceMonitor(io)
 
+// Live presence: connected socket count (players + lobby visitors). Declared
+// after `io` exists; route registration order doesn't matter for Express.
+app.get('/api/presence', (_req, res) => {
+  res.json({ online: io.engine.clientsCount })
+})
+
 // ─── Start ──────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 4000

@@ -192,6 +192,20 @@ function buildRoundFromRaw(rawRoom: any, players: Player[]): Round | null {
   }
 }
 
+/**
+ * Monotonic-progress guard. On-chain, `currentRound` and `phaseStartedAt` only
+ * move forward — so any incoming read showing an OLDER (round, phaseStartedAt)
+ * than what we already display must be a stale RPC response (forno's
+ * load-balanced nodes lag each other; a slow in-flight chain read can resolve
+ * AFTER a fresher socket snapshot and would otherwise flap the phase
+ * backwards — e.g. stick the UI on "Infection" after the round moved on).
+ */
+function isStaleRound(current: Round | null, incoming: Round | null): boolean {
+  if (!current || !incoming) return false
+  if (incoming.number !== current.number) return incoming.number < current.number
+  return incoming.startedAt < current.startedAt
+}
+
 async function enrichLocalRole(
   client: ReturnType<typeof getContractClient>,
   roomId: bigint,
@@ -249,14 +263,19 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       : null
     localPlayer = await enrichLocalRole(getContractClient(), BigInt(rid), localPlayer)
 
-    setState(prev => ({
-      ...prev,
-      room,
-      localPlayer,
-      currentRound: chainRound,
-      isLoading: false,
-      error: null,
-    }))
+    setState(prev => {
+      // Stale snapshot (older round/phase than shown) — drop it whole; the
+      // players/room data in it is from the same outdated read.
+      if (isStaleRound(prev.currentRound, chainRound)) return prev
+      return {
+        ...prev,
+        room,
+        localPlayer,
+        currentRound: chainRound,
+        isLoading: false,
+        error: null,
+      }
+    })
     lastSnapshotAtRef.current = Date.now()
   }, [])
 
@@ -587,14 +606,19 @@ export function useGameState(roomId: string | null, playerAddress: string | null
         return
       }
 
-      setState(prev => ({
-        ...prev,
-        room,
-        localPlayer,
-        currentRound: chainRound,
-        isLoading: false,
-        error: null,
-      }))
+      setState(prev => {
+        // A lagging RPC node can serve a phase we've already moved past —
+        // never let a chain read regress the displayed round/phase.
+        if (isStaleRound(prev.currentRound, chainRound)) return { ...prev, isLoading: false }
+        return {
+          ...prev,
+          room,
+          localPlayer,
+          currentRound: chainRound,
+          isLoading: false,
+          error: null,
+        }
+      })
     } catch (err) {
       setState(prev => ({
         ...prev,

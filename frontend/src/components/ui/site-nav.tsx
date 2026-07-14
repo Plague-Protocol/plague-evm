@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ConnectButton } from './connect-button'
 import { MuteButton } from './mute-button'
+import { OnlineCount } from './online-count'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -65,8 +66,9 @@ export function SiteNav({ currentPath }: SiteNavProps) {
           })}
         </nav>
 
-        {/* Right: Sound + Wallet (desktop) + Hamburger (mobile) */}
+        {/* Right: Presence + Sound + Wallet (desktop) + Hamburger (mobile) */}
         <div className="flex items-center gap-2">
+          <span className="hidden sm:block"><OnlineCount /></span>
           <MuteButton />
           <div className="hidden md:block" style={{ position: 'relative', zIndex: 100 }}>
             <ConnectButton />
@@ -129,8 +131,9 @@ export function SiteNav({ currentPath }: SiteNavProps) {
               )
             })}
           </nav>
-          <div className="mt-3 border-t pt-3" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
+          <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
             <ConnectButton />
+            <OnlineCount />
           </div>
         </div>
       )}

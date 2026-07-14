@@ -18,6 +18,7 @@ import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayersGrid } from '@/components/game/PlayersGrid'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
+import { BotControls } from '@/components/lobby/bot-controls'
 import type { RoundPhase } from '@/types/game'
 import { toast } from 'sonner'
 
@@ -385,19 +386,37 @@ function GamePageInner() { // NOSONAR
 
   // While the timer has elapsed but the next phase hasn't landed yet, poll the
   // chain every 4s so a slow tx / RPC lag eventually unsticks the UI without
-  // requiring the user to refresh manually.
+  // requiring the user to refresh manually. If polite refreshes haven't fixed
+  // it after 15s, force a socket reconnect once — rejoin makes the backend
+  // re-send its authoritative room_state snapshot, recovering from a socket
+  // that silently stopped delivering events.
   const [syncWaitMs, setSyncWaitMs] = useState(0)
+  const socketKickedRef = useRef(false)
+  const forceResync = useCallback(() => {
+    refresh()
+    if (socket) {
+      socket.disconnect()
+      socket.connect() // 'connect' handler re-emits join_room → fresh room_state
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, refresh])
   useEffect(() => {
     if (!isPhaseSyncing) {
       setSyncWaitMs(0)
+      socketKickedRef.current = false
       return
     }
     const start = Date.now()
     setSyncWaitMs(0)
     const tick = () => {
-      setSyncWaitMs(Date.now() - start)
+      const waited = Date.now() - start
+      setSyncWaitMs(waited)
       refresh()
       socket?.emit('request_room_refresh', { roomId })
+      if (waited >= 15_000 && !socketKickedRef.current) {
+        socketKickedRef.current = true
+        forceResync()
+      }
     }
     tick()
     const id = setInterval(tick, 4_000)
@@ -931,11 +950,20 @@ function GamePageInner() { // NOSONAR
               <span>Syncing next phase on-chain{'.'.repeat(1 + Math.floor((syncWaitMs / 500) % 3))}</span>
               {syncWaitMs >= 12_000 && (
                 <button
-                  onClick={() => refresh()}
+                  onClick={forceResync}
                   className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
                   style={{ borderColor: '#f5c518', color: '#f5c518', backgroundColor: 'rgba(245,197,24,0.14)' }}
                 >
-                  ↺ Retry
+                  ↺ Force resync
+                </button>
+              )}
+              {syncWaitMs >= 30_000 && (
+                <button
+                  onClick={() => window.location.reload()}
+                  className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
+                  style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.12)' }}
+                >
+                  ⟳ Reload page
                 </button>
               )}
             </div>
@@ -1117,6 +1145,19 @@ function GamePageInner() { // NOSONAR
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
                       <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{hostPlayerCountLabel}</p>
+                      {/* In-room bot recruiting — no lobby round-trip needed */}
+                      {(room?.maxPlayers ?? 0) - totalPlayers > 0 && (
+                        <div className="toxic-pulse mt-3 rounded">
+                          <p className="font-mono text-xs leading-relaxed" style={{ color: '#84cc16' }}>
+                            Short on humans? Fill the empty seats with bots — they join in seconds and play for real stakes.
+                          </p>
+                          <BotControls
+                            roomId={BigInt(roomId)}
+                            stakeAmount={room?.stakeAmount ?? 0n}
+                            freeSeats={(room?.maxPlayers ?? 0) - totalPlayers}
+                          />
+                        </div>
+                      )}
                       {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
                       <button
                         onClick={handleStartGame}
@@ -1160,7 +1201,7 @@ function GamePageInner() { // NOSONAR
                             className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
                             style={{ backgroundColor: '#6b8e23', borderColor: '#6b8e23', color: '#060b06' }}
                           >
-                            {committing ? 'Activating Shield…' : 'Set Shield Password'}
+                            {committing ? 'Registering Shield Password…' : 'Set Shield Password'}
                           </button>
                         </>
                       )}
