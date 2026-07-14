@@ -532,12 +532,13 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       const raw = await getRoomWithRetry(client, BigInt(rid))
       const room = mapRoom(raw)
 
-      // Load each player's data from chain
+      // Load every player's data from chain in one multicall round-trip (not
+      // one eth_call per player) — keeps the timed/phase-change refresh bursts
+      // from tripping the shared RPC rate limit.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const players: Player[] = await Promise.all((raw as any).players.map(async (addr: string, idx: number) => {
-        const pRaw = await client.getPlayer(BigInt(rid), addr as `0x${string}`)
-        return mapPlayer(pRaw, addr, idx + 1)
-      }))
+      const addrs: `0x${string}`[] = (raw as any).players
+      const pRaws = await client.getPlayers(BigInt(rid), addrs)
+      const players: Player[] = pRaws.map((pRaw, idx) => mapPlayer(pRaw, addrs[idx], idx + 1))
       const [enrichedPlayers, roomName] = await Promise.all([
         applyNicknames(players),
         fetchRoomName(rid),

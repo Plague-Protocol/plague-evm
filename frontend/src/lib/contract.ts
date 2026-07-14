@@ -467,6 +467,26 @@ export class PlagueContractClient {
     })
   }
 
+  /**
+   * Batch-read every player in a room in a single Multicall3 round-trip instead
+   * of one eth_call per player. The game refresh runs on a timer and on every
+   * phase change; collapsing 1+N reads to ~2 keeps those bursts from tripping
+   * the shared RPC rate limit. Results are returned in the same order as
+   * `playerAddresses`. Throws (like the per-call path) if any read reverts.
+   */
+  async getPlayers(roomId: bigint, playerAddresses: `0x${string}`[]) {
+    if (playerAddresses.length === 0) return []
+    return this.publicClient.multicall({
+      allowFailure: false,
+      contracts: playerAddresses.map(addr => ({
+        address:      this.address,
+        abi:          PLAGUE_GAME_ABI,
+        functionName: 'getPlayer' as const,
+        args:         [roomId, addr] as const,
+      })),
+    })
+  }
+
   async getRoomCount(): Promise<bigint> {
     return this.publicClient.readContract({
       address:      this.address,

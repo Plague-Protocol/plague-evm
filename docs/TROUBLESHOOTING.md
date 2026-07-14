@@ -136,6 +136,27 @@ requests through the browser's 6-per-host limit. Fixed in `lib/contract.ts`
 (`getRooms`, one Multicall3 round-trip) + `lobby/page.tsx` (only the newest
 `RECENT_ROOM_LIMIT` rooms — waiting rooms and live games are always recent).
 
+### `POST /api/rpc` returns 502 (esp. on the game page during phase change)
+
+502 is the proxy's "all upstreams failed" (`rpc.ts`). It is the flip side of the
+thirdweb fix above: routing thirdweb + all game reads through the proxy moved
+the whole floor's polling onto the VPS's **single IP**, and public Celo RPCs
+rate-limit by IP — so under load forno+drpc both start 5xx-ing and the proxy
+502s. Mitigations shipped:
+- **Proxy caches hot parameterless reads** (`eth_chainId` immutable;
+  `eth_blockNumber`/`eth_gasPrice` short-TTL) so N users' block/chain polling
+  collapses to ~1 upstream call per TTL. `eth_call` is never cached.
+- **Game batches player reads** (`getPlayers` multicall) so a phase-change
+  refresh is ~2 reads, not 1+N.
+- **Durable fix (ops):** give the proxy a keyed upstream so it isn't leaning on
+  rate-limited public nodes — set `CELO_RPC_FALLBACK_URLS` (or `CELO_RPC_URL`)
+  on the backend to an Alchemy/dRPC/Ankr key'd Celo endpoint and redeploy.
+
+If a 502 blip ever reaches the browser, the service worker no longer breaks the
+page: `sw.js`'s network-first `.catch` used to `respondWith(undefined)` on a
+cache miss (→ "Failed to convert value to 'Response'", dead `/game` nav); it now
+falls back to cache or a real `Response.error()`.
+
 ---
 
 ## 2. Bots not joining / lobby shows fewer than 5 bots free
