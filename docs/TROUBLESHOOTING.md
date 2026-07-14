@@ -106,6 +106,36 @@ If it recurs:
 - A stale `NEXT_PUBLIC_CELO_RPC_URL=https://forno.celo.org` on Vercel does NOT
   reintroduce the bug — the proxy is ordered ahead of it in `readTransport`.
 
+### Still seeing forno CORS spam AFTER the read proxy shipped? It's thirdweb.
+
+The `/api/rpc` proxy only covers **our own** chain reads (`lib/contract.ts`).
+The wallet layer (**thirdweb**) runs its OWN background chain-polling loop for
+the whole session (AutoConnect, active-account/balance/block watchers). Tell
+them apart by the console stack: thirdweb's traffic bottoms out in its bundle
+chunk (e.g. `n @ 95694-….js`), not in our code, and it keeps firing the entire
+time you sit in the lobby (our reads only fire on load/refresh).
+
+Left to defaults thirdweb resolves RPC to `<id>.rpc.thirdweb.com` and, when
+that is rejected for the current origin (clientId domain not allowlisted — note
+the storm's origin was `www.zplague.xyz`, the `www.` host), falls back to Celo's
+PUBLIC nodes (forno, drpc) → same CORS/500 storm, independent of our proxy.
+
+Fix (shipped): `frontend/src/lib/thirdweb.ts` pins the thirdweb `celo` /
+`celoSepolia` chain `rpc` to our `/api/rpc` proxy via `defineChain`. Because the
+in-app (social) wallet broadcasts through the chain RPC (not an injected
+provider), the proxy allowlist also permits `eth_sendRawTransaction` (a signed
+raw tx is self-authenticating — safe to relay). External wallets are unaffected.
+Belt-and-suspenders: add `zplague.xyz` + `www.zplague.xyz` to the thirdweb
+clientId's allowed domains and redirect `www`→apex so there's one origin.
+
+### Lobby slow / "Loading rooms from chain…" hangs as roomCount grows
+
+`loadRooms` used to fan out one `getRoom` per room over EVERY room ever created
+(mainnet `roomCount` only grows), plus one name fetch each — hundreds of
+requests through the browser's 6-per-host limit. Fixed in `lib/contract.ts`
+(`getRooms`, one Multicall3 round-trip) + `lobby/page.tsx` (only the newest
+`RECENT_ROOM_LIMIT` rooms — waiting rooms and live games are always recent).
+
 ---
 
 ## 2. Bots not joining / lobby shows fewer than 5 bots free

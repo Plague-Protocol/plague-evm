@@ -13,8 +13,12 @@ import { logger } from '../lib/logger'
  * (our own CORS allowlist covers it) and forwards server-to-server to the
  * backend's already-configured, healthy upstreams (no CORS server-side).
  *
- * Read-only: a method allowlist keeps this from being a general-purpose relay.
- * Writes never come here — wallets broadcast through their own provider.
+ * Read-only plus one write: a method allowlist keeps this from being a
+ * general-purpose relay. External wallets broadcast through their own provider,
+ * but thirdweb's in-app (social/email) wallet broadcasts through the chain's RPC
+ * — which we now point at this proxy (see frontend lib/thirdweb.ts). So
+ * eth_sendRawTransaction is allowed: a signed raw tx is self-authenticating,
+ * so relaying it server-side is safe (we can neither forge nor alter it).
  */
 export const rpcRouter = Router()
 
@@ -35,6 +39,7 @@ const ALLOWED_METHODS = new Set([
   'eth_gasPrice',
   'eth_maxPriorityFeePerGas',
   'eth_feeHistory',
+  'eth_sendRawTransaction',
   'net_version',
   'web3_clientVersion',
 ])
