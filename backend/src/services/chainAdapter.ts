@@ -405,26 +405,63 @@ export const chainAdapter = {
   watchAll(onLog: (log: { eventName: string; args: Record<string, unknown> }) => void): () => void {
     const { publicClient, address } = clients()
 
-    const eventNames = [
+    // Events we surface to the socket layer. getContractEvents decodes every
+    // event on the ABI, so we filter down to this set to preserve behaviour.
+    const watched = new Set<string>([
       'PlayerJoined', 'GameStarted', 'RoundStarted', 'PhaseChanged',
       'VoteCast', 'ProofSubmitted', 'PlayerEliminated', 'PlayerSavedByProof',
       'VoteResolved', 'InfectionAssigned', 'PatientZeroUpdated', 'GameEnded', 'PotDrained', 'RoomExpired',
-    ] as const
+    ])
 
-    const unwatchers: (() => void)[] = eventNames.map(eventName =>
-      publicClient.watchContractEvent({
-        address,
-        abi:       PLAGUE_ABI,
-        eventName: eventName as never,
-        onLogs(logs: { args?: Record<string, unknown> }[]) {
-          for (const log of logs) {
-            logger.debug(`[chain] ${eventName}`, log.args)
-            onLog({ eventName, args: log.args ?? {} })
-          }
-        },
-      })
-    )
+    // Single incremental eth_getLogs poll instead of one filter subscription
+    // per event. viem's watchContractEvent runs an eth_newFilter +
+    // eth_getFilterChanges loop PER event (14 here), and on a load-balanced RPC
+    // the filter is recreated on almost every poll (created on node A, polled
+    // on node B, which never saw it) — a 24/7 eth_getFilterChanges storm that
+    // drained an entire Alchemy free tier in ~2 days regardless of game
+    // activity. getLogs is stateless: one read per tick, no filter affinity.
+    const pollMs = Number(process.env.CHAIN_EVENT_POLL_MS ?? 5_000)
+    let fromBlock: bigint | null = null
+    let running = false
+    let stopped = false
 
-    return () => unwatchers.forEach(u => u())
+    const tick = async () => {
+      if (running || stopped) return
+      running = true
+      try {
+        const latest = await publicClient.getBlockNumber()
+        // First tick: start from the next block so we only surface new events,
+        // matching watchContractEvent's default 'latest' behaviour.
+        if (fromBlock === null) { fromBlock = latest + 1n; return }
+        if (latest < fromBlock) return
+
+        const logs = await publicClient.getContractEvents({
+          address,
+          abi:       PLAGUE_ABI,
+          fromBlock,
+          toBlock:   latest,
+        })
+        // Only advance the cursor after a successful read, so a failed poll
+        // retries the same range instead of silently dropping events.
+        fromBlock = latest + 1n
+
+        for (const log of logs) {
+          const eventName = (log as { eventName?: string }).eventName
+          if (!eventName || !watched.has(eventName)) continue
+          const args = (log as { args?: Record<string, unknown> }).args ?? {}
+          logger.debug(`[chain] ${eventName}`, args)
+          onLog({ eventName, args })
+        }
+      } catch (err) {
+        logger.warn(`[chain] event poll failed: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        running = false
+      }
+    }
+
+    const timer = setInterval(() => void tick(), pollMs)
+    void tick()
+
+    return () => { stopped = true; clearInterval(timer) }
   },
 }
