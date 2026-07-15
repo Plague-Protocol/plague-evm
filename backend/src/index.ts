@@ -16,6 +16,7 @@ import {
   startRoleCommitmentMonitor,
   startPhaseAdvanceMonitor,
 } from './socket/handlers'
+import { startRpcHealthMonitor } from './services/chainAdapter'
 import { logger } from './lib/logger'
 
 dotenv.config()
@@ -56,6 +57,7 @@ setupSocketHandlers(io)
 startRoomExpiryMonitor(io)
 startRoleCommitmentMonitor(io)
 startPhaseAdvanceMonitor(io)
+startRpcHealthMonitor()
 
 // ─── Live presence ──────────────────────────────────────────────────────────
 // Heartbeat model: every open tab POSTs a ping every ~30s; "online" = distinct
