@@ -420,7 +420,12 @@ export const chainAdapter = {
     // on node B, which never saw it) — a 24/7 eth_getFilterChanges storm that
     // drained an entire Alchemy free tier in ~2 days regardless of game
     // activity. getLogs is stateless: one read per tick, no filter affinity.
-    const pollMs = Number(process.env.CHAIN_EVENT_POLL_MS ?? 5_000)
+    // 10s keeps monthly getLogs cost (~85 CU/tick) around ~22M CU — safely
+    // inside a 30M/mo Alchemy free tier with headroom for the browser floor
+    // that shares the same key. Lower this only if you have budget to spare;
+    // the socket layer already pushes snapshots immediately on backend-driven
+    // phase changes, so this poll is a mirror/resilience layer, not the hot path.
+    const pollMs = Number(process.env.CHAIN_EVENT_POLL_MS ?? 10_000)
     let fromBlock: bigint | null = null
     let running = false
     let stopped = false
