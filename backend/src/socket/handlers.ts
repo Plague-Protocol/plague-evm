@@ -645,7 +645,7 @@ export function setupSocketHandlers(io: Server) {
     if (eventName === 'VoteCast') {
       void tryEarlyResolveAfterAllVotes(io, roomId)
     }
-  })
+  }, { isActive: () => liveRoomIds.size > 0 })
 
   io.on('connection', (socket: Socket) => {
     logger.info(`Client connected: ${socket.id}`)

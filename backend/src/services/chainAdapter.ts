@@ -402,7 +402,15 @@ export const chainAdapter = {
    *     io.to(log.args.roomId.toString()).emit('game_event', mapLog(log))
    *   })
    */
-  watchAll(onLog: (log: { eventName: string; args: Record<string, unknown> }) => void): () => void {
+  watchAll(
+    onLog: (log: { eventName: string; args: Record<string, unknown> }) => void,
+    opts?: {
+      /** True while games are live → poll fast; false → poll at the idle cadence. */
+      isActive?: () => boolean
+      activePollMs?: number
+      idlePollMs?: number
+    },
+  ): () => void {
     const { publicClient, address } = clients()
 
     // Events we surface to the socket layer. getContractEvents decodes every
@@ -420,15 +428,21 @@ export const chainAdapter = {
     // on node B, which never saw it) — a 24/7 eth_getFilterChanges storm that
     // drained an entire Alchemy free tier in ~2 days regardless of game
     // activity. getLogs is stateless: one read per tick, no filter affinity.
-    // 10s keeps monthly getLogs cost (~85 CU/tick) around ~22M CU — safely
-    // inside a 30M/mo Alchemy free tier with headroom for the browser floor
-    // that shares the same key. Lower this only if you have budget to spare;
-    // the socket layer already pushes snapshots immediately on backend-driven
-    // phase changes, so this poll is a mirror/resilience layer, not the hot path.
-    const pollMs = Number(process.env.CHAIN_EVENT_POLL_MS ?? 10_000)
+    // Adaptive cadence: poll fast (10s) only while a game is live, and far
+    // slower (30s) when idle. Each tick costs ~1 getLogs regardless, so at 10s
+    // round-the-clock the poll alone burns ~16-22M CU/mo doing nothing while no
+    // one plays. isActive() (wired to liveRoomIds) flips the cadence; a new game
+    // is picked up within one idle interval, and human joins flip liveRoomIds
+    // instantly via the socket join handler so their events never wait on this.
+    // The socket layer also pushes snapshots immediately on backend-driven phase
+    // changes, so this poll is a mirror/resilience layer, not the hot path.
+    const activePollMs = opts?.activePollMs ?? Number(process.env.CHAIN_EVENT_POLL_MS ?? 10_000)
+    const idlePollMs   = opts?.idlePollMs   ?? Number(process.env.CHAIN_EVENT_IDLE_POLL_MS ?? 30_000)
+    const isActive     = opts?.isActive ?? (() => true)
     let fromBlock: bigint | null = null
     let running = false
     let stopped = false
+    let timer: NodeJS.Timeout | null = null
 
     const tick = async () => {
       if (running || stopped) return
@@ -464,9 +478,16 @@ export const chainAdapter = {
       }
     }
 
-    const timer = setInterval(() => void tick(), pollMs)
-    void tick()
+    // Self-scheduling loop (not setInterval) so the delay can change between
+    // ticks as the active/idle state flips.
+    const scheduleNext = () => {
+      if (stopped) return
+      const delay = isActive() ? activePollMs : idlePollMs
+      timer = setTimeout(() => void tick().then(scheduleNext), delay)
+    }
+    // Prime the block cursor immediately, then start the adaptive loop.
+    void tick().then(scheduleNext)
 
-    return () => { stopped = true; clearInterval(timer) }
+    return () => { stopped = true; if (timer) clearTimeout(timer) }
   },
 }
