@@ -2,7 +2,7 @@
  * config.ts — Environment, chain, and bot wallet setup.
  */
 import 'dotenv/config'
-import { createPublicClient, createWalletClient, getAddress, http } from 'viem'
+import { createPublicClient, createWalletClient, fallback, getAddress, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { celo, celoSepolia } from 'viem/chains'
 
@@ -25,6 +25,23 @@ export const RPC_URL =
   (NETWORK === 'mainnet'
     ? 'https://forno.celo.org'
     : 'https://forno.celo-sepolia.celo-testnet.org')
+
+// Primary + comma-separated fallbacks. The agents are otherwise single-homed on
+// CELO_RPC_URL, so a single keyed-provider cap (e.g. Alchemy "Monthly capacity
+// limit exceeded") takes every bot down — reads and writes alike — while the
+// backend, which already fans out over fallbacks, keeps running. Mirror that
+// here so an upstream outage silently fails over instead of benching the pool.
+const RPC_FALLBACK_URLS = (process.env.CELO_RPC_FALLBACK_URLS ?? '')
+  .split(',')
+  .map(url => url.trim())
+  .filter(Boolean)
+const RPC_URLS = [RPC_URL, ...RPC_FALLBACK_URLS]
+
+// Shared fallback transport: viem tries each endpoint in order, moving to the
+// next on error. Reused by the public client and every bot wallet client.
+const rpcTransport = fallback(
+  RPC_URLS.map(url => http(url, { retryCount: 3, retryDelay: 500 })),
+)
 
 // Normalize to EIP-55 checksum so viem accepts addresses regardless of the
 // casing used in .env (e.g. all-lowercase or all-uppercase hex).
@@ -87,7 +104,7 @@ export const FEE_CURRENCY_ADDRESS = envAddress('FEE_CURRENCY_ADDRESS', false)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const publicClient = createPublicClient({
   chain: CHAIN,
-  transport: http(RPC_URL, { retryCount: 3, retryDelay: 500 }),
+  transport: rpcTransport,
 })
 
 // ── Bot wallets ───────────────────────────────────────────────────────────────
@@ -116,10 +133,9 @@ export function buildBotWallets(): BotWallet[] {
       `Need at least 3 BOT_PRIVATE_KEY_N env vars (1..N). Found ${keys.length}.`,
     )
   }
-  const transport = http(RPC_URL, { retryCount: 3, retryDelay: 500 })
   return keys.map((key, index) => {
     const account = privateKeyToAccount(key)
-    const walletClient = createWalletClient({ account, chain: CHAIN, transport })
+    const walletClient = createWalletClient({ account, chain: CHAIN, transport: rpcTransport })
     return { index, address: account.address, account, walletClient }
   })
 }
