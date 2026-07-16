@@ -1118,6 +1118,42 @@ function GamePageInner() { // NOSONAR
                 </div>
               )}
 
+              {/* Host Controls — hoisted to the top of the left column (was below
+                  the Area 51 board, below the fold) so the host recruits bots
+                  and starts the game without hunting for it. Only during
+                  `waiting`, which is mutually exclusive with `starting`. */}
+              {room?.status === 'waiting' && isHost && showOnTab('game') && (
+                <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}>
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
+                  <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{hostPlayerCountLabel}</p>
+                  {/* In-room bot recruiting — no lobby round-trip needed */}
+                  {(room?.maxPlayers ?? 0) - totalPlayers > 0 && (
+                    <div className="toxic-pulse mt-3 rounded">
+                      <p className="font-mono text-xs leading-relaxed" style={{ color: '#84cc16' }}>
+                        Short on humans? Fill the empty seats with bots — they join in seconds and play for real stakes.
+                      </p>
+                      <BotControls
+                        roomId={BigInt(roomId)}
+                        stakeAmount={room?.stakeAmount ?? 0n}
+                        freeSeats={(room?.maxPlayers ?? 0) - totalPlayers}
+                      />
+                    </div>
+                  )}
+                  {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
+                  <button
+                    onClick={handleStartGame}
+                    disabled={starting || totalPlayers < (room?.minPlayers ?? 3)}
+                    className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                    style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
+                  >
+                    {starting ? 'Starting…' : 'Start Game'}
+                  </button>
+                  {totalPlayers < (room?.minPlayers ?? 3) && (
+                    <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
+                  )}
+                </div>
+              )}
+
               {/* Phase card — Game tab (mobile) / always (desktop) */}
               {showOnTab('game') && (
                 <div
@@ -1218,38 +1254,6 @@ function GamePageInner() { // NOSONAR
               {/* Action panels — Game tab (mobile) / always (desktop) */}
               {showOnTab('game') && (
                 <>
-                  {room?.status === 'waiting' && isHost && (
-                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
-                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{hostPlayerCountLabel}</p>
-                      {/* In-room bot recruiting — no lobby round-trip needed */}
-                      {(room?.maxPlayers ?? 0) - totalPlayers > 0 && (
-                        <div className="toxic-pulse mt-3 rounded">
-                          <p className="font-mono text-xs leading-relaxed" style={{ color: '#84cc16' }}>
-                            Short on humans? Fill the empty seats with bots — they join in seconds and play for real stakes.
-                          </p>
-                          <BotControls
-                            roomId={BigInt(roomId)}
-                            stakeAmount={room?.stakeAmount ?? 0n}
-                            freeSeats={(room?.maxPlayers ?? 0) - totalPlayers}
-                          />
-                        </div>
-                      )}
-                      {startError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{startError}</p>}
-                      <button
-                        onClick={handleStartGame}
-                        disabled={starting || totalPlayers < (room?.minPlayers ?? 3)}
-                        className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                        style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
-                      >
-                        {starting ? 'Starting…' : 'Start Game'}
-                      </button>
-                      {totalPlayers < (room?.minPlayers ?? 3) && (
-                        <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
-                      )}
-                    </div>
-                  )}
-
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>
