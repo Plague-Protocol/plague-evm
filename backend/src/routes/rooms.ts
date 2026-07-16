@@ -35,6 +35,39 @@ roomRouter.get('/', async (_req, res) => {
 })
 
 /**
+ * GET /api/rooms/names?ids=1,2,3
+ * Batch-fetch display names for many rooms in ONE request.
+ *
+ * The lobby renders up to RECENT_ROOM_LIMIT rooms; fetching a name per room
+ * fired that many parallel requests at this host, tripping the browser's
+ * per-host socket cap (ERR_INSUFFICIENT_RESOURCES) and starving the /api/rpc
+ * call — which then looked like an RPC/Alchemy failure. One query fixes it.
+ *
+ * Must be registered BEFORE `/:id` so "names" isn't parsed as a room id.
+ * Returns { names: { "<roomId>": string | null } } — every requested id is
+ * present so the client can rely on the shape.
+ */
+roomRouter.get('/names', async (req, res) => {
+  const raw = typeof req.query.ids === 'string' ? req.query.ids : ''
+  const ids = raw.split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s)).slice(0, 200)
+  try {
+    const names: Record<string, string | null> = {}
+    for (const id of ids) names[id] = null
+    if (ids.length > 0) {
+      const rooms = await prisma.room.findMany({
+        where: { roomId: { in: ids } },
+        select: { roomId: true, name: true },
+      })
+      for (const r of rooms) names[r.roomId] = r.name ?? null
+    }
+    res.json({ names })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
+
+/**
  * GET /api/rooms/:id
  * Get a specific room's on-chain state.
  */

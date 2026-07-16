@@ -814,17 +814,22 @@ export default function LobbyPage() {
       }
       // Sort: waiting first, then by id desc
       rows.sort(sortLobbyRooms)
-      // Fetch room names from backend
+      // Fetch room names from backend in ONE batched request. Firing a fetch
+      // per room (up to RECENT_ROOM_LIMIT in parallel) tripped the browser's
+      // per-host socket cap (ERR_INSUFFICIENT_RESOURCES), which also starved
+      // the /api/rpc call and made it look like the RPC/Alchemy was down.
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
-      await Promise.all(rows.map(async row => {
-        try {
-          const r = await fetch(`${backendUrl}/api/rooms/${row.id.toString()}/name`)
-          if (r.ok) {
-            const d = await r.json() as { name: string | null }
-            row.name = d.name
+      try {
+        const ids = rows.map(r => r.id.toString()).join(',')
+        const r = await fetch(`${backendUrl}/api/rooms/names?ids=${ids}`)
+        if (r.ok) {
+          const d = await r.json() as { names: Record<string, string | null> }
+          for (const row of rows) {
+            const n = d.names?.[row.id.toString()]
+            if (n) row.name = n
           }
-        } catch { /* non-fatal */ }
-      }))
+        }
+      } catch { /* non-fatal — names are cosmetic */ }
       setRooms(rows)
     } catch (err) {
       setRoomsError(friendlyRoomsError(err))
