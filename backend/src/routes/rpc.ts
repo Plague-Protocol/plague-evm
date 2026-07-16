@@ -47,16 +47,26 @@ const ALLOWED_METHODS = new Set([
 const UPSTREAM_TIMEOUT_MS = Number(process.env.RPC_PROXY_TIMEOUT_MS ?? 12_000)
 
 /**
- * Short-lived server-side cache for hot, parameterless read methods.
+ * Short-lived server-side cache for hot read methods.
  *
  * Every connected browser polls chain state (thirdweb watches block number and
  * chain id for the whole session; our own reads poll too), and it ALL funnels
  * through this one backend IP. Public Celo RPCs rate-limit by IP, so under a
  * busy floor the upstreams start returning 5xx and the proxy 502s. Caching the
- * high-frequency, low-cardinality calls collapses N users' polling into at most
- * one upstream call per TTL — the difference between staying under the rate
- * limit and tripping it. Only methods with no meaningful params are cached;
- * eth_call (getRoom/getPlayer) is never cached, so game state stays live.
+ * high-frequency calls collapses N users' polling into at most one upstream
+ * call per TTL — the difference between staying under the rate limit and
+ * tripping it.
+ *
+ * Two tiers:
+ *  - Parameterless hot methods (block number, gas, chain id) — see CACHE_TTL_MS.
+ *  - eth_call reads (getRoom/getRoomCount + the lobby getRooms multicall), keyed
+ *    by (to, data, block) with a short TTL. Many browsers viewing the same
+ *    lobby/game re-fetch identical contract reads; this collapses them into one
+ *    upstream call per window. Safe for game flow: the backend phase-advance
+ *    monitor uses chainAdapter's OWN transport (not this proxy), so a stale
+ *    browser read never delays on-chain phase advancement. The browser also
+ *    gets authoritative state pushed over the socket (room_snapshot), so its own
+ *    getRoom polling is only a backup — a few seconds of staleness is invisible.
  */
 const CACHE_TTL_MS: Record<string, number> = {
   eth_chainId:              3_600_000, // immutable
@@ -66,7 +76,26 @@ const CACHE_TTL_MS: Record<string, number> = {
   eth_gasPrice:             5_000,
   eth_maxPriorityFeePerGas: 5_000,
 }
-const cache = new Map<string, { at: number; body: unknown }>()
+// eth_call TTL — 0 disables the eth_call tier entirely.
+const ETH_CALL_TTL_MS = Number(process.env.RPC_ETH_CALL_CACHE_MS ?? 3_000)
+// eth_call keys are high-cardinality (per room / per calldata), unlike the ~6
+// parameterless keys, so the cache needs a bound. Short TTLs keep churn cheap.
+const CACHE_MAX_ENTRIES = Number(process.env.RPC_CACHE_MAX_ENTRIES ?? 2_000)
+
+const cache = new Map<string, { at: number; ttl: number; body: unknown }>()
+
+/** Evict expired entries, then oldest-first (insertion order), back under cap. */
+function pruneCache(): void {
+  if (cache.size <= CACHE_MAX_ENTRIES) return
+  const now = Date.now()
+  for (const [k, v] of cache) {
+    if (now - v.at >= v.ttl) cache.delete(k)
+  }
+  for (const k of cache.keys()) {
+    if (cache.size <= CACHE_MAX_ENTRIES) break
+    cache.delete(k)
+  }
+}
 
 /** A JSON-RPC payload is a single request or a batch array; extract methods. */
 function methodsOf(body: unknown): string[] {
@@ -78,13 +107,34 @@ function methodsOf(body: unknown): string[] {
   )
 }
 
-/** Cache key for a single cacheable request — method only (params are empty). */
-function cacheKeyFor(body: unknown): string | null {
+/** Cache key + TTL for a single cacheable request, or null if not cacheable. */
+function cacheKeyFor(body: unknown): { key: string; ttl: number } | null {
   if (Array.isArray(body) || !body || typeof body !== 'object') return null
   const { method, params } = body as { method?: string; params?: unknown[] }
-  if (!method || CACHE_TTL_MS[method] === undefined) return null
-  if (Array.isArray(params) && params.length > 0) return null // only parameterless
-  return method
+  if (!method) return null
+
+  // Tier 1: parameterless hot methods, keyed by method name.
+  if (CACHE_TTL_MS[method] !== undefined) {
+    if (Array.isArray(params) && params.length > 0) return null
+    return { key: method, ttl: CACHE_TTL_MS[method] }
+  }
+
+  // Tier 2: eth_call, keyed by target + calldata + block.
+  if (method === 'eth_call' && ETH_CALL_TTL_MS > 0 && Array.isArray(params)) {
+    if (params.length > 2) return null // state-override calls — don't cache
+    const callObj = params[0]
+    if (!callObj || typeof callObj !== 'object') return null
+    const to   = String((callObj as { to?: unknown }).to ?? '').toLowerCase()
+    const data = String((callObj as { data?: unknown; input?: unknown }).data
+      ?? (callObj as { input?: unknown }).input ?? '').toLowerCase()
+    if (!to || !data) return null
+    const block = params.length >= 2 ? params[1] : 'latest'
+    if (block === 'pending') return null // volatile — never cache
+    const blockKey = typeof block === 'string' ? block : JSON.stringify(block)
+    return { key: `eth_call:${to}:${data}:${blockKey}`, ttl: ETH_CALL_TTL_MS }
+  }
+
+  return null
 }
 
 /** Forward the payload to the first healthy upstream; null if all fail. */
@@ -113,13 +163,13 @@ rpcRouter.post('/', async (req, res) => {
     return res.status(403).json({ error: `Method not allowed via proxy: ${bad}` })
   }
 
-  // Serve hot parameterless reads from the short-TTL cache when fresh, rewriting
-  // the cached result's `id` to match this request so the JSON-RPC client pairs
-  // the response correctly.
-  const key = cacheKeyFor(req.body)
-  if (key) {
-    const hit = cache.get(key)
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS[key]) {
+  // Serve hot reads from the short-TTL cache when fresh, rewriting the cached
+  // result's `id` to match this request so the JSON-RPC client pairs the
+  // response correctly.
+  const entry = cacheKeyFor(req.body)
+  if (entry) {
+    const hit = cache.get(entry.key)
+    if (hit && Date.now() - hit.at < entry.ttl) {
       const cached = hit.body
       if (cached && typeof cached === 'object') {
         return res.json({ ...(cached as object), id: (req.body as { id?: unknown }).id })
@@ -136,8 +186,9 @@ rpcRouter.post('/', async (req, res) => {
   }
 
   // Only cache a successful (error-free) JSON-RPC result.
-  if (key && json && typeof json === 'object' && !('error' in json)) {
-    cache.set(key, { at: Date.now(), body: json })
+  if (entry && json && typeof json === 'object' && !('error' in json)) {
+    cache.set(entry.key, { at: Date.now(), ttl: entry.ttl, body: json })
+    pruneCache()
   }
   return res.json(json)
 })
