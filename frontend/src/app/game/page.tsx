@@ -1123,7 +1123,7 @@ function GamePageInner() { // NOSONAR
                   and starts the game without hunting for it. Only during
                   `waiting`, which is mutually exclusive with `starting`. */}
               {room?.status === 'waiting' && isHost && showOnTab('game') && (
-                <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.4)', backgroundColor: 'rgba(245,197,24,0.08)' }}>
+                <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.6)', backgroundColor: 'rgba(245,197,24,0.08)', boxShadow: '0 0 16px rgba(245,197,24,0.22)' }}>
                   <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
                   <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{hostPlayerCountLabel}</p>
                   {/* In-room bot recruiting — no lobby round-trip needed */}
