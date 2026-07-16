@@ -272,6 +272,29 @@ function GamePageInner() { // NOSONAR
   const canCommit     = room?.status === 'starting' && isConnected && !!localPlayer && !committing && !commitDone
   const chatBlockedReason = getChatBlockedReason(socketOn, localPlayer, room?.status, phase)
   const canChat = chatBlockedReason === null
+
+  // Nudge players to set their Shield Password: once when the commit window
+  // opens, and again (urgent) when under a minute remains. Ref-gated so each
+  // fires at most once per starting window.
+  const commitNudgedRef = useRef(false)
+  const commitUrgentNudgedRef = useRef(false)
+  useEffect(() => {
+    if (room?.status !== 'starting') {
+      commitNudgedRef.current = false
+      commitUrgentNudgedRef.current = false
+      return
+    }
+    if (commitDone || !localPlayer || localPlayer.isEliminated) return
+    if (!commitNudgedRef.current) {
+      commitNudgedRef.current = true
+      toast.warning('Set your Shield Password now — the game begins once every player commits.', { duration: 10_000 })
+    }
+    const remainingMs = startCommitEndsAt - now
+    if (remainingMs > 0 && remainingMs < 60_000 && !commitUrgentNudgedRef.current) {
+      commitUrgentNudgedRef.current = true
+      toast.error('⏳ Under a minute left to set your Shield Password!', { duration: 10_000 })
+    }
+  }, [room?.status, commitDone, localPlayer, startCommitEndsAt, now])
   const isHost        = !!address && room?.hostAddress?.toLowerCase() === address.toLowerCase()
   // Spectator: wallet connected but address not in players list (late viewer)
   const isSpectator   = !!address && !!room && room.status === 'active' && !room.players.some(p => p.walletAddress.toLowerCase() === address.toLowerCase())
@@ -1041,6 +1064,57 @@ function GamePageInner() { // NOSONAR
             {/* ── LEFT COLUMN ── */}
             <div className="flex flex-col gap-6">
 
+              {/* Set Shield Password — rendered FIRST so players see it without
+                  scrolling (it used to sit below the Area 51 board, below the
+                  fold on desktop). Pulses until committed. */}
+              {room?.status === 'starting' && showOnTab('game') && (
+                <div className={commitDone ? undefined : 'toxic-pulse rounded-lg'}>
+                  <div
+                    className="rise-in rounded-lg border p-5"
+                    style={commitDone
+                      ? { borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }
+                      : { borderColor: 'rgba(245,197,24,0.7)', backgroundColor: 'rgba(245,197,24,0.08)', boxShadow: '0 0 18px rgba(245,197,24,0.25)' }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: commitDone ? '#6b8e23' : '#f5c518' }}>
+                        {commitDone ? 'Shield Password' : '⚠ Action required — Set Shield Password'}
+                      </p>
+                      {!commitDone && (
+                        <span className="font-heading text-2xl leading-none tabular-nums" style={{ color: startCommitEndsAt - now < 60_000 ? '#e63329' : '#f5c518' }}>
+                          {formatCountdown(Math.max(0, startCommitEndsAt - now))}
+                        </span>
+                      )}
+                    </div>
+                    {commitDone ? (
+                      <p className="mt-3 font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Shield Password set. Waiting for all players…</p>
+                    ) : (
+                      <>
+                        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                          Enter your Shield Password before the timer runs out. Keep it secret — you&apos;ll need it to activate your Shield later.
+                        </p>
+                        <input
+                          type="password"
+                          placeholder="My Shield Password…"
+                          value={secretPhrase}
+                          onChange={e => setSecretPhrase(e.target.value)}
+                          className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
+                          style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#d4c9b2' }}
+                        />
+                        {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
+                        <button
+                          onClick={handleCommitRole}
+                          disabled={!canCommit || !secretPhrase || committing}
+                          className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
+                        >
+                          {committing ? 'Registering Shield Password…' : 'Set Shield Password'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Phase card — Game tab (mobile) / always (desktop) */}
               {showOnTab('game') && (
                 <div
@@ -1169,41 +1243,6 @@ function GamePageInner() { // NOSONAR
                       </button>
                       {totalPlayers < (room?.minPlayers ?? 3) && (
                         <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {room?.status === 'starting' && (
-                    <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Set Shield Password</p>
-                      {commitDone ? (
-                        <p className="mt-3 font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Shield Password set. Waiting for all players…</p>
-                      ) : (
-                        <>
-                          <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                            Enter your Shield Password. Keep it secret — you&apos;ll need it to activate your Shield later.
-                          </p>
-                          <p className="mt-1 font-mono text-[11px]" style={{ color: '#84cc16' }}>
-                            Password deadline: {formatCountdown(Math.max(0, startCommitEndsAt - now))}
-                          </p>
-                          <input
-                            type="password"
-                            placeholder="My Shield Password…"
-                            value={secretPhrase}
-                            onChange={e => setSecretPhrase(e.target.value)}
-                            className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                            style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
-                          />
-                          {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
-                          <button
-                            onClick={handleCommitRole}
-                            disabled={!canCommit || !secretPhrase || committing}
-                            className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ backgroundColor: '#6b8e23', borderColor: '#6b8e23', color: '#060b06' }}
-                          >
-                            {committing ? 'Registering Shield Password…' : 'Set Shield Password'}
-                          </button>
-                        </>
                       )}
                     </div>
                   )}
