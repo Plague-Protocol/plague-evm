@@ -87,6 +87,12 @@ services:
       ROLE_COMMIT_TIMEOUT_MS: "120000"
       ELIMINATION_PHASE_DURATION_MS: "6000"
       ROOM_SNAPSHOT_THROTTLE_MS: "250"
+      # Chain event-poll cadence: fast while a game is live, slow when idle.
+      # 60s idle keeps the idle Alchemy burn ~2.6M CU/mo. Tradeoff: a bot
+      # self-play game is detected within one idle interval (≤60s) of starting;
+      # human games are instant regardless (socket join populates liveRoomIds).
+      CHAIN_EVENT_POLL_MS: ${CHAIN_EVENT_POLL_MS:-10000}
+      CHAIN_EVENT_IDLE_POLL_MS: ${CHAIN_EVENT_IDLE_POLL_MS:-60000}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
       interval: 15s
