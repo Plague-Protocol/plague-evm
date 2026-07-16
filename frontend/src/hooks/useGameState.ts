@@ -5,6 +5,7 @@ import { io, type Socket } from 'socket.io-client'
 import { createPublicClient, webSocket } from 'viem'
 import { celoSepolia, celo } from 'viem/chains'
 import { createContractClient } from '@/lib/contract'
+import { formatToken } from '@/lib/format'
 import type { GameState, GameEvent, GameOutcome, Room, Player, Round, RoundPhase } from '@/types/game'
 
 // ── Contract client (read-only, no wallet needed) ─────────────────────────────
@@ -477,7 +478,7 @@ export function useGameState(roomId: string | null, playerAddress: string | null
       case 'pot_drained': {
         const winner = String(p.winner)
         const amount = BigInt(typeof p.amount === 'string' || typeof p.amount === 'number' ? String(p.amount) : '0')
-        appendFeed(`Pot distributed — winner received ${(Number(amount) / 1e18).toFixed(4)} USDm.`)
+        appendFeed(`Pot distributed — winner received ${formatToken(amount)} USDm.`)
         setState(prev => {
           const outcome = pendingOutcomeRef.current ?? 'max_rounds_draw'
           if (!prev.result) {

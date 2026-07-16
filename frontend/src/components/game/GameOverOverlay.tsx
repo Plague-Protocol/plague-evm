@@ -56,6 +56,14 @@ export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDis
   const [stampDone, setStampDone] = useState(false)
   const pot = useCountUp(potPerWinner, stampDone || !!reduced)
 
+  // Small prizes must not collapse to "0.0000": use 2 decimals for >= 1, and 6
+  // for sub-1 amounts (matches formatToken). Decimals are fixed to the target's
+  // magnitude so the count-up width stays stable. Dust below 6dp shows a floor.
+  const potDecimals = potPerWinner >= 1 ? 2 : 6
+  const potText = potPerWinner > 0 && Number(potPerWinner.toFixed(potDecimals)) === 0
+    ? '<0.000001'
+    : pot.toFixed(potDecimals)
+
   // Arm the counter even if the stamp animation callback is skipped (reduced motion).
   useEffect(() => {
     if (reduced) setStampDone(true)
@@ -127,7 +135,7 @@ export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDis
             >
               <p className="font-mono text-[10px] uppercase tracking-[0.24em]" style={{ color: '#4a5e44' }}>Pot per winner</p>
               <p className="mt-1 font-heading text-4xl font-bold tabular-nums leading-none" style={{ color: '#f5c518', textShadow: '0 0 18px rgba(245,197,24,0.4)' }}>
-                {pot.toFixed(4)} <span className="text-xl">USDm</span>
+                {potText} <span className="text-xl">USDm</span>
               </p>
             </motion.div>
           )}

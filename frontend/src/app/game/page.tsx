@@ -313,13 +313,16 @@ function GamePageInner() { // NOSONAR
   ].slice(0, 50)
   const hostPlayerCountLabel = `${totalPlayers} player${totalPlayers === 1 ? '' : 's'} in room. Start when ready.`
   const votePanelLabel = getVotePanelLabel(phase, hasVoted)
-  let potPerWinnerValue = 0
+  let potPerWinnerWei = 0n
   if (result?.potPerWinner && result.potPerWinner > 0n) {
-    potPerWinnerValue = Number(result.potPerWinner) / 1e18
+    potPerWinnerWei = result.potPerWinner
   } else if (result && result.winners.length > 0) {
-    potPerWinnerValue = Number(result.totalPot) / 1e18 / result.winners.length
+    potPerWinnerWei = result.totalPot / BigInt(result.winners.length)
   }
-  const potPerWinnerDisplay = potPerWinnerValue.toFixed(4)
+  const potPerWinnerValue = Number(potPerWinnerWei) / 1e18
+  // Reuse formatToken so tiny stakes don't collapse to "0.0000" — it picks up
+  // to 6 decimals for sub-1 amounts, trims trailing zeros, and guards dust.
+  const potPerWinnerDisplay = formatToken(potPerWinnerWei)
   const winnerNames = result?.winners.map(w => {
     const p = room?.players?.find(pl => pl.walletAddress.toLowerCase() === w.toLowerCase())
     return p?.displayName ?? `${w.slice(0, 6)}…`
