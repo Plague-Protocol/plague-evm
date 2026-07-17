@@ -91,6 +91,7 @@ function getPhaseDescription(
 }
 
 function getResultLabel(outcome: string): string {
+  if (outcome === 'aborted') return 'No Contest — Stakes Refunded'
   if (outcome === 'clean_win') return 'Clean Win'
   if (outcome === 'infected_win') return 'Infected Win'
   return 'Draw'
@@ -330,6 +331,11 @@ function GamePageInner() { // NOSONAR
   }) ?? []
   let gameOutcome: GameOutcome = 'draw'
   if (result?.outcome === 'clean_win' || result?.outcome === 'infected_win') gameOutcome = result.outcome
+  // Round 0 with a result = the room ended before the game ever started
+  // (expired waiting for players / host never started). Whatever outcome the
+  // backend reports for the refund, showing "Clean Win" would mislead — use
+  // the dedicated aborted card instead.
+  if (round === 0) gameOutcome = 'aborted'
   // Red-pulse the vignette during the local player's final voting seconds.
   const votingUrgent = phase === 'voting' && canVote && msLeft > 0 && msLeft <= 15_000
   let playersPanelBody: React.ReactNode
@@ -823,7 +829,7 @@ function GamePageInner() { // NOSONAR
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
-      <ArenaDoors roomId={roomId} gameActive={room ? room.status === 'active' || room.status === 'ended' : undefined} />
+      <ArenaDoors roomId={roomId} />
       <AmbientLayer urgent={votingUrgent} />
       <PhaseTransition
         phaseKey={`${round}:${phase}`}
@@ -835,10 +841,12 @@ function GamePageInner() { // NOSONAR
       />
       <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
       {result && !gameOverDismissed && (
+        /* Aborted = refund, not winnings — a "pot per winner" counter and a
+           winners roll-call would read as a result that never happened. */
         <GameOverOverlay
           outcome={gameOutcome}
-          potPerWinner={potPerWinnerValue}
-          winners={winnerNames}
+          potPerWinner={gameOutcome === 'aborted' ? 0 : potPerWinnerValue}
+          winners={gameOutcome === 'aborted' ? [] : winnerNames}
           onDismiss={() => setGameOverDismissed(true)}
         />
       )}
@@ -1290,11 +1298,17 @@ function GamePageInner() { // NOSONAR
                   {result && (
                     <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.3)' }}>
                       <h3 className="font-heading text-2xl" style={{ color: '#84cc16' }}>GAME OVER</h3>
-                      <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>{getResultLabel(result.outcome)}</p>
-                      <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} USDm</p>
-                      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                        Winners: {winnerNames.join(', ') || '—'}
-                      </p>
+                      <p className="mt-2 font-display text-4xl" style={{ color: '#f5c518' }}>{getResultLabel(gameOutcome === 'aborted' ? 'aborted' : result.outcome)}</p>
+                      {gameOutcome === 'aborted' ? (
+                        <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>The game never started — every player&apos;s stake was refunded in full.</p>
+                      ) : (
+                        <>
+                          <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} USDm</p>
+                          <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                            Winners: {winnerNames.join(', ') || '—'}
+                          </p>
+                        </>
+                      )}
                     </article>
                   )}
                 </>

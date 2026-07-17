@@ -271,11 +271,12 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
       }
     }
     await loadRooms()
-    // No auto-redirect: the host enters via the room card's "Enter Zone"
-    // button. That explicit click is a fresh user gesture right before the
-    // game page mounts, which is what lets the browser play the arena-doors
-    // audio (the create flow's wallet+tx wait outlives the autoplay window).
-    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Enter Zone" on your room to step in.`)
+    // No auto-redirect: the host enters via the room card's "Enter the
+    // Outbreak" button. That explicit click is a fresh user gesture right
+    // before the game page mounts, which is what lets the browser play the
+    // arena-doors audio (the create flow's wallet+tx wait outlives the
+    // autoplay window).
+    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Enter the Outbreak" on your room to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -291,6 +292,7 @@ interface JoinRoomActionArgs {
   connect: () => Promise<void>
   setJoiningId: (value: bigint | null) => void
   pushToGame: (roomId: bigint) => void
+  loadRooms: () => Promise<void>
 }
 
 async function runJoinRoomAction(args: JoinRoomActionArgs) {
@@ -302,8 +304,11 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
     connect,
     setJoiningId,
     pushToGame,
+    loadRooms,
   } = args
 
+  // Spectating (active room, no tx needed): go straight in. The click itself
+  // is a fresh gesture, so the arena-doors audio plays without any priming.
   if (room.status !== 'waiting') {
     pushToGame(room.id)
     return
@@ -344,7 +349,12 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
 
     await requestRoomRefresh(room.id.toString())
 
-    pushToGame(room.id)
+    // No auto-redirect: like the host flow, the joiner enters via an explicit
+    // "Enter the Outbreak" click — a fresh gesture right before the game page
+    // mounts, so the entrance audio is reliably allowed (the approve+join tx
+    // wait outlives the browser's autoplay window).
+    await loadRooms()
+    toast.success(`You're staked into ${roomLabel(room)} — hit "Enter the Outbreak" to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -433,7 +443,7 @@ function getJoinButtonState(
     // Your own room is ALWAYS enterable \u2014 even when full, which disables
     // joining for everyone else. The host must be able to get in to start
     // the game (they're no longer auto-redirected after creating).
-    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Enter Zone', disabled: isJoining }
+    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Enter the Outbreak', disabled: isJoining }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
@@ -938,8 +948,9 @@ export default function LobbyPage() {
       connect,
       setJoiningId,
       pushToGame,
+      loadRooms,
     })
-  }, [isConnected, address, chainId, connect, pushToGame, myActiveRoom])
+  }, [isConnected, address, chainId, connect, pushToGame, loadRooms, myActiveRoom])
 
   // ── End Room (any participant expires a timed-out waiting room; refunds all) ──
   const handleEndRoom = useCallback(async (room: RoomRow) => {

@@ -16,8 +16,8 @@
  *    audio starts in sync), guarded by sessionStorage per roomId. Re-entering
  *    the same room later in the session — including lobby round-trips mid-game —
  *    shows nothing; a new room (new game) plays again.
- *  - If the room's status resolves to active/ended while the doors are still
- *    showing (e.g. rejoining a live game in a fresh tab), they dismiss early.
+ *  - Spectators walking into a live zone get the full beat too — their entry
+ *    click is a fresh gesture, so the audio plays without priming.
  *
  * Pure transform + opacity, so it runs on the GPU compositor thread and never
  * touches layout/paint — cheap even on low-end mobile. No image/video assets
@@ -103,15 +103,9 @@ function fadeOutAndStop(a: HTMLAudioElement, ms = 400) {
 
 export interface ArenaDoorsProps {
   readonly roomId: string | null
-  /**
-   * Whether the match is already underway (status active/ended). `undefined`
-   * while loading is fine — the doors fire optimistically on mount and only
-   * use this to dismiss early if it turns out the game is already live.
-   */
-  readonly gameActive?: boolean
 }
 
-export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
+export function ArenaDoors({ roomId }: ArenaDoorsProps) {
   const reduced = useReducedMotion()
   const { muted } = useSound()
   const [show, setShow] = useState(false)
@@ -130,19 +124,12 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
     if (!roomId || reduced) return
     if (decidedForRef.current === roomId) return  // already decided this visit
     decidedForRef.current = roomId
-    if (gameActive) return                        // known-live game — no doors
     const key = `arena-doors:${roomId}`
     if (sessionStorage.getItem(key)) return       // this room already played this session
     sessionStorage.setItem(key, '1')
     setShow(true)
     hideTimerRef.current = setTimeout(() => setShow(false), HOLD_MS)
-  }, [roomId, gameActive, reduced])
-
-  // Backstop: if the room turns out to be mid-game while the doors are still
-  // up (rejoining a live match in a fresh tab), dismiss them early.
-  useEffect(() => {
-    if (gameActive && show) setShow(false)
-  }, [gameActive, show])
+  }, [roomId, reduced])
 
   useEffect(() => () => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)

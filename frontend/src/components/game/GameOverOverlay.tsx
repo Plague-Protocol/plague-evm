@@ -14,12 +14,16 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
-export type GameOutcome = 'clean_win' | 'infected_win' | 'draw'
+export type GameOutcome = 'clean_win' | 'infected_win' | 'draw' | 'aborted'
 
 const OUTCOME_META: Record<GameOutcome, { label: string; color: string; glyph: string; line: string }> = {
   clean_win:    { label: 'CLEAN WIN',    color: '#84cc16', glyph: '✚', line: 'The carrier has been purged. The village survives.' },
   infected_win: { label: 'INFECTED WIN', color: '#e63329', glyph: '☣', line: 'The plague overran the living. The village falls.' },
   draw:         { label: 'DRAW',         color: '#f5c518', glyph: '⚖', line: 'Stalemate. The outbreak ends unresolved.' },
+  // Room ended before the game ever started (expired waiting for players, or
+  // the host never started it). Distinct from a win so nobody thinks they won
+  // or lost — the key message is that every stake came back.
+  aborted:      { label: 'OUTBREAK CALLED OFF', color: '#8fa882', glyph: '⌛', line: 'The zone closed before the plague could spread — no game was played. All stakes refunded in full.' },
 }
 
 function useCountUp(target: number, start: boolean, durationMs = 1_000): number {
