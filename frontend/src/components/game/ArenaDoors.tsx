@@ -11,12 +11,13 @@
  * a low heartbeat plays underneath (the sound of your own fear, honoring the
  * global mute toggle).
  *
- * When it plays — "entering the room", not "loading the page":
- *  - Fires only once the room's status is known, and only if the game hasn't
- *    started (waiting/starting). Rejoining mid-game or bouncing back from the
- *    lobby during a match shows no doors — you're already inside.
- *  - The sessionStorage guard dedupes refreshes, but is cleared on unmount, so
- *    genuinely leaving and re-entering a room replays the entrance.
+ * When it plays — once per room per browser session:
+ *  - Fires immediately on mount (so it covers the room's loading moment and the
+ *    audio starts in sync), guarded by sessionStorage per roomId. Re-entering
+ *    the same room later in the session — including lobby round-trips mid-game —
+ *    shows nothing; a new room (new game) plays again.
+ *  - If the room's status resolves to active/ended while the doors are still
+ *    showing (e.g. rejoining a live game in a fresh tab), they dismiss early.
  *
  * Pure transform + opacity, so it runs on the GPU compositor thread and never
  * touches layout/paint — cheap even on low-end mobile. No image/video assets
@@ -66,10 +67,9 @@ function fadeOutAndStop(a: HTMLAudioElement, ms = 400) {
 export interface ArenaDoorsProps {
   readonly roomId: string | null
   /**
-   * Whether the match is already underway (status active/ended). Pass
-   * `undefined` while the room is still loading — the doors wait for a known
-   * status rather than firing blind, then stay suppressed if you're rejoining
-   * a live game.
+   * Whether the match is already underway (status active/ended). `undefined`
+   * while loading is fine — the doors fire optimistically on mount and only
+   * use this to dismiss early if it turns out the game is already live.
    */
   readonly gameActive?: boolean
 }
@@ -87,29 +87,29 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
   const pulseRef = useRef<HTMLAudioElement | null>(null)
   const creakRef = useRef<HTMLAudioElement | null>(null)
 
+  // Fire immediately on mount — the doors cover the room's loading moment and
+  // the audio starts in sync with them. Once per roomId per browser session.
   useEffect(() => {
     if (!roomId || reduced) return
-    if (gameActive === undefined) return          // room status not known yet
     if (decidedForRef.current === roomId) return  // already decided this visit
     decidedForRef.current = roomId
-    if (gameActive) return                        // mid-game (re)entry — no doors
+    if (gameActive) return                        // known-live game — no doors
     const key = `arena-doors:${roomId}`
-    if (sessionStorage.getItem(key)) return       // refresh while waiting — played already
+    if (sessionStorage.getItem(key)) return       // this room already played this session
     sessionStorage.setItem(key, '1')
     setShow(true)
     hideTimerRef.current = setTimeout(() => setShow(false), HOLD_MS)
   }, [roomId, gameActive, reduced])
 
-  // Leaving the room forgets the guard, so a genuine re-entry replays the
-  // entrance. (Hard refreshes skip this cleanup, so the refresh dedupe above
-  // still holds.)
+  // Backstop: if the room turns out to be mid-game while the doors are still
+  // up (rejoining a live match in a fresh tab), dismiss them early.
   useEffect(() => {
-    if (!roomId) return
-    return () => {
-      sessionStorage.removeItem(`arena-doors:${roomId}`)
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-    }
-  }, [roomId])
+    if (gameActive && show) setShow(false)
+  }, [gameActive, show])
+
+  useEffect(() => () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+  }, [])
 
   // Heartbeat under the door beat — your own pulse in your ears — plus the
   // hinge creak, cued to the doors' first movement. Same pattern as
