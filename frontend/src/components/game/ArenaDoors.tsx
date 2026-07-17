@@ -122,14 +122,14 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
     pulseRef.current = pulse
     pulse.play().catch(() => {})
 
+    // Creak starts with the overlay itself — the hinge strains from the very
+    // first touch, before the door visibly gives.
     const creak = new Audio('/sounds/door-creak.mp3')
     creak.volume = 0.6
     creakRef.current = creak
-    // Hold the creak until the doors actually start to move.
-    const creakTimer = setTimeout(() => { creak.play().catch(() => {}) }, OPEN_DELAY * 1000)
+    creak.play().catch(() => {})
 
     return () => {
-      clearTimeout(creakTimer)
       fadeOutAndStop(pulse)
       fadeOutAndStop(creak) // longer than the beat — fade, don't chop
       pulseRef.current = null
