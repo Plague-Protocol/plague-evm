@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
+import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayerCard } from '@/components/game/PlayersGrid'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
@@ -813,6 +814,7 @@ export default function DemoPage() {
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
+      <ArenaDoors roomId="demo" />
       <AmbientLayer />
       <PhaseTransition
         phaseKey={`${round}:${phase}`}
