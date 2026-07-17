@@ -49,6 +49,20 @@ const DOOR_EASES     = ['easeOut', 'linear', 'easeInOut'] as const
 const scanlines =
   'repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,0.55) 2px 4px)'
 
+// Ramp an audio element to silence then stop it — the creak is longer than the
+// door beat, and a hard cut mid-sound is more jarring than no sound at all.
+function fadeOutAndStop(a: HTMLAudioElement, ms = 400) {
+  const v0 = a.volume
+  const t0 = performance.now()
+  const step = () => {
+    const k = (performance.now() - t0) / ms
+    if (k >= 1) { a.pause(); return }
+    a.volume = v0 * (1 - k)
+    requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
+}
+
 export interface ArenaDoorsProps {
   readonly roomId: string | null
   /**
@@ -71,6 +85,7 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
   // and strand the overlay on screen.
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pulseRef = useRef<HTMLAudioElement | null>(null)
+  const creakRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (!roomId || reduced) return
@@ -96,8 +111,9 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
     }
   }, [roomId])
 
-  // Heartbeat under the door beat — your own pulse in your ears. Same pattern
-  // as useSoundscape's stings; autoplay rejection is swallowed silently.
+  // Heartbeat under the door beat — your own pulse in your ears — plus the
+  // hinge creak, cued to the doors' first movement. Same pattern as
+  // useSoundscape's stings; autoplay rejection is swallowed silently.
   useEffect(() => {
     if (!show) return
     const pulse = new Audio('/sounds/heartbeat.mp3')
@@ -105,12 +121,26 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
     pulse.volume = 0.45
     pulseRef.current = pulse
     pulse.play().catch(() => {})
-    return () => { pulse.pause(); pulseRef.current = null }
+
+    const creak = new Audio('/sounds/door-creak.mp3')
+    creak.volume = 0.6
+    creakRef.current = creak
+    // Hold the creak until the doors actually start to move.
+    const creakTimer = setTimeout(() => { creak.play().catch(() => {}) }, OPEN_DELAY * 1000)
+
+    return () => {
+      clearTimeout(creakTimer)
+      fadeOutAndStop(pulse)
+      fadeOutAndStop(creak) // longer than the beat — fade, don't chop
+      pulseRef.current = null
+      creakRef.current = null
+    }
   }, [show])
 
-  // Honor the global mute toggle live, without restarting the loop.
+  // Honor the global mute toggle live, without restarting playback.
   useEffect(() => {
     if (pulseRef.current) pulseRef.current.volume = muted ? 0 : 0.45
+    if (creakRef.current) creakRef.current.volume = muted ? 0 : 0.6
   }, [muted, show])
 
   const swing = {
