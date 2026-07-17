@@ -10,6 +10,7 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
+    "@celo/attribution-tags": "^0.3.0",
     "@noir-lang/noir_js": "1.0.0-beta.20",
     "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",

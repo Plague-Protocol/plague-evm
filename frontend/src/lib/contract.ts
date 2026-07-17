@@ -9,6 +9,17 @@ import {
   parseEventLogs,
 } from 'viem'
 import { celoSepolia, celo } from 'viem/chains'
+import { toDataSuffix } from '@celo/attribution-tags'
+
+// ── Attribution (Celo Builders hackathon) ──────────────────────────────────────
+// Celo Builders "Agentic Payments & DeFAI" hackathon attribution tag, appended to
+// every user write tx's calldata via viem's `dataSuffix` so the tx is credited on
+// the leaderboard (Celo mainnet, ends 2026-08-03). The contract ignores the
+// trailing bytes; only the registered tag is credited. Decode with `verifyTx` from
+// @celo/attribution-tags. Override via NEXT_PUBLIC_ATTRIBUTION_TAG if it changes.
+const ATTRIBUTION_SUFFIX = toDataSuffix(
+  process.env.NEXT_PUBLIC_ATTRIBUTION_TAG ?? 'celo_c2d022d1d4ac',
+)
 
 // ── ABI ───────────────────────────────────────────────────────────────────────
 // Mirrors PlagueGame.sol — update if the Solidity interface changes.
@@ -226,6 +237,7 @@ export class PlagueContractClient {
       functionName: 'createRoom',
       args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       gas:          gasEstimate * 130n / 100n, // 30 % buffer
     })
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
@@ -272,6 +284,7 @@ export class PlagueContractClient {
       functionName: 'joinRoom',
       args:         [roomId],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       gas:          gasEstimate * 130n / 100n,
     })
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
@@ -323,6 +336,7 @@ export class PlagueContractClient {
       functionName: 'approve',
       args:         [this.address, maxUint256],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
     // Poll until our RPC node reflects the updated allowance.
@@ -347,6 +361,7 @@ export class PlagueContractClient {
       functionName: 'startGame',
       args:         [roomId],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.sendTx(account, request)
   }
@@ -368,6 +383,7 @@ export class PlagueContractClient {
       functionName: 'submitRoleCommitment',
       args:         [roomId, commitment, zkProof],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.sendTx(account, request)
   }
@@ -380,6 +396,7 @@ export class PlagueContractClient {
       functionName: 'castVote',
       args:         [roomId, target],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.sendTx(account, request)
   }
@@ -402,6 +419,7 @@ export class PlagueContractClient {
       functionName: 'submitInnocenceProof',
       args:         [roomId, commitment, nullifier, zkProof],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.sendTx(account, request)
   }
@@ -417,6 +435,7 @@ export class PlagueContractClient {
       functionName: 'expireRoom',
       args:         [roomId],
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.sendTx(account, request)
   }
@@ -591,6 +610,7 @@ export class FaucetClient {
       abi:          FAUCET_ABI,
       functionName: 'claim',
       account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
   }

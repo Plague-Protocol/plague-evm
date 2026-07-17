@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@aztec/bb.js": "0.66.0",
+    "@celo/attribution-tags": "^0.3.0",
     "dotenv": "^16.4.0",
     "socket.io-client": "^4.7.0",
     "viem": "^2.21.0"

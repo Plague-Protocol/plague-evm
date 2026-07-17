@@ -5,6 +5,7 @@ import 'dotenv/config'
 import { createPublicClient, createWalletClient, fallback, getAddress, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { celo, celoSepolia } from 'viem/chains'
+import { toDataSuffix } from '@celo/attribution-tags'
 
 // ── Network ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,16 @@ export const BOT_RUNNER_SECRET = process.env.BOT_RUNNER_SECRET ?? ''
 // On mainnet: 0x765DE816845861e75A25fCA122bb6898B8B1282a
 // On testnet: leave unset (MockCUSD doesn't support fee currency)
 export const FEE_CURRENCY_ADDRESS = envAddress('FEE_CURRENCY_ADDRESS', false)
+
+// ── Attribution (Celo Builders hackathon) ──────────────────────────────────────
+
+// Celo Builders "Agentic Payments & DeFAI" hackathon attribution tag. Appended to
+// every on-chain write's calldata via viem's `dataSuffix` so the tx is credited on
+// the leaderboard (Celo mainnet, ends 2026-08-03). Contract ignores the trailing
+// bytes; only the registered tag is credited. Decode a tx with `verifyTx` from
+// @celo/attribution-tags. Override ATTRIBUTION_TAG only if the tag ever changes.
+export const ATTRIBUTION_TAG = process.env.ATTRIBUTION_TAG ?? 'celo_c2d022d1d4ac'
+export const ATTRIBUTION_SUFFIX = toDataSuffix(ATTRIBUTION_TAG)
 
 // ── Public client ─────────────────────────────────────────────────────────────
 

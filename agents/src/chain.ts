@@ -5,7 +5,7 @@
  * Pattern mirrors backend/src/services/chainAdapter.ts.
  */
 import { parseAbi, maxUint256, decodeEventLog } from 'viem'
-import { publicClient, CONTRACT_ADDRESS, USDM_ADDRESS, CHAIN, FEE_CURRENCY_ADDRESS } from './config.js'
+import { publicClient, CONTRACT_ADDRESS, USDM_ADDRESS, CHAIN, FEE_CURRENCY_ADDRESS, ATTRIBUTION_SUFFIX } from './config.js'
 import type { BotWallet } from './config.js'
 
 // Optional feeCurrency — when set, gas is paid in USDm instead of CELO
@@ -69,6 +69,7 @@ export async function ensureApproval(bot: BotWallet, minAmount: bigint): Promise
     abi: ERC20_ABI,
     functionName: 'approve',
     args: [CONTRACT_ADDRESS, maxUint256],
+    dataSuffix: ATTRIBUTION_SUFFIX,
   })
   await publicClient.waitForTransactionReceipt({ hash })
   console.log(`[bot-${bot.index}] USDm approved`)
@@ -101,6 +102,7 @@ export async function createRoom(
     abi: PLAGUE_ABI,
     functionName: 'createRoom',
     args: [maxPlayers, stakeAmount, 0n, expirySecs],
+    dataSuffix: ATTRIBUTION_SUFFIX,
   })
   const receipt = await publicClient.waitForTransactionReceipt({ hash })
 
@@ -178,6 +180,7 @@ export async function joinRoom(bot: BotWallet, roomId: bigint, attempts = 4): Pr
         abi: PLAGUE_ABI,
         functionName: 'joinRoom',
         args: [roomId],
+        dataSuffix: ATTRIBUTION_SUFFIX,
       })
       await waitOrThrow(hash, 'joinRoom')
       console.log(`[bot-${bot.index}] Joined room #${roomId}`)
@@ -207,6 +210,7 @@ export async function startGame(bot: BotWallet, roomId: bigint): Promise<void> {
     abi: PLAGUE_ABI,
     functionName: 'startGame',
     args: [roomId],
+    dataSuffix: ATTRIBUTION_SUFFIX,
   })
   await waitOrThrow(hash, 'startGame')
   console.log(`[bot-${bot.index}] Started game for room #${roomId}`)
@@ -231,6 +235,7 @@ export async function submitRoleCommitment(
     abi: PLAGUE_ABI,
     functionName: 'submitRoleCommitment',
     args: [roomId, commitment, proofHex],
+    dataSuffix: ATTRIBUTION_SUFFIX,
   })
   await waitOrThrow(hash, 'submitRoleCommitment')
   console.log(`[bot-${bot.index}] Committed role in room #${roomId}`)
@@ -252,6 +257,7 @@ export async function castVote(
     abi: PLAGUE_ABI,
     functionName: 'castVote',
     args: [roomId, target],
+    dataSuffix: ATTRIBUTION_SUFFIX,
   })
   await waitOrThrow(hash, 'castVote')
   console.log(`[bot-${bot.index}] Voted against ${target.slice(0, 8)}... in room #${roomId}`)

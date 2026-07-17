@@ -29,6 +29,7 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { celoSepolia, celo } from 'viem/chains'
+import { toDataSuffix } from '@celo/attribution-tags'
 import { logger } from '../lib/logger'
 
 type RpcHealthState = {
@@ -203,6 +204,12 @@ function clients() {
 // so the backend signer wallet needs no CELO — only USDm for gas.
 const FEE_CURRENCY_ADDRESS = process.env.FEE_CURRENCY_ADDRESS as `0x${string}` | undefined
 
+// Celo Builders "Agentic Payments & DeFAI" hackathon attribution tag, appended to
+// the backend signer's write txns via `dataSuffix` so they're credited on the
+// leaderboard (Celo mainnet, ends 2026-08-03). The contract ignores the trailing
+// bytes; only the registered tag is credited. Override ATTRIBUTION_TAG if it changes.
+const ATTRIBUTION_SUFFIX = toDataSuffix(process.env.ATTRIBUTION_TAG ?? 'celo_c2d022d1d4ac')
+
 async function writeAndWait(functionName: string, args: readonly unknown[]) {
   const { publicClient, walletClient, address } = clients()
   const { request } = await publicClient.simulateContract({
@@ -211,6 +218,7 @@ async function writeAndWait(functionName: string, args: readonly unknown[]) {
     functionName: functionName as never,
     args:         args as never,
     account:      walletClient.account,
+    dataSuffix:   ATTRIBUTION_SUFFIX,
     ...(FEE_CURRENCY_ADDRESS ? { feeCurrency: FEE_CURRENCY_ADDRESS } : {}),
   })
   const hash = await walletClient.writeContract(request as never)
