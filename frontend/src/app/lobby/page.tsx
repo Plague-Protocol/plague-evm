@@ -577,13 +577,17 @@ function RoomCard({
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-2">
+        {/* Full-width action stack: a content-width button here wraps below
+            the stats hugging the left edge, which reads as broken. A CTA bar
+            spanning the card is the standard card pattern and gives longer
+            labels ("Enter the Outbreak") room to breathe. */}
+        <div className="flex w-full flex-col gap-2">
           {showEndRoom && (
             <button
               onClick={() => onEnd(room)}
               disabled={isEnding}
               title="Ends this expired room and refunds all staked USDm to every player."
-              className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+              className="w-full rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
               style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.08)' }}
             >
               {isEnding ? 'Ending\u2026' : 'End & Refund'}
@@ -592,7 +596,7 @@ function RoomCard({
           <button
             onClick={() => onJoin(room)}
             disabled={joinBtn.disabled}
-            className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+            className="w-full rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
             style={{ backgroundColor: joinBtn.bg, borderColor: joinBtn.border, color: joinBtn.color }}
           >
             {joinBtn.label}
