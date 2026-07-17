@@ -539,8 +539,9 @@ function RoomCard({
 
       <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}{room.name ? ` · #${room.id.toString()}` : ''}</p>
 
-      {/* Stats + action row */}
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+      {/* Stats + action row — one row on desktop (stats left, CTA right);
+          stacks with a full-width CTA bar only on narrow screens. */}
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-3 md:flex-nowrap">
         <div className="flex flex-wrap gap-4">
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
@@ -577,17 +578,16 @@ function RoomCard({
           )}
         </div>
 
-        {/* Full-width action stack: a content-width button here wraps below
-            the stats hugging the left edge, which reads as broken. A CTA bar
-            spanning the card is the standard card pattern and gives longer
-            labels ("Enter the Outbreak") room to breathe. */}
-        <div className="flex w-full flex-col gap-2">
+        {/* Action stack: sits to the right of the stats on desktop
+            (whitespace-nowrap keeps "Enter the Outbreak" on one line);
+            becomes a full-width CTA bar when the row wraps on mobile. */}
+        <div className="flex w-full flex-col gap-2 md:w-auto md:shrink-0 md:items-end">
           {showEndRoom && (
             <button
               onClick={() => onEnd(room)}
               disabled={isEnding}
               title="Ends this expired room and refunds all staked USDm to every player."
-              className="w-full rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+              className="w-full whitespace-nowrap rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40 md:w-auto"
               style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.08)' }}
             >
               {isEnding ? 'Ending\u2026' : 'End & Refund'}
@@ -596,7 +596,7 @@ function RoomCard({
           <button
             onClick={() => onJoin(room)}
             disabled={joinBtn.disabled}
-            className="w-full rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+            className="w-full whitespace-nowrap rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40 md:w-auto"
             style={{ backgroundColor: joinBtn.bg, borderColor: joinBtn.border, color: joinBtn.color }}
           >
             {joinBtn.label}
