@@ -539,10 +539,12 @@ function RoomCard({
 
       <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}{room.name ? ` · #${room.id.toString()}` : ''}</p>
 
-      {/* Stats + action row — one row on desktop (stats left, CTA right);
-          stacks with a full-width CTA bar only on narrow screens. */}
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-3 md:flex-nowrap">
-        <div className="flex flex-wrap gap-4">
+      {/* Stats + action row — one row on desktop (all stats on a single line,
+          CTA vertically centered at the right); stacks with a full-width CTA
+          bar only on narrow screens. A ragged wrap (one stat orphaned onto a
+          second line with the button floating beside it) reads as broken. */}
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-3 md:flex-nowrap md:items-center">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 md:flex-nowrap">
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
             {/* Keyed remount pulses gold when the count changes while mounted */}
