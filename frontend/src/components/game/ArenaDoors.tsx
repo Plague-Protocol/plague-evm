@@ -1,12 +1,17 @@
 'use client'
 
 /**
- * ArenaDoors — one-shot "the doors swing open" entrance, played when a player
+ * ArenaDoors — one-shot "easing the doors open" entrance, played when a player
  * first enters a game room.
  *
- * Pure CSS 3D transform + opacity, so it runs on the GPU compositor thread and
- * never touches layout/paint — cheap even on low-end mobile. No image/video
- * assets and no new dependencies (framer-motion is already bundled).
+ * Horror pacing: the doors never fully stop once they start — a continuous,
+ * trembling creep (stop-start reads as mechanical; a slow crawl reads as fear).
+ * The room behind is revealed out of pure darkness, a pair of red eyes glints
+ * in the crack during the peek, and a whispered "stay quiet…" flickers below.
+ *
+ * Pure transform + opacity, so it runs on the GPU compositor thread and never
+ * touches layout/paint — cheap even on low-end mobile. No image/video assets
+ * and no new dependencies (framer-motion is already bundled).
  *
  * Deliberately unobtrusive:
  *  - Non-blocking theatre: the game view renders BEHIND this the whole time, so
@@ -21,15 +26,17 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
-// Cautious entry: the doors sit still for a beat, crack open a sliver, hold on
-// that tense peek, then ease slowly and quietly the rest of the way — a scared
-// player nudging the doors open without waking the horde. Deliberately unhurried
-// (it's skippable and the arena loads behind it, so the wait is pure theatre).
-const SWING_MS   = 3.2   // full door-swing duration (seconds)
-const OPEN_DELAY = 0.5   // stillness before the first movement (seconds)
-const HOLD_MS    = 4_500 // total on-screen time before auto-dismiss (ms)
-// Keyframe timeline shared by both doors: still → crack → hold the peek → ease open.
-const SWING_TIMES = [0, 0.16, 0.36, 1]
+// ── Timeline (seconds unless noted) ───────────────────────────────────────────
+const OPEN_DELAY = 0.4   // stillness before the first movement
+const SWING_S    = 4.4   // full door-swing duration — slow enough to dread
+const HOLD_MS    = 5_600 // total on-screen time before auto-dismiss (ms)
+
+// Continuous creep: crack open a sliver, keep crawling through the "peek"
+// (never a dead stop), then commit. Per-segment easing keeps the velocity
+// changes smooth so it reads as a hand easing the door, not staged jumps.
+const DOOR_KEYFRAMES = [0, 13, 19, 112] // degrees (negated for the left door)
+const DOOR_TIMES     = [0, 0.2, 0.52, 1]
+const DOOR_EASES     = ['easeOut', 'linear', 'easeInOut'] as const
 
 // Shared industrial-door surface: dark panel + faint scanlines, matching the
 // game's existing PhaseTransition texture.
@@ -51,7 +58,12 @@ export function ArenaDoors({ roomId }: { roomId: string | null }) {
     return () => clearTimeout(t)
   }, [roomId, reduced])
 
-  const swing = { duration: SWING_MS, delay: OPEN_DELAY, ease: 'easeInOut' as const, times: SWING_TIMES }
+  const swing = {
+    duration: SWING_S,
+    delay: OPEN_DELAY,
+    times: DOOR_TIMES,
+    ease: [...DOOR_EASES],
+  }
 
   return (
     <AnimatePresence>
@@ -59,61 +71,98 @@ export function ArenaDoors({ roomId }: { roomId: string | null }) {
         <motion.div
           key="arena-doors"
           aria-hidden="true"
-          className="fixed inset-0 z-[80] flex overflow-hidden"
-          style={{ perspective: 1200 }}
+          className="fixed inset-0 z-[80] overflow-hidden"
           initial={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.3, ease: 'easeIn' } }}
+          exit={{ opacity: 0, transition: { duration: 0.4, ease: 'easeIn' } }}
           onClick={() => setShow(false)}
         >
-          {/* Left door — hinged on the left edge, swings away into the room. */}
+          {/* Darkness behind the doors — the room emerges from pitch black only
+              after the doors have committed, so the crack reveals nothing. */}
           <motion.div
-            className="relative h-full w-1/2 origin-left"
-            style={{
-              backgroundColor: '#0a120a',
-              backgroundImage: scanlines,
-              boxShadow: 'inset -48px 0 90px rgba(0,0,0,0.75)',
-              borderRight: '2px solid rgba(107,142,35,0.35)',
-            }}
-            initial={{ rotateY: 0 }}
-            animate={{ rotateY: [0, -11, -13, -112] }}
-            transition={swing}
+            className="absolute inset-0"
+            style={{ backgroundColor: '#020402' }}
+            initial={{ opacity: 0.96 }}
+            animate={{ opacity: 0 }}
+            transition={{ delay: 2.9, duration: 2.0, ease: 'easeInOut' }}
+          />
+
+          {/* Eyes in the dark — a red pair glints in the crack mid-peek, blinks
+              once, and is gone before the doors open wide. Did you see it? */}
+          <motion.div
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 0, 1, 1, 0, 1, 0] }}
+            transition={{ delay: 1.1, duration: 1.7, times: [0, 0.15, 0.3, 0.55, 0.62, 0.75, 1], ease: 'linear' }}
           >
-            {/* seam-side hazard stripe */}
-            <div
-              className="absolute inset-y-0 right-0 w-6 opacity-40"
-              style={{ backgroundImage: 'repeating-linear-gradient(45deg, #f5c518 0 8px, #0a120a 8px 16px)' }}
-            />
+            <div className="flex items-center gap-3" style={{ transform: 'translateY(-6px)' }}>
+              <span className="h-[7px] w-[9px] rounded-full" style={{ backgroundColor: '#e63329', boxShadow: '0 0 10px #e63329, 0 0 22px rgba(230,51,41,0.6)' }} />
+              <span className="h-[6px] w-[8px] rounded-full" style={{ backgroundColor: '#e63329', boxShadow: '0 0 8px #e63329, 0 0 18px rgba(230,51,41,0.5)', transform: 'translateY(1px)' }} />
+            </div>
           </motion.div>
 
-          {/* Right door — mirror. */}
+          {/* Trembling wrapper — a scared hand's micro-shake on both doors. */}
           <motion.div
-            className="relative h-full w-1/2 origin-right"
-            style={{
-              backgroundColor: '#0a120a',
-              backgroundImage: scanlines,
-              boxShadow: 'inset 48px 0 90px rgba(0,0,0,0.75)',
-              borderLeft: '2px solid rgba(107,142,35,0.35)',
-            }}
-            initial={{ rotateY: 0 }}
-            animate={{ rotateY: [0, 11, 13, 112] }}
-            transition={swing}
+            className="absolute inset-0 flex"
+            style={{ perspective: 1100 }}
+            animate={{ x: [0, -1.2, 0.8, -0.6, 1, -0.8, 0.4, 0] }}
+            transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <div
-              className="absolute inset-y-0 left-0 w-6 opacity-40"
-              style={{ backgroundImage: 'repeating-linear-gradient(-45deg, #f5c518 0 8px, #0a120a 8px 16px)' }}
-            />
+            {/* Left door — hinged on the left edge, eases away into the room. */}
+            <motion.div
+              className="relative h-full w-1/2 origin-left"
+              style={{
+                backgroundColor: '#0a120a',
+                backgroundImage: scanlines,
+                boxShadow: 'inset -48px 0 90px rgba(0,0,0,0.75)',
+                borderRight: '2px solid rgba(107,142,35,0.35)',
+              }}
+              initial={{ rotateY: 0 }}
+              animate={{ rotateY: DOOR_KEYFRAMES.map(d => -d) }}
+              transition={swing}
+            >
+              {/* seam-side hazard stripe */}
+              <div
+                className="absolute inset-y-0 right-0 w-6 opacity-40"
+                style={{ backgroundImage: 'repeating-linear-gradient(45deg, #f5c518 0 8px, #0a120a 8px 16px)' }}
+              />
+            </motion.div>
+
+            {/* Right door — mirror. */}
+            <motion.div
+              className="relative h-full w-1/2 origin-right"
+              style={{
+                backgroundColor: '#0a120a',
+                backgroundImage: scanlines,
+                boxShadow: 'inset 48px 0 90px rgba(0,0,0,0.75)',
+                borderLeft: '2px solid rgba(107,142,35,0.35)',
+              }}
+              initial={{ rotateY: 0 }}
+              animate={{ rotateY: DOOR_KEYFRAMES }}
+              transition={swing}
+            >
+              <div
+                className="absolute inset-y-0 left-0 w-6 opacity-40"
+                style={{ backgroundImage: 'repeating-linear-gradient(-45deg, #f5c518 0 8px, #0a120a 8px 16px)' }}
+              />
+            </motion.div>
           </motion.div>
 
-          {/* Center emblem that fades as the doors part. */}
-          <motion.span
-            className="pointer-events-none absolute inset-0 flex items-center justify-center text-6xl"
-            style={{ color: '#6b8e23', textShadow: '0 0 32px #6b8e23' }}
-            initial={{ opacity: 0.85, scale: 1 }}
-            animate={{ opacity: 0, scale: 1.2 }}
-            transition={{ duration: 1.6, ease: 'easeInOut', delay: 1.5 }}
+          {/* Vignette — closes the edges in for the whole beat. */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ background: 'radial-gradient(ellipse at center, transparent 42%, rgba(2,4,2,0.9) 100%)' }}
+          />
+
+          {/* Whispered warning — flickers like a dying light, gone by mid-open. */}
+          <motion.p
+            className="pointer-events-none absolute inset-x-0 bottom-[18%] text-center font-mono text-xs lowercase tracking-[0.5em]"
+            style={{ color: '#8fa882', textShadow: '0 0 12px rgba(107,142,35,0.5)' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 0.9, 0.25, 0.8, 0.1, 0.7, 0] }}
+            transition={{ delay: 0.9, duration: 2.6, times: [0, 0.18, 0.3, 0.5, 0.62, 0.8, 1], ease: 'linear' }}
           >
-            ☣
-          </motion.span>
+            stay quiet…
+          </motion.p>
         </motion.div>
       )}
     </AnimatePresence>
