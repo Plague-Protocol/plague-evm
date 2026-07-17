@@ -50,6 +50,43 @@ const DOOR_EASES     = ['easeOut', 'linear', 'easeInOut'] as const
 const scanlines =
   'repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,0.55) 2px 4px)'
 
+// ── Primed audio singletons ───────────────────────────────────────────────────
+// Browsers only allow audio after a RECENT user gesture. In live play the lobby
+// click is followed by a wallet prompt + an on-chain tx, so by the time the
+// game page mounts the gesture has expired and play() is silently blocked
+// (the demo works because Start Demo → doors is instant). primeArenaSounds()
+// is called from the lobby's create/join click handlers: it plays both tracks
+// muted for an instant while the gesture is still valid, permanently unlocking
+// these elements for gesture-free playback on the game page.
+let primedCreak: HTMLAudioElement | null = null
+let primedPulse: HTMLAudioElement | null = null
+let soundsInUse = false
+
+function getArenaSounds() {
+  if (typeof window === 'undefined') return null
+  if (!primedCreak || !primedPulse) {
+    primedCreak = new Audio('/sounds/door-creak.mp3')
+    primedPulse = new Audio('/sounds/heartbeat.mp3')
+    primedPulse.loop = true
+  }
+  return { creak: primedCreak, pulse: primedPulse }
+}
+
+export function primeArenaSounds() {
+  const s = getArenaSounds()
+  if (!s) return
+  for (const a of [s.creak, s.pulse]) {
+    a.muted = true
+    a.play()
+      .then(() => {
+        // Don't yank the audio back if the doors started for real meanwhile.
+        if (!soundsInUse) { a.pause(); a.currentTime = 0 }
+        a.muted = false
+      })
+      .catch(() => { a.muted = false })
+  }
+}
+
 // Ramp an audio element to silence then stop it — the creak is longer than the
 // door beat, and a hard cut mid-sound is more jarring than no sound at all.
 function fadeOutAndStop(a: HTMLAudioElement, ms = 400) {
@@ -116,20 +153,25 @@ export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
   // useSoundscape's stings; autoplay rejection is swallowed silently.
   useEffect(() => {
     if (!show) return
-    const pulse = new Audio('/sounds/heartbeat.mp3')
-    pulse.loop = true
+    const s = getArenaSounds()
+    if (!s) return
+    soundsInUse = true
+    const { pulse, creak } = s
+
+    pulse.currentTime = 0
     pulse.volume = 0.45
     pulseRef.current = pulse
     pulse.play().catch(() => {})
 
     // Creak starts with the overlay itself — the hinge strains from the very
     // first touch, before the door visibly gives.
-    const creak = new Audio('/sounds/door-creak.mp3')
+    creak.currentTime = 0
     creak.volume = 0.6
     creakRef.current = creak
     creak.play().catch(() => {})
 
     return () => {
+      soundsInUse = false
       fadeOutAndStop(pulse)
       fadeOutAndStop(creak) // longer than the beat — fade, don't chop
       pulseRef.current = null

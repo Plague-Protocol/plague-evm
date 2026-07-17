@@ -10,6 +10,7 @@ import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBa
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
+import { primeArenaSounds } from '@/components/game/ArenaDoors'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -208,7 +209,6 @@ interface CreateRoomActionArgs {
   roomNameInput: string
   setCreating: (value: boolean) => void
   loadRooms: () => Promise<void>
-  pushToGame: (roomId: bigint) => void
 }
 
 async function runCreateRoomAction(args: CreateRoomActionArgs) {
@@ -222,7 +222,6 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     roomNameInput,
     setCreating,
     loadRooms,
-    pushToGame,
   } = args
 
   if (!isConnected || !address) {
@@ -272,7 +271,11 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
       }
     }
     await loadRooms()
-    pushToGame(newId)
+    // No auto-redirect: the host enters via the room card's "Enter Zone"
+    // button. That explicit click is a fresh user gesture right before the
+    // game page mounts, which is what lets the browser play the arena-doors
+    // audio (the create flow's wallet+tx wait outlives the autoplay window).
+    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Enter Zone" on your room to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -423,14 +426,14 @@ function getJoinButtonState(
 
   if (isJoining) return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Joining\u2026', disabled }
 
-  if (isMyRoom && isFull && room.status === 'waiting') {
-    return { bg: 'transparent', border: 'rgba(107,142,35,0.3)', color: '#4a5e44', label: 'Starting\u2026', disabled }
-  }
   if (isMyRoom && isExpired) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Expired', disabled }
   }
-  if (isMyRoom) {
-    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Rejoin', disabled }
+  if (isMyRoom && room.status !== 'ended') {
+    // Your own room is ALWAYS enterable \u2014 even when full, which disables
+    // joining for everyone else. The host must be able to get in to start
+    // the game (they're no longer auto-redirected after creating).
+    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Enter Zone', disabled: isJoining }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
@@ -890,6 +893,10 @@ export default function LobbyPage() {
   }, [router])
 
   const handleCreateRoom = useCallback(async () => {
+    // Unlock the arena-entrance audio while this click's gesture is still
+    // valid — the wallet prompt + tx wait outlive the browser's autoplay
+    // window, so the game page couldn't start the sounds otherwise.
+    primeArenaSounds()
     if (myActiveRoom) {
       toast.error(`You are already in ${roomLabel(myActiveRoom)}. Leave or wait for it to end before creating a new one.`)
       return
@@ -904,11 +911,11 @@ export default function LobbyPage() {
       roomNameInput,
       setCreating,
       loadRooms,
-      pushToGame,
     })
-  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, pushToGame, myActiveRoom])
+  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, myActiveRoom])
 
   const handleJoin = useCallback(async (room: RoomRow) => {
+    primeArenaSounds() // unlock entrance audio while the click gesture is valid
     // Already in this room — navigate back only if room hasn't expired
     if (myActiveRoom?.id === room.id) {
       if (myActiveRoom.status === 'waiting' && Date.now() >= myActiveRoom.expiresAt) {
