@@ -823,7 +823,7 @@ function GamePageInner() { // NOSONAR
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
-      <ArenaDoors roomId={roomId} />
+      <ArenaDoors roomId={roomId} gameActive={room ? room.status === 'active' || room.status === 'ended' : undefined} />
       <AmbientLayer urgent={votingUrgent} />
       <PhaseTransition
         phaseKey={`${round}:${phase}`}

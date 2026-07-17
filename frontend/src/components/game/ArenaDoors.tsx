@@ -2,29 +2,35 @@
 
 /**
  * ArenaDoors — one-shot "easing the doors open" entrance, played when a player
- * first enters a game room.
+ * walks into a game room.
  *
  * Horror pacing: the doors never fully stop once they start — a continuous,
  * trembling creep (stop-start reads as mechanical; a slow crawl reads as fear).
  * The room behind is revealed out of pure darkness, a pair of red eyes glints
- * in the crack during the peek, and a whispered "stay quiet…" flickers below.
+ * in the crack during the peek, a whispered "stay quiet…" flickers below, and
+ * a low heartbeat plays underneath (the sound of your own fear, honoring the
+ * global mute toggle).
+ *
+ * When it plays — "entering the room", not "loading the page":
+ *  - Fires only once the room's status is known, and only if the game hasn't
+ *    started (waiting/starting). Rejoining mid-game or bouncing back from the
+ *    lobby during a match shows no doors — you're already inside.
+ *  - The sessionStorage guard dedupes refreshes, but is cleared on unmount, so
+ *    genuinely leaving and re-entering a room replays the entrance.
  *
  * Pure transform + opacity, so it runs on the GPU compositor thread and never
  * touches layout/paint — cheap even on low-end mobile. No image/video assets
  * and no new dependencies (framer-motion is already bundled).
  *
  * Deliberately unobtrusive:
- *  - Non-blocking theatre: the game view renders BEHIND this the whole time, so
- *    the doors are an overlay on an already-live screen, never a gate in front
- *    of it. Data keeps loading underneath.
- *  - Plays at most once per room per browser session (sessionStorage guard), so
- *    a refresh or a leave-and-return doesn't replay it.
+ *  - Non-blocking theatre: the game view renders BEHIND this the whole time.
  *  - Skipped entirely under prefers-reduced-motion.
  *  - Tap anywhere to dismiss immediately.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { useSound } from '@/providers/sound-provider'
 
 // ── Timeline (seconds unless noted) ───────────────────────────────────────────
 const OPEN_DELAY = 0.4   // stillness before the first movement
@@ -43,20 +49,69 @@ const DOOR_EASES     = ['easeOut', 'linear', 'easeInOut'] as const
 const scanlines =
   'repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,0.55) 2px 4px)'
 
-export function ArenaDoors({ roomId }: { roomId: string | null }) {
+export interface ArenaDoorsProps {
+  readonly roomId: string | null
+  /**
+   * Whether the match is already underway (status active/ended). Pass
+   * `undefined` while the room is still loading — the doors wait for a known
+   * status rather than firing blind, then stay suppressed if you're rejoining
+   * a live game.
+   */
+  readonly gameActive?: boolean
+}
+
+export function ArenaDoors({ roomId, gameActive }: ArenaDoorsProps) {
   const reduced = useReducedMotion()
+  const { muted } = useSound()
   const [show, setShow] = useState(false)
+  // Which roomId this mount has already decided for — prevents status flaps
+  // (waiting → active) from re-running the play/suppress decision mid-beat.
+  const decidedForRef = useRef<string | null>(null)
+  // Auto-dismiss timer lives in a ref so a dependency change can't cancel it
+  // and strand the overlay on screen.
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pulseRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (!roomId || reduced) return
-    if (typeof window === 'undefined') return
+    if (gameActive === undefined) return          // room status not known yet
+    if (decidedForRef.current === roomId) return  // already decided this visit
+    decidedForRef.current = roomId
+    if (gameActive) return                        // mid-game (re)entry — no doors
     const key = `arena-doors:${roomId}`
-    if (sessionStorage.getItem(key)) return // already played this session
+    if (sessionStorage.getItem(key)) return       // refresh while waiting — played already
     sessionStorage.setItem(key, '1')
     setShow(true)
-    const t = setTimeout(() => setShow(false), HOLD_MS)
-    return () => clearTimeout(t)
-  }, [roomId, reduced])
+    hideTimerRef.current = setTimeout(() => setShow(false), HOLD_MS)
+  }, [roomId, gameActive, reduced])
+
+  // Leaving the room forgets the guard, so a genuine re-entry replays the
+  // entrance. (Hard refreshes skip this cleanup, so the refresh dedupe above
+  // still holds.)
+  useEffect(() => {
+    if (!roomId) return
+    return () => {
+      sessionStorage.removeItem(`arena-doors:${roomId}`)
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+    }
+  }, [roomId])
+
+  // Heartbeat under the door beat — your own pulse in your ears. Same pattern
+  // as useSoundscape's stings; autoplay rejection is swallowed silently.
+  useEffect(() => {
+    if (!show) return
+    const pulse = new Audio('/sounds/heartbeat.mp3')
+    pulse.loop = true
+    pulse.volume = 0.45
+    pulseRef.current = pulse
+    pulse.play().catch(() => {})
+    return () => { pulse.pause(); pulseRef.current = null }
+  }, [show])
+
+  // Honor the global mute toggle live, without restarting the loop.
+  useEffect(() => {
+    if (pulseRef.current) pulseRef.current.volume = muted ? 0 : 0.45
+  }, [muted, show])
 
   const swing = {
     duration: SWING_S,
