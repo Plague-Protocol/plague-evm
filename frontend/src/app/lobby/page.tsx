@@ -902,6 +902,28 @@ export default function LobbyPage() {
     router.push(`/game?room=${roomId.toString()}`)
   }, [router])
 
+  // ── Auto-enter when the game starts ────────────────────────────────────────
+  // A staked player lingering in the lobby (post-join, pre-"Enter the
+  // Outbreak") would miss the host starting the game and burn their role-
+  // commit window. Watch their room for a live WAITING → STARTING/ACTIVE
+  // transition and walk them in automatically. Only an observed transition
+  // triggers this — loading the lobby while your game is already underway
+  // does NOT yank you back in, so deliberately stepping out mid-game stays
+  // possible. Entrance audio still works on this gesture-free navigation
+  // because primeArenaSounds() unlocked the elements during the Join click.
+  const prevActiveRoomRef = useRef<{ id: bigint; status: string } | null>(null)
+  useEffect(() => {
+    const prev = prevActiveRoomRef.current
+    prevActiveRoomRef.current = myActiveRoom
+      ? { id: myActiveRoom.id, status: myActiveRoom.status }
+      : null
+    if (!myActiveRoom || !prev) return
+    if (prev.id !== myActiveRoom.id || prev.status !== 'waiting') return
+    if (myActiveRoom.status !== 'starting' && myActiveRoom.status !== 'active') return
+    toast(`${roomLabel(myActiveRoom)} has begun — entering the zone…`)
+    pushToGame(myActiveRoom.id)
+  }, [myActiveRoom, pushToGame])
+
   const handleCreateRoom = useCallback(async () => {
     // Unlock the arena-entrance audio while this click's gesture is still
     // valid — the wallet prompt + tx wait outlive the browser's autoplay
