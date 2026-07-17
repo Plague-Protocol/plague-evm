@@ -271,12 +271,11 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
       }
     }
     await loadRooms()
-    // No auto-redirect: the host enters via the room card's "Enter the
-    // Outbreak" button. That explicit click is a fresh user gesture right
-    // before the game page mounts, which is what lets the browser play the
-    // arena-doors audio (the create flow's wallet+tx wait outlives the
-    // autoplay window).
-    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Enter the Outbreak" on your room to step in.`)
+    // No auto-redirect: the host enters via the room card's "Into the Horde"
+    // button. That explicit click is a fresh user gesture right before the
+    // game page mounts, which is what lets the browser play the arena-doors
+    // audio (the create flow's wallet+tx wait outlives the autoplay window).
+    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Into the Horde" on your room to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -350,11 +349,11 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
     await requestRoomRefresh(room.id.toString())
 
     // No auto-redirect: like the host flow, the joiner enters via an explicit
-    // "Enter the Outbreak" click — a fresh gesture right before the game page
+    // "Into the Horde" click — a fresh gesture right before the game page
     // mounts, so the entrance audio is reliably allowed (the approve+join tx
     // wait outlives the browser's autoplay window).
     await loadRooms()
-    toast.success(`You're staked into ${roomLabel(room)} — hit "Enter the Outbreak" to step in.`)
+    toast.success(`You're staked into ${roomLabel(room)} — hit "Into the Horde" to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -443,7 +442,7 @@ function getJoinButtonState(
     // Your own room is ALWAYS enterable \u2014 even when full, which disables
     // joining for everyone else. The host must be able to get in to start
     // the game (they're no longer auto-redirected after creating).
-    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Enter the Outbreak', disabled: isJoining }
+    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Into the Horde', disabled: isJoining }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
@@ -539,12 +538,12 @@ function RoomCard({
 
       <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}{room.name ? ` · #${room.id.toString()}` : ''}</p>
 
-      {/* Stats + action row — one row on desktop (all stats on a single line,
-          CTA vertically centered at the right); stacks with a full-width CTA
-          bar only on narrow screens. A ragged wrap (one stat orphaned onto a
-          second line with the button floating beside it) reads as broken. */}
+      {/* Stats + action row — stats left, CTA right on desktop; wraps to a
+          full-width CTA bar on narrow screens. Stats keep their natural width
+          (no forced single-line squeeze — that broke values mid-number); the
+          short "Into the Horde" label keeps the whole thing to <=2 lines. */}
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3 md:flex-nowrap md:items-center">
-        <div className="flex flex-wrap gap-x-4 gap-y-2 md:flex-nowrap">
+        <div className="flex flex-wrap gap-4">
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
             {/* Keyed remount pulses gold when the count changes while mounted */}
@@ -558,16 +557,16 @@ function RoomCard({
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
-            <p className="font-heading text-lg leading-none" style={{ color: '#84cc16' }}>{stakeCUSD} {STABLE_TOKEN}</p>
+            <p className="font-heading text-lg leading-none whitespace-nowrap" style={{ color: '#84cc16' }}>{stakeCUSD} {STABLE_TOKEN}</p>
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
-            <p className="font-heading text-lg leading-none" style={{ color: '#8fa882' }}>{feeCUSD} {STABLE_TOKEN}</p>
+            <p className="font-heading text-lg leading-none whitespace-nowrap" style={{ color: '#8fa882' }}>{feeCUSD} {STABLE_TOKEN}</p>
           </div>
           {room.status === 'active' && (
             <div className="text-center">
               <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
-              <p className="font-heading text-lg leading-none" style={{ color: '#f5c518' }}>{potCUSD} {STABLE_TOKEN}</p>
+              <p className="font-heading text-lg leading-none whitespace-nowrap" style={{ color: '#f5c518' }}>{potCUSD} {STABLE_TOKEN}</p>
             </div>
           )}
           {room.status === 'waiting' && room.expiresAt > 0 && (
@@ -581,8 +580,8 @@ function RoomCard({
         </div>
 
         {/* Action stack: sits to the right of the stats on desktop
-            (whitespace-nowrap keeps "Enter the Outbreak" on one line);
-            becomes a full-width CTA bar when the row wraps on mobile. */}
+            (whitespace-nowrap keeps the label on one line); becomes a
+            full-width CTA bar when the row wraps on mobile. */}
         <div className="flex w-full flex-col gap-2 md:w-auto md:shrink-0 md:items-end">
           {showEndRoom && (
             <button
