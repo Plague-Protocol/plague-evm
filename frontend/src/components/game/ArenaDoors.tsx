@@ -21,9 +21,15 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
-// Doors sit closed for a beat, swing open, hold briefly on the reveal, then go.
-const SWING_MS = 0.9   // door swing duration (seconds)
-const HOLD_MS  = 1_350 // total on-screen time before auto-dismiss (ms)
+// Cautious entry: the doors sit still for a beat, crack open a sliver, hold on
+// that tense peek, then ease slowly and quietly the rest of the way — a scared
+// player nudging the doors open without waking the horde. Deliberately unhurried
+// (it's skippable and the arena loads behind it, so the wait is pure theatre).
+const SWING_MS   = 3.2   // full door-swing duration (seconds)
+const OPEN_DELAY = 0.5   // stillness before the first movement (seconds)
+const HOLD_MS    = 4_500 // total on-screen time before auto-dismiss (ms)
+// Keyframe timeline shared by both doors: still → crack → hold the peek → ease open.
+const SWING_TIMES = [0, 0.16, 0.36, 1]
 
 // Shared industrial-door surface: dark panel + faint scanlines, matching the
 // game's existing PhaseTransition texture.
@@ -45,7 +51,7 @@ export function ArenaDoors({ roomId }: { roomId: string | null }) {
     return () => clearTimeout(t)
   }, [roomId, reduced])
 
-  const swing = { duration: SWING_MS, ease: [0.7, 0, 0.3, 1] as const, delay: 0.18 }
+  const swing = { duration: SWING_MS, delay: OPEN_DELAY, ease: 'easeInOut' as const, times: SWING_TIMES }
 
   return (
     <AnimatePresence>
@@ -69,7 +75,7 @@ export function ArenaDoors({ roomId }: { roomId: string | null }) {
               borderRight: '2px solid rgba(107,142,35,0.35)',
             }}
             initial={{ rotateY: 0 }}
-            animate={{ rotateY: -112 }}
+            animate={{ rotateY: [0, -11, -13, -112] }}
             transition={swing}
           >
             {/* seam-side hazard stripe */}
@@ -89,7 +95,7 @@ export function ArenaDoors({ roomId }: { roomId: string | null }) {
               borderLeft: '2px solid rgba(107,142,35,0.35)',
             }}
             initial={{ rotateY: 0 }}
-            animate={{ rotateY: 112 }}
+            animate={{ rotateY: [0, 11, 13, 112] }}
             transition={swing}
           >
             <div
@@ -102,9 +108,9 @@ export function ArenaDoors({ roomId }: { roomId: string | null }) {
           <motion.span
             className="pointer-events-none absolute inset-0 flex items-center justify-center text-6xl"
             style={{ color: '#6b8e23', textShadow: '0 0 32px #6b8e23' }}
-            initial={{ opacity: 0.9, scale: 1 }}
-            animate={{ opacity: 0, scale: 1.3 }}
-            transition={{ duration: 0.45, ease: 'easeIn', delay: 0.18 }}
+            initial={{ opacity: 0.85, scale: 1 }}
+            animate={{ opacity: 0, scale: 1.2 }}
+            transition={{ duration: 1.6, ease: 'easeInOut', delay: 1.5 }}
           >
             ☣
           </motion.span>
