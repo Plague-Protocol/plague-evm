@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
-import { createContractClient, createFaucetClient, readCUSDBalance } from '@/lib/contract'
+import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBalance } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
@@ -22,6 +22,12 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 
 // Token name shown to users — always USDm.
 const STABLE_TOKEN = 'USDm'
+
+// Below this native-CELO balance a non-MiniPay wallet likely can't finish a game:
+// the ZK role-commitment alone costs ~0.42 CELO in gas, and a wallet that can
+// afford joinRoom but not the commit deadlocks the room. Used only to surface a
+// soft "top up CELO" hint — MiniPay pays gas in USDm, so it never sees this.
+const MIN_GAS_CELO_WEI = 500000000000000000n // 0.5 CELO
 
 // Floor for the per-extra-Shield fee (contract field is proofFee). The fee is
 // 1% of stake; tiny stakes round that to ~0 and look free, so this fixed
@@ -592,7 +598,7 @@ function RoomCard({
 
 export default function LobbyPage() {
   const router = useRouter()
-  const { isConnected, address, chainId, connect, switchToCelo } = useWallet()
+  const { isConnected, address, chainId, connect, switchToCelo, isMiniPay } = useWallet()
   const { muted } = useSound()
   useSoundscape('lobby', muted)
 
@@ -666,6 +672,7 @@ export default function LobbyPage() {
 
   // ── Faucet / balance state ─────────────────────────────────────────────────
   const [cusdBalance, setCusdBalance]           = useState<string | null>(null)
+  const [lowCelo, setLowCelo]                   = useState(false)
   const [nextClaimTimestamp, setNextClaimTimestamp] = useState<number>(0)
   const [claiming, setClaiming]                 = useState(false)
 
@@ -690,17 +697,28 @@ export default function LobbyPage() {
     if (!isConnected || !address || !chainId) return
     const cUSDAddr = CUSD_ADDRESSES[chainId]
     if (!cUSDAddr) return
+    const net = chainId === 42220 ? 'mainnet' : 'testnet'
     try {
-      const bal = await readCUSDBalance(address, cUSDAddr, chainId === 42220 ? 'mainnet' : 'testnet')
+      const bal = await readCUSDBalance(address, cUSDAddr, net)
       setCusdBalance(formatCUSDBalance(bal))
     } catch { /* silently ignore */ }
+    // Gas hint: MiniPay pays gas in USDm, so it never needs CELO. For every other
+    // wallet, flag a native-CELO balance too low to complete a game.
+    if (isMiniPay) {
+      setLowCelo(false)
+    } else {
+      try {
+        const celoBal = await readNativeBalance(address, net)
+        setLowCelo(celoBal < MIN_GAS_CELO_WEI)
+      } catch { /* silently ignore */ }
+    }
     if (!faucetAddr || !showFaucet) return
     try {
       const fc   = createFaucetClient({ faucetAddress: faucetAddr, network: 'testnet' })
       const next = await fc.getNextClaimAt(address)
       setNextClaimTimestamp(Number(next))
     } catch { /* silently ignore */ }
-  }, [isConnected, address, chainId, faucetAddr, showFaucet])
+  }, [isConnected, address, chainId, faucetAddr, showFaucet, isMiniPay])
 
   useEffect(() => { loadFaucetInfo() }, [loadFaucetInfo])
 
@@ -1208,6 +1226,18 @@ export default function LobbyPage() {
                         {cusdBalance ? `${cusdBalance} ${STABLE_TOKEN}` : '…'}
                       </p>
                     </div>
+
+                    {/* Low-CELO gas hint — only for non-MiniPay wallets that are
+                        actually short on CELO. MiniPay pays gas in USDm, so it's
+                        excluded via lowCelo (never set true when isMiniPay). */}
+                    {lowCelo && (
+                      <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(245,197,24,0.3)', backgroundColor: 'rgba(245,197,24,0.06)' }}>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#f5c518' }}>⛽ Low on CELO</p>
+                        <p className="mt-1 font-mono text-[11px] leading-relaxed" style={{ color: '#d9c47a' }}>
+                          You hold {STABLE_TOKEN} but need a little <span style={{ color: '#f5c518' }}>CELO</span> to pay gas fees, or the game can’t submit your moves. Add a little CELO to this wallet, or use <span style={{ color: '#f5c518' }}>MiniPay</span> to pay fees in {STABLE_TOKEN} instead.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Testnet faucet */}
                     {showFaucet && isTestnet && (

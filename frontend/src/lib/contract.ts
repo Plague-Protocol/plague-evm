@@ -660,3 +660,17 @@ export async function readCUSDBalance(
   })
 }
 
+/**
+ * Native CELO balance (wei) of `account`. Used to warn non-MiniPay users who
+ * lack the CELO needed to pay gas — MiniPay abstracts gas in stablecoin so it
+ * never needs this. Mirrors readCUSDBalance's transport/fallback setup.
+ */
+export async function readNativeBalance(
+  account: `0x${string}`,
+  network: 'testnet' | 'mainnet',
+): Promise<bigint> {
+  const chain = CHAINS[network]
+  const pc = createPublicClient({ chain, transport: readTransport(chain) })
+  return pc.getBalance({ address: account })
+}
+
