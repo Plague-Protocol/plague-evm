@@ -1,13 +1,15 @@
 /**
  * runner.ts — Bot pool manager.
  *
- * The 5 bot wallets form a shared pool that humans can pull from to try the
+ * The bot wallets form a shared pool that humans can pull from to try the
  * game. The manager:
  *
  *   1. Heartbeats availability to the backend so the lobby shows "K bots free".
  *   2. Drains human "add bots" requests and sends idle bots into those rooms.
- *   3. When ALL bots are idle with no human demand for SELF_PLAY_IDLE_MS, starts
- *      a self-play game so on-chain activity never goes silent.
+ *   3. When ALL bots are idle with no human demand for a randomized idle gap
+ *      (SELF_PLAY_MIN_MS..MAX_MS, capped at SELF_PLAY_MAX_GAMES_PER_DAY per 24h),
+ *      starts a self-play game with a random subset of funded bots so on-chain
+ *      activity never goes silent.
  *
  * Every game-critical action (role commitment, voting, end detection) is driven
  * by polling chain state — never by socket events, which the backend relay can
@@ -26,7 +28,9 @@ import {
   STAKE_AMOUNT,
   BOT_MAX_STAKE_WEI,
   MIN_GAME_CELO_WEI,
-  SELF_PLAY_IDLE_MS,
+  SELF_PLAY_MIN_MS,
+  SELF_PLAY_MAX_MS,
+  SELF_PLAY_MAX_GAMES_PER_DAY,
   SELF_PLAY_DISABLED,
   BOT_RUNNER_SECRET,
 } from './config.js'
@@ -455,6 +459,31 @@ function release(idx: number[]): void {
   if (freeIndices().length === bots.length) allIdleSince = Date.now()
 }
 
+// ── Self-play cadence (randomized + budget-capped) ─────────────────────────────
+// Each self-play game waits a fresh random idle gap drawn from
+// [SELF_PLAY_MIN_MS, SELF_PLAY_MAX_MS] so activity doesn't fire on a predictable
+// clock. A rolling 24h counter caps games at SELF_PLAY_MAX_GAMES_PER_DAY so a
+// cluster of short gaps can never blow the CELO budget.
+const randInt = (min: number, max: number): number =>
+  min + Math.floor(Math.random() * (max - min + 1))
+const shuffle = <T>(arr: T[]): T[] => {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+const pickIdleTarget = (): number => randInt(SELF_PLAY_MIN_MS, SELF_PLAY_MAX_MS)
+let nextIdleTarget = pickIdleTarget()        // re-drawn after each self-play game
+const selfPlayStarts: number[] = []          // start timestamps within the last 24h
+function underDailyCap(): boolean {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000
+  while (selfPlayStarts.length && selfPlayStarts[0] < cutoff) selfPlayStarts.shift()
+  return selfPlayStarts.length < SELF_PLAY_MAX_GAMES_PER_DAY
+}
+const recordSelfPlay = (): void => { selfPlayStarts.push(Date.now()) }
+
 async function poolTick(): Promise<void> {
   // 1. Human demand first.
   const requests = await fetchRequests()
@@ -471,32 +500,52 @@ async function poolTick(): Promise<void> {
   }
 
   // 2. Idle self-play fallback — only when the whole pool is free and quiet.
+  //    The idle gap (nextIdleTarget) is re-drawn from [MIN, MAX] after every
+  //    game so self-play never fires on a predictable clock.
   if (
     !SELF_PLAY_DISABLED &&
     requests.length === 0 &&
     bots.length >= 4 &&
     freeIndices().length === bots.length &&
-    Date.now() - allIdleSince >= SELF_PLAY_IDLE_MS
+    Date.now() - allIdleSince >= nextIdleTarget
   ) {
     // Pre-flight gas guard: a self-play game needs at least 4 bots that can
     // each afford the FULL game. Starting with fewer funded bots deadlocks
     // the room at the commit phase and wastes the funded bots' gas.
     const funded = await affordableIndices(freeIndices(), { fresh: true })
     if (funded.length < 4) {
-      // Push the idle clock back so we don't re-check (and re-warn) every
-      // 5s tick — retry after the next full idle period.
+      // Push the idle clock back (with a fresh random gap) so we don't
+      // re-check/re-warn every 5s tick — retry after the next full idle period.
       console.warn(
         `[pool] only ${funded.length}/${bots.length} bot(s) can afford a full game — ` +
-        `skipping self-play (next check in ${SELF_PLAY_IDLE_MS / 1000}s)`,
+        `skipping self-play (next check in ~${Math.round(nextIdleTarget / 1000)}s)`,
       )
       allIdleSince = Date.now()
+      nextIdleTarget = pickIdleTarget()
+    } else if (!underDailyCap()) {
+      // Hard budget ceiling: a random cluster of short intervals can't exceed
+      // SELF_PLAY_MAX_GAMES_PER_DAY. Back off with a fresh gap.
+      console.log(
+        `[pool] daily self-play cap (${SELF_PLAY_MAX_GAMES_PER_DAY}/24h) reached — skipping`,
+      )
+      allIdleSince = Date.now()
+      nextIdleTarget = pickIdleTarget()
     } else if (await hasRoomCapacity()) {
       // Backpressure: createRoom reverts with TooManyActiveRooms once the
       // contract is at capacity. Skip quietly instead of burning gas on a
       // doomed tx.
-      const take = funded
+      //
+      // Draw a RANDOM SUBSET of the FUNDED bots (never the raw pool) so an
+      // under-funded bot can't be pulled into — and stall — the game. Size is
+      // random in [4, funded.length] to vary the apparent player count.
+      const take = shuffle(funded).slice(0, randInt(4, funded.length))
       reserve(take)
-      console.log('[pool] no human demand — starting a self-play game')
+      recordSelfPlay()
+      nextIdleTarget = pickIdleTarget()
+      console.log(
+        `[pool] no human demand — starting a self-play game ` +
+        `with ${take.length}/${funded.length} funded bot(s)`,
+      )
       void selfPlay(take)
         .catch(err => console.warn(`[pool] self-play failed: ${err.message}`))
         .finally(() => release(take))
@@ -549,7 +598,12 @@ async function main(): Promise<void> {
   console.log('\nBot wallets:')
   for (const b of bots) console.log(`  Bot ${b.index + 1}: ${b.address}`)
   console.log(`\nMax human-room stake: ${BOT_MAX_STAKE_WEI} wei`)
-  console.log(`Self-play after idle: ${SELF_PLAY_DISABLED ? 'DISABLED' : `${SELF_PLAY_IDLE_MS / 1000}s`}`)
+  console.log(
+    `Self-play cadence: ${SELF_PLAY_DISABLED
+      ? 'DISABLED'
+      : `${Math.round(SELF_PLAY_MIN_MS / 1000)}-${Math.round(SELF_PLAY_MAX_MS / 1000)}s random gap, ` +
+        `max ${SELF_PLAY_MAX_GAMES_PER_DAY}/24h`}`,
+  )
   console.log('\nPool running. Waiting for human rooms / idle self-play...\n')
 
   // eslint-disable-next-line no-constant-condition

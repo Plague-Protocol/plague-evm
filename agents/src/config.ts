@@ -91,6 +91,20 @@ export const SELF_PLAY_IDLE_MS = Number(process.env.SELF_PLAY_IDLE_MS ?? 300_000
 // funds and you don't want them burning gas on maintenance games.
 export const SELF_PLAY_DISABLED = (process.env.SELF_PLAY_DISABLED ?? 'false').toLowerCase() === 'true'
 
+// Randomized self-play cadence. Instead of a fixed idle gap (SELF_PLAY_IDLE_MS,
+// now unused by the gate), each game waits a FRESH random interval drawn from
+// [SELF_PLAY_MIN_MS, SELF_PLAY_MAX_MS] so games don't fire on a predictable clock
+// (looks human). The AVERAGE of this range drives CELO spend — the spread only
+// hides the pattern. Defaults 6h–18h (avg 12h ≈ 2 games/day, matching the old
+// fixed 12h cadence).
+export const SELF_PLAY_MIN_MS = Number(process.env.SELF_PLAY_MIN_MS ?? 6 * 60 * 60 * 1000)
+export const SELF_PLAY_MAX_MS = Number(process.env.SELF_PLAY_MAX_MS ?? 18 * 60 * 60 * 1000)
+
+// Hard ceiling on self-play games per rolling 24h. The random draws above can
+// occasionally cluster; this is the real budget guardrail so a cluster of short
+// gaps can't blow the CELO budget. Default 3 (avg cadence is ~2/day).
+export const SELF_PLAY_MAX_GAMES_PER_DAY = Number(process.env.SELF_PLAY_MAX_GAMES_PER_DAY ?? 3)
+
 // Shared secret for the runner's calls to the backend bot-coordination API.
 export const BOT_RUNNER_SECRET = process.env.BOT_RUNNER_SECRET ?? ''
 
