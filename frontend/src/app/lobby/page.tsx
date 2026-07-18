@@ -442,7 +442,7 @@ function getJoinButtonState(
     // Your own room is ALWAYS enterable \u2014 even when full, which disables
     // joining for everyone else. The host must be able to get in to start
     // the game (they're no longer auto-redirected after creating).
-    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Enter the Dark', disabled: isJoining }
+    return { bg: 'rgba(107,142,35,0.12)', border: '#84cc16', color: '#84cc16', label: 'Enter the Dark', disabled: isJoining }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
@@ -488,6 +488,10 @@ function RoomCard({
   // true whenever the connected wallet hosts or has joined this room.
   const showEndRoom  = isMyRoom && room.status === 'waiting' && isExpired && !isFull
   const joinBtn      = getJoinButtonState(room, isMyRoom, isFull, isExpired, lockedOut, isJoining)
+  // Single out the host's own actionable "Enter the Dark" button with a
+  // breathing bio-glow (toxic-pulse) so it reads as THE next step. Excludes the
+  // expired/ended states, which aren't enterable.
+  const highlightEntry = isMyRoom && !isExpired && room.status !== 'ended'
 
   let cardBorderColor = 'rgba(107,142,35,0.2)'
   if (isExpired && room.status === 'waiting') cardBorderColor = 'rgba(143,168,130,0.15)'
@@ -597,8 +601,15 @@ function RoomCard({
           <button
             onClick={() => onJoin(room)}
             disabled={joinBtn.disabled}
-            className="w-full whitespace-nowrap rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40 md:w-auto"
-            style={{ backgroundColor: joinBtn.bg, borderColor: joinBtn.border, color: joinBtn.color }}
+            className={`w-full whitespace-nowrap rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40 md:w-auto${highlightEntry ? ' toxic-pulse' : ''}`}
+            style={{
+              backgroundColor: joinBtn.bg,
+              borderColor: joinBtn.border,
+              color: joinBtn.color,
+              // Static resting glow — also the sole glow for reduced-motion
+              // users, since toxic-pulse only animates when motion is allowed.
+              ...(highlightEntry ? { boxShadow: '0 0 14px rgba(107,142,35,0.45)' } : {}),
+            }}
           >
             {joinBtn.label}
           </button>
