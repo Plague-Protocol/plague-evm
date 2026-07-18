@@ -271,11 +271,11 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
       }
     }
     await loadRooms()
-    // No auto-redirect: the host enters via the room card's "Into the Horde"
+    // No auto-redirect: the host enters via the room card's "Enter the Dark"
     // button. That explicit click is a fresh user gesture right before the
     // game page mounts, which is what lets the browser play the arena-doors
     // audio (the create flow's wallet+tx wait outlives the autoplay window).
-    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Into the Horde" on your room to step in.`)
+    toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Enter the Dark" on your room to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -349,11 +349,11 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
     await requestRoomRefresh(room.id.toString())
 
     // No auto-redirect: like the host flow, the joiner enters via an explicit
-    // "Into the Horde" click — a fresh gesture right before the game page
+    // "Enter the Dark" click — a fresh gesture right before the game page
     // mounts, so the entrance audio is reliably allowed (the approve+join tx
     // wait outlives the browser's autoplay window).
     await loadRooms()
-    toast.success(`You're staked into ${roomLabel(room)} — hit "Into the Horde" to step in.`)
+    toast.success(`You're staked into ${roomLabel(room)} — hit "Enter the Dark" to step in.`)
   } catch (err) {
     toast.error(getFriendlyError(err))
   } finally {
@@ -442,7 +442,7 @@ function getJoinButtonState(
     // Your own room is ALWAYS enterable \u2014 even when full, which disables
     // joining for everyone else. The host must be able to get in to start
     // the game (they're no longer auto-redirected after creating).
-    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Into the Horde', disabled: isJoining }
+    return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Enter the Dark', disabled: isJoining }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
     return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
@@ -541,7 +541,7 @@ function RoomCard({
       {/* Stats + action row — stats left, CTA right on desktop; wraps to a
           full-width CTA bar on narrow screens. Stats keep their natural width
           (no forced single-line squeeze — that broke values mid-number); the
-          short "Into the Horde" label keeps the whole thing to <=2 lines. */}
+          short "Enter the Dark" label keeps the whole thing to <=2 lines. */}
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3 md:flex-nowrap md:items-center">
         <div className="flex flex-wrap gap-4">
           <div className="text-center">
