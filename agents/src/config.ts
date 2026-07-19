@@ -95,10 +95,10 @@ export const SELF_PLAY_DISABLED = (process.env.SELF_PLAY_DISABLED ?? 'false').to
 // now unused by the gate), each game waits a FRESH random interval drawn from
 // [SELF_PLAY_MIN_MS, SELF_PLAY_MAX_MS] so games don't fire on a predictable clock
 // (looks human). The AVERAGE of this range drives CELO spend — the spread only
-// hides the pattern. Defaults 6h–18h (avg 12h ≈ 2 games/day, matching the old
-// fixed 12h cadence).
-export const SELF_PLAY_MIN_MS = Number(process.env.SELF_PLAY_MIN_MS ?? 6 * 60 * 60 * 1000)
-export const SELF_PLAY_MAX_MS = Number(process.env.SELF_PLAY_MAX_MS ?? 18 * 60 * 60 * 1000)
+// hides the pattern. Defaults 8h–12h → a guaranteed 2–3 games/day (24÷12=2 floor,
+// 24÷8=3 ceiling), avg ~2.4/day. Keep MAX < 12h to guarantee the 2/day floor.
+export const SELF_PLAY_MIN_MS = Number(process.env.SELF_PLAY_MIN_MS ?? 8 * 60 * 60 * 1000)
+export const SELF_PLAY_MAX_MS = Number(process.env.SELF_PLAY_MAX_MS ?? 12 * 60 * 60 * 1000)
 
 // Hard ceiling on self-play games per rolling 24h. The random draws above can
 // occasionally cluster; this is the real budget guardrail so a cluster of short
