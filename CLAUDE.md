@@ -66,6 +66,48 @@ Live-ops playbook (stuck game phases, benched bots / gas floor, gas-drain
 diagnosis, chat names, wallet session): [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 Check it before re-deriving a diagnosis for a production symptom.
 
+## MiniPay support (⚠️ UNVERIFIED — not yet tested on a device)
+
+The app loads in MiniPay's in-app browser. Four fixes landed 2026-07-20 after it
+was found asking MiniPay users to connect a wallet. **None of them have been
+confirmed against real MiniPay** — they typecheck and build, nothing more.
+Verifying needs ngrok + a physical phone (MiniPay has no emulator). Delete this
+warning once tested.
+
+- **Never use `createWallet('io.metamask')` to reach MiniPay's provider.** In
+  thirdweb v5 that resolves via `injectedProvider()`, a strict EIP-6963 rdns
+  lookup (`mipdStore.js`: `find(p => p.info.rdns === walletId)`) with **no
+  `window.ethereum` fallback**. MiniPay injects the provider but doesn't
+  announce that rdns, so the lookup returns `undefined` and thirdweb silently
+  degrades to its WalletConnect/deeplink path — surfacing as the connect modal
+  appearing *inside* MiniPay, where there should be no wallet UI at all. Use
+  `EIP1193.fromProvider({ provider: window.ethereum })`. The old call looked
+  correct and even carried a comment claiming it read `window.ethereum`.
+  (wagmi's `injected({ target: 'metaMask' })`, which MiniPay's own docs show,
+  *does* have an `isMetaMask` fallback — hence the trap.)
+- **MiniPay sets the fee currency, not you.** Per
+  [docs](https://docs.minipay.xyz/technical-references/send-transaction.html):
+  "MiniPay may ignore feeCurrency and choose the token the user has the most
+  of." So do **not** plumb `feeCurrency` through — it's overridden. But *our own*
+  `estimateContractGas` goes through the RPC proxy without it, so the node
+  simulates a native-CELO payer with a zero balance and can reject with
+  "insufficient funds" before MiniPay is consulted. `gasLimitFor()` in
+  `lib/contract.ts` returns `undefined` under MiniPay so the wallet estimates.
+- **No `wallet_switchEthereumChain`.** MiniPay is Celo-only and rejects it with
+  a code other than 4902, which `ensureChain()` rethrows — killing every tx.
+  Short-circuited via `isMiniPay()`.
+- **MiniPay users hold USDC/USDT, often zero USDm.** Stakes are USDm-only
+  (contract-level), so the lobby reads USDC (`0xcebA93…118C`, **6 dec**) and
+  USDT (`0x48065f…3D5e`, **6 dec**) when USDm is 0 and shows a convert banner.
+  Mainnet only — neither exists on Sepolia. Conversion is a hand-off to
+  MiniPay's Pockets screen (`https://link.minipay.xyz/balance`); **no deeplink
+  pre-fills a swap**. An in-app swap via Mento V3 (USDC/USDm pool
+  `0x462fe0…A19E`, router `0x486184…B6f6`) is designed but unbuilt.
+- MiniPay constraints that already shape this code: **no message signing**
+  (`signMessage` is exposed but never called — keep it that way), and **never
+  display or require CELO** (MiniPay hides it; the low-CELO gate is already
+  `isMiniPay`-exempt).
+
 ## Key facts that have caused confusion before
 
 - **Platform fee is 1.5%**, i.e. `(pot * 15) / 1000` in `PlagueGame.sol` (~L1235). It was raised from 0.3% in commit `4834ea0` (2026-05-14). Any code/test/doc still saying 0.3% is stale.
