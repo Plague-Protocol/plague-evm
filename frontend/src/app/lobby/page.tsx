@@ -27,6 +27,21 @@ const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
 // Token name shown to users — always USDm.
 const STABLE_TOKEN = 'USDm'
 
+// Stakes are denominated in USDm, but MiniPay users very often hold only USDC
+// or USDT — reading USDm alone shows them a bare 0.00 with no reason for it.
+// Mainnet only; neither token exists on Sepolia.
+// NOTE: USDC/USDT are 6-decimal, USDm is 18. Do not reuse formatCUSDBalance.
+const ALT_STABLES: Record<number, ReadonlyArray<{ symbol: string; address: `0x${string}`; decimals: number }>> = {
+  42220: [
+    { symbol: 'USDC', address: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', decimals: 6 },
+    { symbol: 'USDT', address: '0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e', decimals: 6 },
+  ],
+}
+
+// MiniPay's Pockets screen, where its built-in swap lives. MiniPay publishes no
+// deeplink that pre-fills a swap, so this is the closest handoff available.
+const MINIPAY_POCKETS_URL = 'https://link.minipay.xyz/balance'
+
 // Below this native-CELO balance a non-MiniPay wallet likely can't finish a game:
 // the ZK role-commitment alone costs ~0.42 CELO in gas, and a wallet that can
 // afford joinRoom but not the commit deadlocks the room. Used only to surface a
@@ -682,6 +697,8 @@ export default function LobbyPage() {
   const [celoBalance, setCeloBalance]           = useState<bigint | null>(null)
   const [nextClaimTimestamp, setNextClaimTimestamp] = useState<number>(0)
   const [claiming, setClaiming]                 = useState(false)
+  // USDC/USDT the wallet holds instead of USDm. Empty = none, or not yet read.
+  const [altStables, setAltStables]             = useState<Array<{ symbol: string; amount: number }>>([])
 
   // ── Derived faucet values ──────────────────────────────────────────────────
   const network     = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
@@ -709,6 +726,19 @@ export default function LobbyPage() {
       const bal = await readCUSDBalance(address, cUSDAddr, net)
       setCusdBalance(formatCUSDBalance(bal))
       setHasStable(bal > 0n)
+      // Only worth reading the alts when USDm can't cover a stake anyway.
+      // Best-effort — a failed read just means no conversion hint.
+      if (bal === 0n) {
+        const held = await Promise.all(
+          (ALT_STABLES[chainId] ?? []).map(async token => {
+            const raw = await readCUSDBalance(address, token.address, net).catch(() => 0n)
+            return { symbol: token.symbol, amount: Number(raw) / 10 ** token.decimals }
+          }),
+        )
+        setAltStables(held.filter(h => h.amount > 0))
+      } else {
+        setAltStables([])
+      }
     } catch { /* silently ignore */ }
     // Gas hint: MiniPay pays gas in USDm, so it never needs CELO. For every other
     // wallet, flag a native-CELO balance too low to complete a game.
@@ -1064,6 +1094,27 @@ export default function LobbyPage() {
                 requiredWei={MIN_GAS_CELO_WEI}
                 variant="banner"
               />
+            </div>
+          )}
+
+          {/* Holds USDC/USDT but no USDm — without this they see an empty
+              balance and a rejected stake with no explanation of the mismatch. */}
+          {altStables.length > 0 && (
+            <div
+              className="mb-6 rounded-lg border p-4"
+              style={{ backgroundColor: 'rgba(245,197,24,0.06)', borderColor: 'rgba(245,197,24,0.4)' }}
+            >
+              <p className="font-mono text-sm" style={{ color: '#f5c518' }}>
+                You hold {altStables.map(a => `${a.amount.toFixed(2)} ${a.symbol}`).join(' and ')}, but
+                stakes are paid in {STABLE_TOKEN}. Convert to {STABLE_TOKEN} to play.
+              </p>
+              <a
+                href={MINIPAY_POCKETS_URL}
+                className="mt-3 inline-block rounded px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                style={{ backgroundColor: '#f5c518', color: '#0a0e27' }}
+              >
+                Convert in MiniPay
+              </a>
             </div>
           )}
 
