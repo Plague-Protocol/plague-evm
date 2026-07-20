@@ -208,7 +208,11 @@ function GamePageInner() { // NOSONAR
   type ChatMsg = { sender: string; displayName: string; message: string; timestamp: number }
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
   const [chatInput, setChatInput]       = useState('')
-  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+  // Whether the reader is sitting at the bottom of the chat log. Recorded on
+  // scroll (i.e. before new content arrives) so the auto-scroll effect can tell
+  // "was at the bottom" from "scrolled up reading history".
+  const chatPinnedRef = useRef(true)
   const phaseAdvanceNudgeKeyRef = useRef<string>('')
 
   // ── Mobile tab navigation ───────────────────────────────────────────────
@@ -493,9 +497,20 @@ function GamePageInner() { // NOSONAR
     }
   }, [socket])
 
-  // Auto-scroll chat to bottom on new messages
+  // Auto-scroll chat to bottom on new messages.
+  //
+  // Deliberately scrolls the log container itself rather than calling
+  // scrollIntoView on a sentinel: scrollIntoView walks up and scrolls EVERY
+  // scrollable ancestor, including the window, so each incoming message used to
+  // jerk the whole page toward the chat panel mid-game. Setting scrollTop only
+  // moves this one element.
+  //
+  // Held back when the reader has scrolled up, so a message landing while
+  // they're reading history doesn't drag them back down.
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = chatScrollRef.current
+    if (!el || !chatPinnedRef.current) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [chatMessages])
 
   const handleSendChat = useCallback(() => {
@@ -1428,6 +1443,13 @@ function GamePageInner() { // NOSONAR
                 >
                   <p className="font-mono text-xs uppercase tracking-[0.2em] flex-shrink-0" style={{ color: '#6b8e23' }}>Room Chat</p>
                   <div
+                    ref={chatScrollRef}
+                    onScroll={e => {
+                      const el = e.currentTarget
+                      // 40px of slack so "close enough to the bottom" still counts
+                      // as pinned after smooth-scroll momentum settles.
+                      chatPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+                    }}
                     className="mt-3 overflow-y-auto space-y-2 pr-1 flex-1 min-h-0"
                     style={{
                       // Desktop has no fixed container height; cap so the list
@@ -1449,7 +1471,6 @@ function GamePageInner() { // NOSONAR
                         </div>
                       ))
                     )}
-                    <div ref={chatEndRef} />
                   </div>
                   <div className="mt-3 flex gap-2 flex-shrink-0">
                     <input
