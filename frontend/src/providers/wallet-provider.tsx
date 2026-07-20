@@ -19,7 +19,7 @@ import {
   useIsAutoConnecting,
   useSwitchActiveWalletChain,
 } from 'thirdweb/react'
-import { createWallet } from 'thirdweb/wallets'
+import { EIP1193 } from 'thirdweb/wallets'
 import { thirdwebClient, supportedWallets, targetChain, celo, celoSepolia } from '@/lib/thirdweb'
 
 declare global {
@@ -70,14 +70,25 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // load — surfaced as isLoading so the UI doesn't flash "Connect Wallet".
   const isAutoConnecting = useIsAutoConnecting()
 
-  // MiniPay injects window.ethereum — detect and auto-connect silently
+  // MiniPay injects window.ethereum — detect and auto-connect silently.
+  //
+  // Do NOT use createWallet('io.metamask') here. In thirdweb v5 that resolves
+  // through injectedProvider(), which is a strict EIP-6963 rdns lookup
+  // (mipdStore.js: `find(p => p.info.rdns === walletId)`) with no
+  // window.ethereum fallback. MiniPay injects the provider but does not
+  // announce itself over EIP-6963 as io.metamask, so the lookup returns
+  // undefined and thirdweb degrades to its WalletConnect/deeplink path —
+  // which surfaces as the connect modal appearing *inside* MiniPay, where
+  // there should be no wallet UI at all. Wrapping the injected provider
+  // directly sidesteps the lookup entirely.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (!window.ethereum?.isMiniPay) return
+    const provider = window.ethereum
+    if (!provider?.isMiniPay) return
     setIsMiniPay(true)
     twConnect(async () => {
-      const wallet = createWallet('io.metamask') // reads window.ethereum
-      await wallet.connect({ client: thirdwebClient })
+      const wallet = EIP1193.fromProvider({ provider })
+      await wallet.connect({ client: thirdwebClient, chain: targetChain() })
       return wallet
     })
   // twConnect is stable ref — only run once on mount

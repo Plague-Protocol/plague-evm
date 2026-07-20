@@ -7,9 +7,16 @@ import {
   maxUint256,
   parseAbi,
   parseEventLogs,
+  type PublicClient,
 } from 'viem'
 import { celoSepolia, celo } from 'viem/chains'
 import { toDataSuffix } from '@celo/attribution-tags'
+
+/** MiniPay's in-app browser. Gates the wallet quirks it doesn't share with
+ *  extension wallets: no chain switching, and gas paid in stablecoin. */
+function isMiniPay(): boolean {
+  return !!globalThis.window?.ethereum?.isMiniPay
+}
 
 // ── Attribution (Celo Builders hackathon) ──────────────────────────────────────
 // Celo Builders "Agentic Payments & DeFAI" hackathon attribution tag, appended to
@@ -167,8 +174,34 @@ export class PlagueContractClient {
     return makeWalletClient(account, this.chain)
   }
 
+  /**
+   * Gas limit to pass to writeContract, or undefined to let the wallet decide.
+   *
+   * We normally estimate here and pass an explicit limit so MetaMask doesn't
+   * run eth_estimateGas against its own (potentially lagging) RPC and render
+   * "Unavailable" for the network fee.
+   *
+   * MiniPay is the exception. Its users hold no native CELO — MiniPay pays the
+   * fee in whichever stablecoin they hold most of (it overrides any feeCurrency
+   * we set). But our estimate goes through the RPC proxy with no feeCurrency,
+   * so the node simulates a native-CELO payer with a zero balance and can
+   * reject with "insufficient funds" before MiniPay is ever consulted. Omitting
+   * `gas` hands estimation to MiniPay, which knows which token it's charging.
+   */
+  private async gasLimitFor(params: Parameters<PublicClient['estimateContractGas']>[0]): Promise<bigint | undefined> {
+    if (isMiniPay()) return undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const estimate = await this.publicClient.estimateContractGas(params as any)
+    return estimate * 130n / 100n // 30 % buffer
+  }
+
   private async ensureChain(): Promise<void> {
     if (!globalThis.window?.ethereum) return
+    // MiniPay is Celo-only and does not implement wallet_switchEthereumChain.
+    // It rejects with something other than 4902, which the catch below
+    // rethrows — killing every transaction. There is no chain to switch to,
+    // so skip the check entirely.
+    if (isMiniPay()) return
     const chainHex = `0x${this.chain.id.toString(16)}`
     try {
       await globalThis.window.ethereum.request({
@@ -219,10 +252,9 @@ export class PlagueContractClient {
     // writeContract sends the tx directly; the receipt contains the RoomCreated
     // event which gives us the real on-chain roomId.
     // Estimate gas via our publicClient (which has confirmed the approval is
-    // indexed — see approveCUSD). Passing an explicit gas to writeContract
-    // prevents MetaMask from calling eth_estimateGas on its own (potentially
-    // lagging) RPC and showing "Unavailable" for the network fee.
-    const gasEstimate = await this.publicClient.estimateContractGas({
+    // indexed — see approveCUSD). See gasLimitFor for why this is skipped
+    // under MiniPay.
+    const gas = await this.gasLimitFor({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'createRoom',
@@ -238,7 +270,7 @@ export class PlagueContractClient {
       args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
-      gas:          gasEstimate * 130n / 100n, // 30 % buffer
+      gas,
     })
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
     if (receipt.status === 'reverted') {
@@ -269,7 +301,7 @@ export class PlagueContractClient {
    */
   async joinRoom(account: `0x${string}`, roomId: bigint): Promise<void> {
     // Skip simulateContract for the same stale-allowance reason as createRoom.
-    const gasEstimate = await this.publicClient.estimateContractGas({
+    const gas = await this.gasLimitFor({
       address:      this.address,
       abi:          PLAGUE_GAME_ABI,
       functionName: 'joinRoom',
@@ -285,7 +317,7 @@ export class PlagueContractClient {
       args:         [roomId],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
-      gas:          gasEstimate * 130n / 100n,
+      gas,
     })
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
     if (receipt.status === 'reverted') {
