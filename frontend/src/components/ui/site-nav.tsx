@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { ConnectButton } from './connect-button'
 import { MuteButton } from './mute-button'
 import { OnlineCount } from './online-count'
+import { PlayerNameChip } from './player-name-chip'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -70,6 +71,9 @@ export function SiteNav({ currentPath }: SiteNavProps) {
         <div className="flex items-center gap-2">
           <span className="hidden sm:block"><OnlineCount /></span>
           <MuteButton />
+          <div className="hidden md:block" style={{ position: 'relative', zIndex: 110 }}>
+            <PlayerNameChip />
+          </div>
           <div className="hidden md:block" style={{ position: 'relative', zIndex: 100 }}>
             <ConnectButton />
           </div>
@@ -131,9 +135,12 @@ export function SiteNav({ currentPath }: SiteNavProps) {
               )
             })}
           </nav>
-          <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
-            <ConnectButton />
-            <OnlineCount />
+          <div className="mt-3 border-t pt-3" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
+            <PlayerNameChip inline />
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <ConnectButton />
+              <OnlineCount />
+            </div>
           </div>
         </div>
       )}

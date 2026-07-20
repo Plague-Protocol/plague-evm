@@ -13,6 +13,82 @@ const NicknameSchema = z.object({
 })
 
 /**
+ * Quarantine-ward flavour words used to auto-assign a display name on a
+ * player's first connect. The point is to never show a new player a blank
+ * identity: "Player 3" reads like a bug, "Subject 47" reads deliberate — and
+ * seeing a name they didn't choose is what prompts them to go change it.
+ * Every entry stays well under the 20-char cap once a number is appended.
+ */
+const NAME_PREFIXES = [
+  'Subject', 'Carrier', 'Specimen', 'Patient',
+  'Host', 'Vector', 'Strain', 'Vessel',
+] as const
+
+/**
+ * Draw a thematic name that no one holds yet. Early attempts stay in the
+ * two-digit range because "Subject 47" reads better than "Subject 4193"; if
+ * that space is crowded we widen rather than fail, so a busy pool still
+ * resolves. Returns null only if even the wide range keeps colliding, in which
+ * case the caller falls back to leaving the player unnamed.
+ */
+async function generateUniqueNickname(): Promise<string | null> {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const ceiling = attempt < 8 ? 99 : 9999
+    const prefix  = NAME_PREFIXES[Math.floor(Math.random() * NAME_PREFIXES.length)]
+    const candidate = `${prefix} ${Math.floor(Math.random() * ceiling) + 1}`
+    const taken = await prisma.playerNickname.findFirst({
+      where: { nickname: { equals: candidate, mode: 'insensitive' } },
+    })
+    if (!taken) return candidate
+  }
+  return null
+}
+
+/**
+ * POST /api/players/ensure-nickname
+ * Return this player's display name, assigning a generated one if they have
+ * none yet. Idempotent: an existing name is always returned untouched, so this
+ * is safe to call on every connect.
+ * Body: { address: string }
+ * Returns { nickname: string | null, generated: boolean }
+ */
+playerRouter.post('/ensure-nickname', async (req, res) => {
+  const parsed = z.object({ address: EvmAddress }).safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid EVM address' })
+  }
+  const { address } = parsed.data
+
+  const existing = await prisma.playerNickname.findUnique({ where: { address } })
+  if (existing) {
+    return res.json({ nickname: existing.nickname, generated: false })
+  }
+
+  const candidate = await generateUniqueNickname()
+  if (!candidate) {
+    return res.json({ nickname: null, generated: false })
+  }
+
+  try {
+    const record = await prisma.playerNickname.create({
+      data: { address, nickname: candidate },
+    })
+    return res.json({ nickname: record.nickname, generated: true })
+  } catch (err: unknown) {
+    // P2002 here means a concurrent request won the race — either on this
+    // address (two tabs connecting at once) or on the generated name itself.
+    // Re-read rather than retry: if this address now has a name, that name is
+    // the answer, and reporting it as pre-existing keeps the "generated" flag
+    // honest so the client doesn't double-toast.
+    if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'P2002') {
+      const now = await prisma.playerNickname.findUnique({ where: { address } })
+      return res.json({ nickname: now?.nickname ?? null, generated: false })
+    }
+    throw err
+  }
+})
+
+/**
  * PUT /api/players/nickname
  * Set or update a player's display nickname (upsert by address).
  * Body: { address: string, nickname: string }

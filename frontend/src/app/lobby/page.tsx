@@ -10,6 +10,8 @@ import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBa
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
+import { DisplayNameEditor } from '@/components/ui/display-name-editor'
+import { usePlayerName } from '@/providers/player-name-provider'
 import { primeArenaSounds } from '@/components/game/ArenaDoors'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -644,43 +646,12 @@ export default function LobbyPage() {
   const [roomNameInput, setRoomNameInput] = useState('')
   const [creating, setCreating]       = useState(false)
 
-  // ── Player nickname state ──────────────────────────────────────────────────
-  const [nicknameInput, setNicknameInput] = useState('')
-  const [savedNickname, setSavedNickname] = useState<string | null>(null)
-  const [savingNickname, setSavingNickname] = useState(false)
+  // ── Player nickname ────────────────────────────────────────────────────────
+  // Name + save live in PlayerNameProvider so this card and the nav chip share
+  // one value; this page only tracks whether the editor is expanded.
+  const { name: savedNickname } = usePlayerName()
   const [editingNickname, setEditingNickname] = useState(false)
-  const [nicknameAvailable, setNicknameAvailable] = useState<boolean | null>(null)
-  const [checkingNickname, setCheckingNickname] = useState(false)
   const lobbyRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const nicknameCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // ── Debounced nickname availability check ─────────────────────────────────
-  useEffect(() => {
-    if (nicknameCheckTimerRef.current) clearTimeout(nicknameCheckTimerRef.current)
-    const trimmed = nicknameInput.trim()
-    if (!trimmed || trimmed.length < 1 || trimmed === savedNickname) {
-      setNicknameAvailable(null)
-      setCheckingNickname(false)
-      return
-    }
-    setCheckingNickname(true)
-    nicknameCheckTimerRef.current = setTimeout(async () => {
-      try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
-        const params = new URLSearchParams({ nickname: trimmed })
-        if (address) params.set('address', address)
-        const res = await fetch(`${backendUrl}/api/players/check-nickname?${params}`)
-        if (res.ok) {
-          const data = await res.json() as { available: boolean }
-          setNicknameAvailable(data.available)
-        }
-      } catch { /* silently ignore */ }
-      setCheckingNickname(false)
-    }, 400)
-    return () => {
-      if (nicknameCheckTimerRef.current) clearTimeout(nicknameCheckTimerRef.current)
-    }
-  }, [nicknameInput, savedNickname, address])
 
   // ── Join state ─────────────────────────────────────────────────────────────
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
@@ -776,50 +747,6 @@ export default function LobbyPage() {
       setClaiming(false)
     }
   }
-
-  // ── Load own nickname on connect ──────────────────────────────────────────
-  useEffect(() => {
-    if (!address) return
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
-    fetch(`${backendUrl}/api/players/${address}/nickname`)
-      .then(r => r.json())
-      .then((d: { nickname: string | null }) => {
-        setSavedNickname(d.nickname)
-        setNicknameInput(d.nickname ?? '')
-        setEditingNickname(!d.nickname)
-      })
-      .catch(() => { /* silently ignore */ })
-  }, [address])
-
-  const handleSaveNickname = useCallback(async () => {
-    if (!address) return
-    const trimmed = nicknameInput.trim()
-    if (!trimmed) return
-    setSavingNickname(true)
-    try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
-      const res = await fetch(`${backendUrl}/api/players/nickname`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, nickname: trimmed }),
-      })
-      if (res.status === 409) {
-        const data = await res.json() as { error: string }
-        toast.error(data.error || 'This display name is already taken.')
-        setNicknameAvailable(false)
-        return
-      }
-      if (!res.ok) throw new Error('Failed to save')
-      setSavedNickname(trimmed)
-      setEditingNickname(false)
-      setNicknameAvailable(null)
-      toast.success(`Nickname saved: ${trimmed}`)
-    } catch {
-      toast.error('Could not save nickname. Try again.')
-    } finally {
-      setSavingNickname(false)
-    }
-  }, [address, nicknameInput])
 
   // ── Load room names after rooms load ────────────────────────────────────────
   const loadRooms = useCallback(async () => {
@@ -1216,7 +1143,7 @@ export default function LobbyPage() {
                           <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</span>
                           <button
                             aria-label="Edit display name"
-                            onClick={() => { setNicknameInput(savedNickname ?? ''); setEditingNickname(true) }}
+                            onClick={() => setEditingNickname(true)}
                             className="rounded p-0.5 transition-opacity hover:opacity-70"
                             style={{ color: '#4a5e44', lineHeight: 1 }}
                           >
@@ -1229,49 +1156,11 @@ export default function LobbyPage() {
                         </div>
                       ) : (
                         <>
-                          <label htmlFor="nicknameInput" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</label>
-                          <div className="flex gap-2">
-                            <input
-                              id="nicknameInput"
-                              type="text"
-                              maxLength={20}
-                              placeholder="Anonymous"
-                              value={nicknameInput}
-                              onChange={e => setNicknameInput(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && nicknameAvailable !== false && handleSaveNickname()}
-                              autoFocus
-                              className="min-w-0 flex-1 rounded border bg-transparent px-3 py-2 font-mono text-xs focus:outline-none placeholder:opacity-30"
-                              style={{
-                                borderColor: nicknameAvailable === false ? 'rgba(230,51,41,0.5)' : 'rgba(107,142,35,0.4)',
-                                color: '#d4c9b2',
-                              }}
-                            />
-                            <button
-                              onClick={handleSaveNickname}
-                              disabled={savingNickname || !nicknameInput.trim() || nicknameAvailable === false}
-                              className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                              style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23' }}
-                            >
-                              {savingNickname ? '…' : 'Save'}
-                            </button>
-                            {savedNickname && (
-                              <button
-                                onClick={() => { setEditingNickname(false); setNicknameAvailable(null) }}
-                                className="rounded border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-90"
-                                style={{ borderColor: 'rgba(212,201,178,0.2)', color: '#8fa882' }}
-                              >
-                                Cancel
-                              </button>
-                            )}
-                          </div>
-                          {/* Availability feedback */}
-                          {nicknameInput.trim() && nicknameInput.trim() !== savedNickname && (
-                            <p className="mt-1 font-mono text-[10px]" style={{
-                              color: checkingNickname ? '#4a5e44' : nicknameAvailable === true ? '#6b8e23' : nicknameAvailable === false ? '#e63329' : '#4a5e44',
-                            }}>
-                              {checkingNickname ? 'Checking…' : nicknameAvailable === true ? '✓ Available' : nicknameAvailable === false ? '✗ Already taken' : ''}
-                            </p>
-                          )}
+                          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</span>
+                          <DisplayNameEditor
+                            onDone={() => setEditingNickname(false)}
+                            onCancel={savedNickname ? () => setEditingNickname(false) : undefined}
+                          />
                         </>
                       )}
                     </div>

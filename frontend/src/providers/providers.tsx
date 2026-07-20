@@ -2,6 +2,7 @@
 
 import { ThirdwebProvider } from 'thirdweb/react'
 import { WalletProvider } from '@/providers/wallet-provider'
+import { PlayerNameProvider } from '@/providers/player-name-provider'
 import { SoundProvider } from '@/providers/sound-provider'
 import { SplashScreen } from '@/components/ui/splash-screen'
 import { Toaster } from 'sonner'
@@ -15,16 +16,18 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
     <SoundProvider>
       <SplashScreen onResolved={() => setSplashResolved(true)} />
       <WalletProvider>
-        {/* Visibility gate: hide children until splash resolves to prevent flash */}
-        <div
-          style={{
-            opacity: splashResolved ? 1 : 0,
-            transition: 'opacity 0.3s ease',
-            pointerEvents: splashResolved ? 'auto' : 'none',
-          }}
-        >
-          {children}
-        </div>
+        <PlayerNameProvider>
+          {/* Visibility gate: hide children until splash resolves to prevent flash */}
+          <div
+            style={{
+              opacity: splashResolved ? 1 : 0,
+              transition: 'opacity 0.3s ease',
+              pointerEvents: splashResolved ? 'auto' : 'none',
+            }}
+          >
+            {children}
+          </div>
+        </PlayerNameProvider>
       </WalletProvider>
       <Toaster
         position="bottom-right"
