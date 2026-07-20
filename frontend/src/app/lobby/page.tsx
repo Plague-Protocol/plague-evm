@@ -10,6 +10,7 @@ import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBa
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
+import { LowGasNotice } from '@/components/lobby/low-gas-notice'
 import { DisplayNameEditor } from '@/components/ui/display-name-editor'
 import { usePlayerName } from '@/providers/player-name-provider'
 import { primeArenaSounds } from '@/components/game/ArenaDoors'
@@ -673,6 +674,12 @@ export default function LobbyPage() {
   // ── Faucet / balance state ─────────────────────────────────────────────────
   const [cusdBalance, setCusdBalance]           = useState<string | null>(null)
   const [lowCelo, setLowCelo]                   = useState(false)
+  // Whether the wallet holds any USDm. null = not read yet / read failed, which
+  // the gas notice must treat as "unknown" rather than asserting a balance.
+  const [hasStable, setHasStable]               = useState<boolean | null>(null)
+  // Live native balance, shown in the gas notice so the player sees the actual
+  // shortfall instead of having to look it up. null = unread.
+  const [celoBalance, setCeloBalance]           = useState<bigint | null>(null)
   const [nextClaimTimestamp, setNextClaimTimestamp] = useState<number>(0)
   const [claiming, setClaiming]                 = useState(false)
 
@@ -701,6 +708,7 @@ export default function LobbyPage() {
     try {
       const bal = await readCUSDBalance(address, cUSDAddr, net)
       setCusdBalance(formatCUSDBalance(bal))
+      setHasStable(bal > 0n)
     } catch { /* silently ignore */ }
     // Gas hint: MiniPay pays gas in USDm, so it never needs CELO. For every other
     // wallet, flag a native-CELO balance too low to complete a game.
@@ -709,6 +717,7 @@ export default function LobbyPage() {
     } else {
       try {
         const celoBal = await readNativeBalance(address, net)
+        setCeloBalance(celoBal)
         setLowCelo(celoBal < MIN_GAS_CELO_WEI)
       } catch { /* silently ignore */ }
     }
@@ -867,6 +876,32 @@ export default function LobbyPage() {
     pushToGame(myActiveRoom.id)
   }, [myActiveRoom, pushToGame])
 
+  // Pre-flight gas gate. The banner covers awareness, but a wallet that was
+  // funded at page load can be drained mid-session, and a player who joins with
+  // enough CELO for joinRoom but not the role commit deadlocks the room. Re-read
+  // the live balance at the moment of action and block before the wallet prompt.
+  // MiniPay pays gas in USDm, so it's exempt. A failed read never blocks — the
+  // chain stays the source of truth and will reject the tx on its own.
+  const blockedByLowGas = useCallback(async (): Promise<boolean> => {
+    if (isMiniPay || !address || !chainId) return false
+    const net = chainId === 42220 ? 'mainnet' : 'testnet'
+    let celoBal: bigint
+    try {
+      celoBal = await readNativeBalance(address, net)
+    } catch {
+      return false
+    }
+    setCeloBalance(celoBal)
+    setLowCelo(celoBal < MIN_GAS_CELO_WEI)
+    if (celoBal >= MIN_GAS_CELO_WEI) return false
+    // Echoes the banner's figures verbatim — this is a reminder of what they
+    // already read, not a new number introduced at the point of blocking.
+    toast.error(
+      `Not enough CELO for gas. This wallet holds ${formatToken(celoBal)} CELO; a full game costs about ${formatToken(MIN_GAS_CELO_WEI)} CELO. Top up, or use MiniPay to pay fees in ${STABLE_TOKEN} instead.`,
+    )
+    return true
+  }, [isMiniPay, address, chainId])
+
   const handleCreateRoom = useCallback(async () => {
     // Unlock the arena-entrance audio while this click's gesture is still
     // valid — the wallet prompt + tx wait outlive the browser's autoplay
@@ -876,6 +911,7 @@ export default function LobbyPage() {
       toast.error(`You are already in ${roomLabel(myActiveRoom)}. Leave or wait for it to end before creating a new one.`)
       return
     }
+    if (await blockedByLowGas()) return
     await runCreateRoomAction({
       isConnected,
       address,
@@ -887,7 +923,7 @@ export default function LobbyPage() {
       setCreating,
       loadRooms,
     })
-  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, myActiveRoom])
+  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, myActiveRoom, blockedByLowGas])
 
   const handleJoin = useCallback(async (room: RoomRow) => {
     primeArenaSounds() // unlock entrance audio while the click gesture is valid
@@ -905,6 +941,7 @@ export default function LobbyPage() {
       toast.error(`You are already in ${roomLabel(myActiveRoom)}. You cannot join another room until that one ends.`)
       return
     }
+    if (await blockedByLowGas()) return
     await runJoinRoomAction({
       room,
       isConnected,
@@ -915,7 +952,7 @@ export default function LobbyPage() {
       pushToGame,
       loadRooms,
     })
-  }, [isConnected, address, chainId, connect, pushToGame, loadRooms, myActiveRoom])
+  }, [isConnected, address, chainId, connect, pushToGame, loadRooms, myActiveRoom, blockedByLowGas])
 
   // ── End Room (any participant expires a timed-out waiting room; refunds all) ──
   const handleEndRoom = useCallback(async (room: RoomRow) => {
@@ -1014,6 +1051,22 @@ export default function LobbyPage() {
 
       <div className="px-6 pb-20">
         <div className="mx-auto w-full max-w-6xl">
+          {/* Gas warning, above the fold. The wallet card carries the same
+              notice, but it sits in the order-2 column — on mobile the entire
+              Join list renders before it, so a player would hit the wallet
+              prompt long before scrolling that far. */}
+          {lowCelo && (
+            <div className="mb-6">
+              <LowGasNotice
+                stableToken={STABLE_TOKEN}
+                hasStable={hasStable}
+                celoBalanceWei={celoBalance}
+                requiredWei={MIN_GAS_CELO_WEI}
+                variant="banner"
+              />
+            </div>
+          )}
+
           <div className="grid gap-6 sm:gap-8 lg:grid-cols-[0.9fr_1.1fr]">
 
             {/* Left column: Create Room — order-2 on mobile so Join list appears first */}
@@ -1174,14 +1227,16 @@ export default function LobbyPage() {
 
                     {/* Low-CELO gas hint — only for non-MiniPay wallets that are
                         actually short on CELO. MiniPay pays gas in USDm, so it's
-                        excluded via lowCelo (never set true when isMiniPay). */}
+                        excluded via lowCelo (never set true when isMiniPay).
+                        Also shown as a page-level banner above the fold; this
+                        card is the in-context copy next to the balance. */}
                     {lowCelo && (
-                      <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(245,197,24,0.3)', backgroundColor: 'rgba(245,197,24,0.06)' }}>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#f5c518' }}>⛽ Low on CELO</p>
-                        <p className="mt-1 font-mono text-[11px] leading-relaxed" style={{ color: '#d9c47a' }}>
-                          You hold {STABLE_TOKEN} but need a little <span style={{ color: '#f5c518' }}>CELO</span> to pay gas fees, or the game can’t submit your moves. Add a little CELO to this wallet, or use <span style={{ color: '#f5c518' }}>MiniPay</span> to pay fees in {STABLE_TOKEN} instead.
-                        </p>
-                      </div>
+                      <LowGasNotice
+                        stableToken={STABLE_TOKEN}
+                        hasStable={hasStable}
+                        celoBalanceWei={celoBalance}
+                        requiredWei={MIN_GAS_CELO_WEI}
+                      />
                     )}
 
                     {/* Testnet faucet */}
