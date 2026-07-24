@@ -50,7 +50,11 @@ export function BotControls({
 
   useEffect(() => {
     void load()
-    const id = setInterval(() => void load(), 5_000)
+    // Backend-only fetch (no RPC), but still pointless in a hidden tab.
+    const id = setInterval(() => {
+      if (document.hidden) return
+      void load()
+    }, 5_000)
     return () => clearInterval(id)
   }, [load])
 

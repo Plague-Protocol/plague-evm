@@ -1018,12 +1018,22 @@ export default function LobbyPage() {
   }, [address, loadRooms])
 
   // ── Periodic room refresh (10 s) to catch state changes from other players ─
+  // Skipped entirely while the tab is hidden (each tick is a chain read
+  // through the metered RPC proxy — a backgrounded lobby tab must not drip
+  // credits all day); an immediate refresh on refocus keeps the UX identical.
   useEffect(() => {
     const id = setInterval(() => {
-      if (!navigator.onLine) return
+      if (document.hidden || !navigator.onLine) return
       loadRooms()
     }, 10_000)
-    return () => clearInterval(id)
+    const onVisible = () => {
+      if (!document.hidden && navigator.onLine) loadRooms()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [loadRooms])
 
   const createBtnLabel = getCreateButtonLabel(isConnected, creating)
