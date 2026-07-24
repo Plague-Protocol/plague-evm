@@ -54,7 +54,7 @@ type LeaderboardResponse = {
 type Tab = string
 
 // Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
-const POINTS = { win: 7, draw: 5, loss: 1, shield: 3, survival: 2 } as const
+const POINTS = { win: 7, draw: 5, loss: 2, shield: 3 } as const
 
 /** Fallback for rows from a backend that predates server-side points. */
 function computePoints(p: LeaderboardPlayer): number {
@@ -62,8 +62,7 @@ function computePoints(p: LeaderboardPlayer): number {
     p.wins * POINTS.win +
     p.draws * POINTS.draw +
     p.losses * POINTS.loss +
-    p.proofs * POINTS.shield +
-    (p.survivals ?? 0) * POINTS.survival
+    p.proofs * POINTS.shield
   )
 }
 
@@ -75,6 +74,17 @@ function sortByPoints(players: LeaderboardPlayer[]): LeaderboardPlayer[] {
   return [...players].sort((a, b) =>
     pointsOf(b) - pointsOf(a) || b.wins - a.wins || b.proofs - a.proofs
   )
+}
+
+/** "active 2d ago"-style label from the player's newest finished game. */
+function activeAgo(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
+  if (mins < 60) return 'active just now'
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `active ${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days <= 30) return `active ${days}d ago`
+  return `last seen ${new Date(iso).toLocaleDateString()}`
 }
 
 function seasonWindow(s: SeasonBoard): string {
@@ -121,7 +131,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {player.lastPlayedAt && (
             <span className="font-mono text-[10px] uppercase tracking-[0.12em]" style={{ color: '#4a5e44' }}>
-              {new Date(player.lastPlayedAt).toLocaleDateString()}
+              {activeAgo(player.lastPlayedAt)}
             </span>
           )}
           <span
@@ -446,11 +456,10 @@ export default function LeaderboardPage() {
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>How Points Work</p>
                   <div className="mt-4 space-y-2">
                     {[
-                      { label: 'Win a game',        value: `+${POINTS.win}`,      color: '#6b8e23' },
-                      { label: 'Draw',              value: `+${POINTS.draw}`,     color: '#f5c518' },
-                      { label: 'Play (even a loss)', value: `+${POINTS.loss}`,    color: '#8fa882' },
-                      { label: 'Shield used',       value: `+${POINTS.shield}`,   color: '#e63329' },
-                      { label: 'Survive to the end', value: `+${POINTS.survival}`, color: '#c97a12' },
+                      { label: 'Win a game',        value: `+${POINTS.win}`,    color: '#6b8e23' },
+                      { label: 'Draw',              value: `+${POINTS.draw}`,   color: '#f5c518' },
+                      { label: 'Shield used',       value: `+${POINTS.shield}`, color: '#e63329' },
+                      { label: 'Play (even a loss)', value: `+${POINTS.loss}`,  color: '#8fa882' },
                     ].map(s => (
                       <div
                         key={s.label}

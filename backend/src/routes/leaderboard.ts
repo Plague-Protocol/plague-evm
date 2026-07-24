@@ -29,12 +29,14 @@ type LeaderboardRow = {
  */
 export const POINTS = {
   win: 7,
-  draw: 5,     // draws (surviving to max rounds) are rarer and harder than
-               // wins in practice — score them as near-wins
-  loss: 1,
-  shield: 3,   // per innocence proof submitted — costs real USDm (proof fee)
-               // and is capped at one per round, so it can't be grinded
-  survival: 2, // reached game end without being eliminated
+  draw: 5,   // draws (surviving to max rounds) are rarer and harder than
+             // wins in practice — score them as near-wins
+  loss: 2,
+  shield: 3, // per innocence proof submitted — costs real USDm (proof fee)
+             // and is capped at one per round, so it can't be grinded
+  // No separate survival bonus: winners are always alive at game end
+  // (the contract only pays living players), so it double-counted wins
+  // and only ever distinguished surviving losers from eliminated ones.
 } as const
 
 type SeasonDef = {
@@ -289,8 +291,7 @@ function aggregateRows(
         existing.wins * POINTS.win +
         existing.draws * POINTS.draw +
         existing.losses * POINTS.loss +
-        existing.proofs * POINTS.shield +
-        existing.survivals * POINTS.survival
+        existing.proofs * POINTS.shield
 
       statsByAddress.set(address, existing)
     }
