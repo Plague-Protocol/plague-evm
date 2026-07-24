@@ -18,6 +18,7 @@ import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayersGrid } from '@/components/game/PlayersGrid'
+import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import { BotControls } from '@/components/lobby/bot-controls'
 import type { RoundPhase } from '@/types/game'
@@ -1239,6 +1240,17 @@ function GamePageInner() { // NOSONAR
                       {activePlayers.length} alive
                     </span>
                   </div>
+                  <OutbreakScene
+                    key={roomId ?? 'no-room'}
+                    className="mt-5"
+                    totalPlayers={totalPlayers}
+                    aliveCount={activePlayers.length}
+                    zombieCount={infectedCount}
+                    myStatus={localPlayer?.status ?? null}
+                    outcome={round > 0 ? (result?.outcome ?? null) : null}
+                    socket={socket}
+                    localAddress={address}
+                  />
                   <div className="mt-6 rounded-lg border p-5" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.15)' }}>
                     {playersPanelBody}
                   </div>

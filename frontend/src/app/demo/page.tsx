@@ -8,6 +8,7 @@ import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayerCard } from '@/components/game/PlayersGrid'
+import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 
 // ── Demo limits ──────────────────────────────────────────────────────────────
@@ -689,6 +690,13 @@ export default function DemoPage() {
   }, [you.shieldRound])
   const alivePlayers = players.filter(p => !p.eliminated)
   const infectedAlive = alivePlayers.filter(p => p.status === 'infected').length
+  // Quarantine-cam adapter: the scene wants the same public counts + own-status
+  // shape the real game page feeds it.
+  let youSceneStatus: 'clean' | 'infected' | 'eliminated' = you.status
+  if (you.eliminated) youSceneStatus = 'eliminated'
+  let sceneOutcome: 'clean_win' | 'infected_win' | 'max_rounds_draw' | null = null
+  if (outcome === 'clean_win' || outcome === 'infected_win') sceneOutcome = outcome
+  else if (outcome) sceneOutcome = 'max_rounds_draw'
   const youVoted = Boolean(votes[YOU_ID])
   const canVote = phase === 'voting' && !you.eliminated && !youVoted
   const youShielded = you.shieldRound === round && round > 0
@@ -929,6 +937,14 @@ export default function DemoPage() {
                     <h2 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
                     <span className="font-mono text-xs rounded border px-2 py-0.5" style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}>{alivePlayers.length} alive</span>
                   </div>
+                  <OutbreakScene
+                    className="mb-4"
+                    totalPlayers={players.length}
+                    aliveCount={alivePlayers.length}
+                    zombieCount={infectedAlive}
+                    myStatus={youSceneStatus}
+                    outcome={sceneOutcome}
+                  />
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {players.map((p, i) => {
                       const selected = phase === 'voting' && selectedVote === p.id
