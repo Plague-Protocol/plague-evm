@@ -118,7 +118,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
   return (
     <div
-      className={`rise-in grid items-center ${ROW_GRID_CLASS} rounded-xl border py-4 transition-all duration-150 hover:scale-[1.005]`}
+      className={`rise-in grid items-center ${ROW_GRID_CLASS} rounded-xl border py-3 transition-all duration-150 hover:scale-[1.005] sm:py-4`}
       style={{
         borderColor: isTop3 ? `${rankColor}44` : 'rgba(107,142,35,0.12)',
         backgroundColor: isTop3 ? `${rankColor}0a` : '#0e180d',
@@ -180,7 +180,81 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
   )
 }
 
+/** The month's #1 styled as a collectible. A component because it renders in
+    two spots: above the table on phones, in the sidebar on desktop. */
+function ChampionCard({ champion, monthName, boardSize, loading }: {
+  champion: LeaderboardPlayer | null
+  monthName: string
+  boardSize: number
+  loading: boolean
+}) {
+  return (
+    <div className="champion-scene rise-in">
+      <div className="champion-card">
+        <div className="champion-inner p-5 text-center">
+          <div className="champion-backdrop" aria-hidden />
+          <div className="relative">
+            <p
+              className="font-heading text-xl font-bold uppercase tracking-[0.14em]"
+              style={{ color: '#f5c518', textShadow: '0 0 12px rgba(245,197,24,0.35)' }}
+            >
+              ★ {monthName} Champion ★
+            </p>
+            {champion ? (
+              <>
+                <div className="champion-avatar mx-auto mt-4">
+                  <Image
+                    src="/images/bg-patient-zero.webp"
+                    alt=""
+                    width={112}
+                    height={112}
+                    className="champion-avatar-img"
+                  />
+                  <span className="champion-avatar-initial font-display">
+                    {champion.displayName.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <p className="mt-3 truncate font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
+                  {champion.displayName}
+                </p>
+                <div className="mt-4 flex justify-center gap-5">
+                  <div>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Points</p>
+                    <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(champion).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
+                    <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{champion.wins}</p>
+                  </div>
+                  <div>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Shields</p>
+                    <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{champion.proofs}</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                {loading ? 'Loading…' : 'The throne is empty — top this month’s board to claim it.'}
+              </p>
+            )}
+            <p
+              className="mt-4 border-t pt-3 font-mono text-[9px] uppercase tracking-[0.22em]"
+              style={{ color: '#4a5e44', borderColor: 'rgba(245,197,24,0.15)' }}
+            >
+              Zombie Plague · No. 1 of {boardSize || '—'}
+            </p>
+          </div>
+          <div className="champion-sheen" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const PAGE_SIZE = 10
+// Phones get shorter pages — a 10-row list plus the sidebar cards is a
+// tiring scroll on a small screen.
+const MOBILE_PAGE_SIZE = 5
 
 export default function LeaderboardPage() {
   const [data, setData] = useState<LeaderboardResponse | null>(null)
@@ -189,6 +263,17 @@ export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>('monthly')
   const [page, setPage] = useState(1)
   const [bounty, setBounty] = useState<BountyConfig | null>(null)
+
+  // Tracks Tailwind's sm breakpoint so phones get shorter pages.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  const pageSize = isMobile ? MOBILE_PAGE_SIZE : PAGE_SIZE
 
   // Live bounty card content — independent of the leaderboard fetch so a
   // failure in either doesn't blank the other.
@@ -276,12 +361,12 @@ export default function LeaderboardPage() {
     : seasonBoards.get(activeTab) ?? globalRows
 
   // Reset paging (and month selection when leaving the tab) on any view change
-  useEffect(() => { setPage(1) }, [activeTab, selectedMonthId, data])
+  useEffect(() => { setPage(1) }, [activeTab, selectedMonthId, data, pageSize])
   useEffect(() => { setSelectedMonthId(null) }, [activeTab])
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
-  const pageSlice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const pageOffset = (page - 1) * PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
+  const pageSlice = sorted.slice((page - 1) * pageSize, page * pageSize)
+  const pageOffset = (page - 1) * pageSize
 
   const totalShields = useMemo(() => globalRows.reduce((s, p) => s + p.proofs, 0), [globalRows])
   const monthChampion = monthlyRows[0] ?? null
@@ -310,11 +395,8 @@ export default function LeaderboardPage() {
         </div>
 
         {/* Hero header */}
-        <header className="px-6 py-14 text-center">
+        <header className="px-6 py-10 text-center sm:py-14">
           <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-5">
-            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
-              Ranked by Points
-            </span>
             <h1
               className="font-display text-5xl font-black leading-none sm:text-7xl lg:text-8xl"
               style={{
@@ -394,6 +476,17 @@ export default function LeaderboardPage() {
           <div className="mx-auto w-full max-w-6xl">
             <div className="grid gap-8 lg:grid-cols-[1fr_300px]">
 
+              {/* Champion NFT card — phones only, above the table; display:none
+                  on lg so it doesn't occupy a desktop grid cell */}
+              <div className="mx-auto w-full max-w-sm lg:hidden">
+                <ChampionCard
+                  champion={monthChampion}
+                  monthName={monthName}
+                  boardSize={monthlyRows.length}
+                  loading={loading}
+                />
+              </div>
+
               {/* Table */}
               <article
                 className="rise-in rounded-xl border p-5"
@@ -469,65 +562,14 @@ export default function LeaderboardPage() {
               {/* Sidebar */}
               <aside className="flex flex-col gap-5">
 
-                {/* Champion NFT card — the month's #1, styled as a collectible */}
-                <div className="champion-scene rise-in">
-                  <div className="champion-card">
-                    <div className="champion-inner p-5 text-center">
-                      <div className="champion-backdrop" aria-hidden />
-                      <div className="relative">
-                      <p
-                        className="font-heading text-xl font-bold uppercase tracking-[0.14em]"
-                        style={{ color: '#f5c518', textShadow: '0 0 12px rgba(245,197,24,0.35)' }}
-                      >
-                        ★ {monthName} Champion ★
-                      </p>
-                      {monthChampion ? (
-                        <>
-                          <div className="champion-avatar mx-auto mt-4">
-                            <Image
-                              src="/images/bg-patient-zero.webp"
-                              alt=""
-                              width={112}
-                              height={112}
-                              className="champion-avatar-img"
-                            />
-                            <span className="champion-avatar-initial font-display">
-                              {monthChampion.displayName.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <p className="mt-3 truncate font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
-                            {monthChampion.displayName}
-                          </p>
-                          <div className="mt-4 flex justify-center gap-5">
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Points</p>
-                              <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(monthChampion).toLocaleString()}</p>
-                            </div>
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
-                              <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{monthChampion.wins}</p>
-                            </div>
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Shields</p>
-                              <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{monthChampion.proofs}</p>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                          {loading ? 'Loading…' : 'The throne is empty — top this month’s board to claim it.'}
-                        </p>
-                      )}
-                      <p
-                        className="mt-4 border-t pt-3 font-mono text-[9px] uppercase tracking-[0.22em]"
-                        style={{ color: '#4a5e44', borderColor: 'rgba(245,197,24,0.15)' }}
-                      >
-                        Zombie Plague · No. 1 of {monthlyRows.length || '—'}
-                      </p>
-                      </div>
-                      <div className="champion-sheen" />
-                    </div>
-                  </div>
+                {/* Champion NFT card — desktop only; phones get it above the table */}
+                <div className="hidden lg:block">
+                  <ChampionCard
+                    champion={monthChampion}
+                    monthName={monthName}
+                    boardSize={monthlyRows.length}
+                    loading={loading}
+                  />
                 </div>
 
                 {/* Bounties teaser */}

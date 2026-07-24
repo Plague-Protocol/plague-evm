@@ -536,6 +536,11 @@ select {
     radial-gradient(120% 90% at 50% 0%, rgba(245, 197, 24, 0.08), transparent 55%),
     #0a100a;
   overflow: hidden;
+  /* Portrait trading-card proportions; grows past the ratio if content needs it */
+  aspect-ratio: 4 / 5;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 /* Faint patient-zero portrait behind the card content; the gradient keeps the
    stats readable and fades the image out toward the serial line. */
