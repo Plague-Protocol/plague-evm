@@ -112,7 +112,7 @@ function bodyColor(b: Body): string {
   return b.isMe ? COLOR_HUMAN_ME : COLOR_HUMAN
 }
 
-function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean) {
+function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean) {
   const s = perspectiveScale(b.y, h)
   const zombie = b.kind === 'zombie'
 
@@ -204,6 +204,22 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
     ctx.restore()
   }
 
+  // steady aura while YOUR shield is active this round (own info only)
+  if (b.isMe && shieldAura && b.alive && b.fallT === 0) {
+    ctx.save()
+    const r = 12 * s + Math.sin(t * 2.4) * 1.4
+    ctx.beginPath()
+    ctx.arc(b.x, b.y - 10 * s, r, 0, Math.PI * 2)
+    ctx.strokeStyle = 'rgba(132,204,22,0.55)'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(b.x, b.y - 10 * s, r + 3, 0, Math.PI * 2)
+    ctx.strokeStyle = 'rgba(132,204,22,0.2)'
+    ctx.stroke()
+    ctx.restore()
+  }
+
   if (b.isMe) {
     ctx.save()
     ctx.font = '700 9px ui-monospace, monospace'
@@ -248,6 +264,7 @@ function drawScene(
   bodies: Body[],
   t: number,
   active: ActiveCue | null,
+  myShield: boolean,
 ) {
   ctx.clearRect(0, 0, w, h)
 
@@ -270,7 +287,7 @@ function drawScene(
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
   for (const b of [...bodies].sort((a, c) => a.y - c.y)) {
-    drawFigure(ctx, b, t, h, b === flashBody)
+    drawFigure(ctx, b, t, h, b === flashBody, myShield)
   }
   if (flashBody) drawBolt(ctx, flashBody, h)
 
@@ -300,9 +317,16 @@ export interface OutbreakSceneProps {
   readonly socket?: Socket | null
   readonly localAddress?: string | null
   readonly className?: string
+  /** Local player's shield is active this round — steady aura on YOUR figure only (your own info). */
+  readonly myShieldActive?: boolean
+  /** Count of OTHER players with an active shield this round (public); increments flash anonymous figures. */
+  readonly othersShieldCount?: number
 }
 
-export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus, outcome, socket, localAddress, className = '' }: OutbreakSceneProps) {
+export function OutbreakScene({
+  totalPlayers, aliveCount, zombieCount, myStatus, outcome, socket, localAddress,
+  className = '', myShieldActive = false, othersShieldCount = 0,
+}: OutbreakSceneProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const directorRef = useRef<OutbreakDirector | null>(null)
@@ -315,6 +339,11 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
   const sizeRef = useRef({ w: 0, h: 0 })
   const reducedRef = useRef(false)
   const renderRef = useRef<(() => void) | null>(null)
+  const myShieldRef = useRef(false)
+  const prevOthersShieldRef = useRef(0)
+  const endedRef = useRef(false)
+  const settleRef = useRef<number | null>(null)
+  const resumeRef = useRef<(() => void) | null>(null)
 
   directorRef.current ??= new OutbreakDirector()
 
@@ -347,7 +376,7 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current)
     }
     renderRef.current = render
 
@@ -503,6 +532,8 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
         b.transformT = Math.max(0, b.transformT - dt / 0.7)
         b.shieldT = Math.max(0, b.shieldT - dt / 0.9)
         if (!b.alive || b.frozen || b.chasing || b.dying) { b.gait = Math.max(0, b.gait - dt * 4); continue }
+        // game over — walkers halt where they stand while the scene settles
+        if (settleRef.current !== null) { b.gait = Math.max(0, b.gait - dt * 4); continue }
         if (tRef.current < b.pauseUntil) {
           b.gait = Math.max(0, b.gait - dt * 4)
           b.walk += dt * 0.6 // idle sway
@@ -519,21 +550,42 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
     }
 
     let raf = 0
-    let last = performance.now()
+    let running = false
+    let last = 0
     const tick = (now: number) => {
+      if (!running) return
       raf = requestAnimationFrame(tick)
       if (document.hidden) { last = now; return }
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
+      // Game over with nothing left to play: let the walkers halt mid-stride,
+      // then stop the loop entirely — a still tableau costs nothing while the
+      // tab stays open. resumeRef restarts it (demo replay / late cues).
+      const idle = endedRef.current && !activeRef.current && queueRef.current.length === 0
+      if (idle) settleRef.current ??= tRef.current
+      else settleRef.current = null
       step(dt)
       render()
+      if (idle && settleRef.current !== null && tRef.current - settleRef.current > 1.5) {
+        running = false
+        cancelAnimationFrame(raf)
+      }
     }
-    raf = requestAnimationFrame(tick)
+    const start = () => {
+      if (running) return
+      running = true
+      last = performance.now()
+      raf = requestAnimationFrame(tick)
+    }
+    resumeRef.current = start
+    start()
 
     return () => {
+      running = false
       cancelAnimationFrame(raf)
       ro.disconnect()
       renderRef.current = null
+      resumeRef.current = null
     }
   }, [])
 
@@ -542,6 +594,7 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
     const director = directorRef.current
     if (!director) return
     const cues = director.update({ totalPlayers, aliveCount, zombieCount, myStatus, outcome })
+    endedRef.current = outcome !== null
 
     if (director.epoch !== epochRef.current) {
       // roster changed — rebuild bodies wholesale (keep positions for known ids)
@@ -557,6 +610,7 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
       queueRef.current = []
       activeRef.current = null
       renderRef.current?.()
+      resumeRef.current?.() // fresh troupe (e.g. demo replay) — restart a stopped loop
       return
     }
 
@@ -571,7 +625,29 @@ export function OutbreakScene({ totalPlayers, aliveCount, zombieCount, myStatus,
       return
     }
     queueRef.current.push(...cues)
+    resumeRef.current?.()
   }, [totalPlayers, aliveCount, zombieCount, myStatus, outcome])
+
+  // ── Own shield aura — reflect immediately, even on the static tableau ──────
+  useEffect(() => {
+    myShieldRef.current = myShieldActive
+    renderRef.current?.()
+  }, [myShieldActive])
+
+  // ── Anonymous flashes when OTHER players raise shields (public count) ──────
+  // The count is public but figures are anonymous, so each new activation
+  // rings a random human figure — never the activator's true one.
+  useEffect(() => {
+    const fresh = othersShieldCount - prevOthersShieldRef.current
+    prevOthersShieldRef.current = othersShieldCount
+    if (fresh <= 0 || reducedRef.current) return
+    const pool = bodiesRef.current.filter(b => b.alive && !b.isMe && b.kind === 'human' && b.shieldT <= 0)
+    for (let k = 0; k < fresh && pool.length > 0; k++) {
+      const idx = Math.floor(Math.random() * pool.length)
+      pool.splice(idx, 1)[0].shieldT = 1
+    }
+    resumeRef.current?.()
+  }, [othersShieldCount])
 
   // ── Shield flashes from the public proof-save event ────────────────────────
   useEffect(() => {

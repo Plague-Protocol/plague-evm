@@ -274,6 +274,10 @@ function GamePageInner() { // NOSONAR
   const myVotedTarget = optimisticVotedFor ?? localPlayer?.voteTarget
   const hasProofThisRound = optimisticProofDone || Boolean(localPlayer?.hasProofThisRound)
   const commitDone = optimisticCommitDone || Boolean(localPlayer?.roleCommitted)
+  // Shields raised by OTHER players this round (public info; feeds the quarantine cam)
+  const othersShieldCount = room?.players?.filter(p =>
+    p.hasProofThisRound && !p.isEliminated && p.walletAddress.toLowerCase() !== (address ?? '').toLowerCase()
+  ).length ?? 0
   const canVote       = phase === 'voting' && isConnected && !!localPlayer && !localPlayer.isEliminated && !hasVoted && !voting
   const canProve      = phase === 'discussion' && isConnected && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound
   const canCommit     = room?.status === 'starting' && isConnected && !!localPlayer && !committing && !commitDone
@@ -1250,6 +1254,8 @@ function GamePageInner() { // NOSONAR
                     outcome={round > 0 ? (result?.outcome ?? null) : null}
                     socket={socket}
                     localAddress={address}
+                    myShieldActive={hasProofThisRound && !localPlayer?.isEliminated}
+                    othersShieldCount={othersShieldCount}
                   />
                   <div className="mt-6 rounded-lg border p-5" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.15)' }}>
                     {playersPanelBody}

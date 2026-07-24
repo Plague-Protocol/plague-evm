@@ -944,6 +944,8 @@ export default function DemoPage() {
                     zombieCount={infectedAlive}
                     myStatus={youSceneStatus}
                     outcome={sceneOutcome}
+                    myShieldActive={youShielded}
+                    othersShieldCount={round > 0 ? players.filter(p => !p.isYou && !p.eliminated && p.shieldRound === round).length : 0}
                   />
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {players.map((p, i) => {
