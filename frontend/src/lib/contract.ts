@@ -46,6 +46,13 @@ const PLAGUE_GAME_ABI = parseAbi([
   'function getPlayer(uint256 roomId, address player) external view returns ((address addr, uint8 status, bytes32 roleCommitment, uint256 staked, address voteTarget, uint64 joinedAt, bool freeProofUsed, uint32 proofsSubmittedTotal, bool pendingInfectionNextRound, bool hasProofThisRound, bool hasVotedThisRound, bool roleCommitted))',
   'function currentPatientZero(uint256 roomId) external view returns (address)',
   'function roomCount() external view returns (uint256)',
+  'function admin() external view returns (address)',
+  'function backendSigner() external view returns (address)',
+  'function platformFees() external view returns (uint256)',
+  'function platformReceiver() external view returns (address)',
+  'function activeRoomCount() external view returns (uint256)',
+  'function maxActiveRooms() external view returns (uint256)',
+  'function withdrawPlatformFees() external',
   // Events
   'event PlayerJoined(uint256 indexed roomId, address player)',
   'event GameStarted(uint256 indexed roomId)',
@@ -553,6 +560,40 @@ export class PlagueContractClient {
       functionName: 'currentPatientZero',
       args: [roomId],
     })
+  }
+
+  /** Admin-facing contract state, batched into one Multicall3 round-trip. */
+  async getAdminInfo() {
+    const read = <F extends string>(functionName: F) => ({
+      address: this.address,
+      abi: PLAGUE_GAME_ABI,
+      functionName,
+    })
+    const [admin, backendSigner, platformFees, platformReceiver, activeRoomCount, maxActiveRooms] =
+      await this.publicClient.multicall({
+        allowFailure: false,
+        contracts: [
+          read('admin' as const),
+          read('backendSigner' as const),
+          read('platformFees' as const),
+          read('platformReceiver' as const),
+          read('activeRoomCount' as const),
+          read('maxActiveRooms' as const),
+        ],
+      })
+    return { admin, backendSigner, platformFees, platformReceiver, activeRoomCount, maxActiveRooms }
+  }
+
+  /** Sweep accumulated platform fees to platformReceiver. Contract enforces onlyAdmin. */
+  async withdrawPlatformFees(account: `0x${string}`): Promise<void> {
+    const { request } = await this.publicClient.simulateContract({
+      address:      this.address,
+      abi:          PLAGUE_GAME_ABI,
+      functionName: 'withdrawPlatformFees',
+      account,
+      dataSuffix:   ATTRIBUTION_SUFFIX,
+    })
+    await this.sendTx(account, request)
   }
 }
 
