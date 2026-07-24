@@ -53,6 +53,16 @@ type RoomRow = {
 
 type BotState = { online: boolean; available: number; total: number }
 
+type Analytics = {
+  totalGames: number
+  uniquePlayers: number
+  totalVolumeWei: string
+  avgPotWei: string
+  feesEarnedWei: string
+  outcomes: { clean_win: number; infected_win: number; max_rounds_draw: number }
+  months: { id: string; name: string; games: number; volumeWei: string }[]
+}
+
 function short(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
 }
@@ -86,6 +96,7 @@ export default function AdminPage() {
   const [rooms, setRooms] = useState<RoomRow[]>([])
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
   const [bots, setBots] = useState<BotState | null>(null)
+  const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [withdrawing, setWithdrawing] = useState(false)
@@ -138,6 +149,10 @@ export default function AdminPage() {
       const r = await fetch(`${BACKEND_URL}/api/bots/availability`, { signal: AbortSignal.timeout(5000) })
       setBots(r.ok ? await r.json() : null)
     } catch { setBots(null) }
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/leaderboard/analytics`, { signal: AbortSignal.timeout(8000) })
+      setAnalytics(r.ok ? await r.json() : null)
+    } catch { setAnalytics(null) }
   }, [])
 
   useEffect(() => {
@@ -253,6 +268,74 @@ export default function AdminPage() {
                     Backend signer {info ? short(info.backendSigner) : '…'}
                   </p>
                 </Card>
+              </div>
+
+              {/* On-chain analytics */}
+              <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_360px]">
+                <div className="rounded-xl border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)' }}>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>
+                    Game Economics (all recorded games)
+                  </p>
+                  {analytics ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {[
+                          { label: 'Volume staked', value: `${formatToken(analytics.totalVolumeWei)} USDm` },
+                          { label: 'Fees earned ≈', value: `${formatToken(analytics.feesEarnedWei)} USDm` },
+                          { label: 'Unique players', value: String(analytics.uniquePlayers) },
+                          { label: 'Avg pot', value: `${formatToken(analytics.avgPotWei)} USDm` },
+                        ].map(s => (
+                          <div key={s.label} className="rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}>
+                            <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</p>
+                            <p className="mt-1.5 font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>{s.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[11px]" style={{ color: '#8fa882' }}>
+                        <span><span style={{ color: '#1a7a4a' }}>●</span> Clean wins {analytics.outcomes.clean_win}</span>
+                        <span><span style={{ color: '#e63329' }}>●</span> Infected wins {analytics.outcomes.infected_win}</span>
+                        <span><span style={{ color: '#f5c518' }}>●</span> Draws {analytics.outcomes.max_rounds_draw}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                      {loading ? 'Loading…' : 'Analytics unavailable (backend endpoint not deployed yet?).'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Games per month — bar length = games; volume shown as text */}
+                <div className="rounded-xl border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)' }}>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>
+                    Games per month
+                  </p>
+                  {analytics && analytics.months.length > 0 ? (
+                    <div className="mt-4 space-y-3">
+                      {analytics.months.map(m => {
+                        const max = Math.max(...analytics.months.map(x => x.games))
+                        const width = max > 0 ? Math.max(4, (m.games / max) * 100) : 0
+                        return (
+                          <div key={m.id}>
+                            <div className="flex items-baseline justify-between font-mono text-[11px]">
+                              <span style={{ color: '#4a5e44' }}>{m.name}</span>
+                              <span style={{ color: '#d4c9b2' }}>
+                                {m.games} game{m.games === 1 ? '' : 's'}
+                                <span style={{ color: '#4a5e44' }}> · {formatToken(m.volumeWei)} USDm</span>
+                              </span>
+                            </div>
+                            <div className="mt-1 h-2 rounded-full" style={{ backgroundColor: 'rgba(107,142,35,0.1)' }}>
+                              <div className="h-2 rounded-full" style={{ width: `${width}%`, backgroundColor: '#6b8e23' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                      {loading ? 'Loading…' : 'No monthly data yet.'}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Recent rooms */}

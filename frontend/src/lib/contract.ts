@@ -562,6 +562,15 @@ export class PlagueContractClient {
     })
   }
 
+  /** The contract's admin address (used to gate the ops UI; writes are enforced on-chain). */
+  async getAdmin(): Promise<`0x${string}`> {
+    return this.publicClient.readContract({
+      address: this.address,
+      abi: PLAGUE_GAME_ABI,
+      functionName: 'admin',
+    })
+  }
+
   /** Admin-facing contract state, batched into one Multicall3 round-trip. */
   async getAdminInfo() {
     const read = <F extends string>(functionName: F) => ({

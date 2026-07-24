@@ -448,6 +448,55 @@ export default function LeaderboardPage() {
               {/* Sidebar */}
               <aside className="flex flex-col gap-5">
 
+                {/* Champion NFT card — the month's #1, styled as a collectible */}
+                <div className="champion-scene rise-in">
+                  <div className="champion-card">
+                    <div className="champion-inner p-5 text-center">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#f5c518' }}>
+                        ★ {monthName} Champion ★
+                      </p>
+                      {monthChampion ? (
+                        <>
+                          <div
+                            className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full border-2 font-display text-3xl"
+                            style={{ borderColor: 'rgba(245,197,24,0.6)', color: '#f5c518', backgroundColor: 'rgba(245,197,24,0.08)' }}
+                          >
+                            {monthChampion.displayName.charAt(0).toUpperCase()}
+                          </div>
+                          <p className="mt-3 truncate font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
+                            {monthChampion.displayName}
+                          </p>
+                          <div className="mt-4 flex justify-center gap-5">
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Points</p>
+                              <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(monthChampion).toLocaleString()}</p>
+                            </div>
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
+                              <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{monthChampion.wins}</p>
+                            </div>
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Shields</p>
+                              <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{monthChampion.proofs}</p>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                          {loading ? 'Loading…' : 'The throne is empty — top this month’s board to claim it.'}
+                        </p>
+                      )}
+                      <p
+                        className="mt-4 border-t pt-3 font-mono text-[9px] uppercase tracking-[0.22em]"
+                        style={{ color: '#4a5e44', borderColor: 'rgba(245,197,24,0.15)' }}
+                      >
+                        Zombie Plague · No. 1 of {monthlyRows.length || '—'}
+                      </p>
+                      <div className="champion-sheen" />
+                    </div>
+                  </div>
+                </div>
+
                 {/* How points work */}
                 <div
                   className="rise-in rounded-xl border p-5"
@@ -490,37 +539,6 @@ export default function LeaderboardPage() {
                     platform fees. Details will be announced here first —
                     champions crowned before launch will be remembered.
                   </p>
-                </div>
-
-                {/* Monthly champion */}
-                <div
-                  className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '160ms' }}
-                >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>{monthName} Champion</p>
-                  {monthChampion ? (
-                    <>
-                      <p className="mt-3 font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>{monthChampion.displayName}</p>
-                      <div className="mt-3 flex gap-4">
-                        <div className="text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Points</p>
-                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(monthChampion).toLocaleString()}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
-                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{monthChampion.wins}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Shields</p>
-                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{monthChampion.proofs}</p>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                      {loading ? 'Loading…' : `No games in ${monthName} yet — the throne is empty.`}
-                    </p>
-                  )}
                 </div>
 
                 {/* All-time stats */}

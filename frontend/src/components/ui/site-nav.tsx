@@ -7,6 +7,7 @@ import { ConnectButton } from './connect-button'
 import { MuteButton } from './mute-button'
 import { OnlineCount } from './online-count'
 import { PlayerNameChip } from './player-name-chip'
+import { useIsAdmin } from '@/hooks/useIsAdmin'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -22,6 +23,12 @@ type SiteNavProps = {
 
 export function SiteNav({ currentPath }: SiteNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const isAdmin = useIsAdmin()
+  // The Ops console only appears for the contract admin's wallet.
+  const items = [
+    ...navItems,
+    ...(isAdmin ? ([{ href: '/admin', label: 'Ops' }] as const) : []),
+  ]
 
   return (
     <div className="rise-in relative" style={{ isolation: 'isolate', zIndex: 50 }}>
@@ -48,7 +55,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
 
         {/* Nav links — desktop only */}
         <nav className="hidden items-center gap-1 md:flex">
-          {navItems.map((item) => {
+          {items.map((item) => {
             const isActive = currentPath === item.href
             return (
               <Link
@@ -116,7 +123,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
           style={{ borderColor: 'rgba(107,142,35,0.2)', backgroundColor: 'rgba(6,11,6,0.97)' }}
         >
           <nav className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {items.map((item) => {
               const isActive = currentPath === item.href
               return (
                 <Link

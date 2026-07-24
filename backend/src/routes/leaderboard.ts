@@ -394,6 +394,67 @@ leaderboardRouter.get('/', async (_req, res) => {
 })
 
 /**
+ * GET /api/leaderboard/analytics
+ * Aggregate on-chain game economics for the ops console: total volume
+ * staked, approximate protocol fees (1.5% of pot on payout), unique
+ * players, outcome split, and a per-month games/volume trend (last 6).
+ * Reads only persisted summaries — no backfill, no chain calls.
+ */
+leaderboardRouter.get('/analytics', async (_req, res) => {
+  try {
+    const summaries = await prisma.gameSummary.findMany({
+      select: {
+        totalPot: true,
+        outcome: true,
+        endedAt: true,
+        players: { select: { address: true } },
+      },
+    })
+
+    let volume = 0n
+    const unique = new Set<string>()
+    const outcomes = { clean_win: 0, infected_win: 0, max_rounds_draw: 0 }
+    const byMonth = new Map<string, { name: string; games: number; volume: bigint }>()
+
+    for (const s of summaries) {
+      const pot = BigInt(s.totalPot || '0')
+      volume += pot
+      if (s.outcome in outcomes) outcomes[s.outcome as keyof typeof outcomes]++
+      for (const p of s.players) unique.add(p.address.toLowerCase())
+
+      const key = `${s.endedAt.getUTCFullYear()}-${String(s.endedAt.getUTCMonth() + 1).padStart(2, '0')}`
+      const entry = byMonth.get(key) ?? {
+        name: s.endedAt.toLocaleString('en', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+        games: 0,
+        volume: 0n,
+      }
+      entry.games += 1
+      entry.volume += pot
+      byMonth.set(key, entry)
+    }
+
+    const months = Array.from(byMonth.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
+      .map(([id, m]) => ({ id, name: m.name, games: m.games, volumeWei: m.volume.toString() }))
+
+    res.json({
+      totalGames: summaries.length,
+      uniquePlayers: unique.size,
+      totalVolumeWei: volume.toString(),
+      avgPotWei: summaries.length > 0 ? (volume / BigInt(summaries.length)).toString() : '0',
+      // Fee approximation: 1.5% is charged on played-out pots at payout.
+      feesEarnedWei: ((volume * 15n) / 1000n).toString(),
+      outcomes,
+      months,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
+
+/**
  * GET /api/leaderboard/stats
  * Lightweight aggregate counts for the homepage hero stats.
  * No backfill — reads only persisted summaries.
