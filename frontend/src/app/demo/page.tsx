@@ -228,15 +228,21 @@ export default function DemoPage() {
 
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+  const chatPinnedRef = useRef(true)
 
   useEffect(() => {
     setDemoCount(getDemoCount())
   }, [])
 
-  // Auto-scroll chat on new messages
+  // Auto-scroll chat on new messages — scrolls ONLY the log container (same
+  // fix as the live game page: scrollIntoView on a sentinel scrolls every
+  // scrollable ancestor including the window, yanking the whole page down on
+  // each bot message). Held back when the reader has scrolled up.
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = chatScrollRef.current
+    if (!el || !chatPinnedRef.current) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [state.chat])
 
   // ── Timer plumbing ─────────────────────────────────────────────────────────
@@ -390,8 +396,11 @@ export default function DemoPage() {
       if (vulnerable.length === 0) {
         feed.push('Top votes were tied and every top-voted player had an active Shield — nobody was eliminated.')
       } else {
-        const infectedVul = vulnerable.filter(p => p.status === 'infected')
-        eliminatedIds = (infectedVul.length > 0 ? infectedVul : vulnerable).map(p => p.id)
+        // Mirror the contract: exactly ONE unprotected top-voted player falls
+        // (deterministic lowest-hash on-chain; random here) — and no peeking
+        // at hidden roles. The old logic preferred eliminating the infected
+        // from a tie, which rigged most demo games to end in round 1.
+        eliminatedIds = [pick(vulnerable).id]
         const saved = tied.filter(p => p.shieldRound === prev.round)
         for (const p of saved) feed.push(`${p.name} was top-voted but their Shield saved them.`)
       }
@@ -1089,7 +1098,12 @@ export default function DemoPage() {
                 {/* Room chat — same rules as the live game */}
                 <div className="rounded-lg border p-4 flex flex-col" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.15)' }}>
                   <p className="font-mono text-xs uppercase tracking-[0.2em] flex-shrink-0" style={{ color: '#6b8e23' }}>Room Chat</p>
-                  <div className="mt-3 overflow-y-auto space-y-2 pr-1" style={{ maxHeight: '16rem', scrollbarWidth: 'thin' }}>
+                  <div
+                    ref={chatScrollRef}
+                    onScroll={e => { const el = e.currentTarget; chatPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }}
+                    className="mt-3 overflow-y-auto space-y-2 pr-1"
+                    style={{ maxHeight: '16rem', scrollbarWidth: 'thin' }}
+                  >
                     {chat.length === 0 ? (
                       <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
                     ) : (
@@ -1101,7 +1115,6 @@ export default function DemoPage() {
                         </div>
                       ))
                     )}
-                    <div ref={chatEndRef} />
                   </div>
                   <div className="mt-3 flex gap-2 flex-shrink-0">
                     <input
@@ -1180,7 +1193,6 @@ function StartingPanel({ shieldSet, onCommit }: { shieldSet: boolean; onCommit: 
         onKeyDown={e => e.key === 'Enter' && input.trim() && onCommit(input)}
         className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
         style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
-        autoFocus
       />
       <button
         onClick={() => input.trim() && onCommit(input)}
