@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { SiteNav } from '@/components/ui/site-nav'
+import { SiteFooter } from '@/components/ui/site-footer'
 
 type LeaderboardPlayer = {
   address: string
@@ -10,52 +11,58 @@ type LeaderboardPlayer = {
   losses: number
   draws: number
   proofs: number
+  survivals?: number
+  points?: number
   gamesPlayed: number
   winRate: number
   lastPlayedAt: string | null
 }
 
 type LeaderboardResponse = {
-  players: LeaderboardPlayer[]
+  global?: LeaderboardPlayer[]
+  monthly?: LeaderboardPlayer[]
+  /** Legacy field — older backend deploys return only this (all-time rows). */
+  players?: LeaderboardPlayer[]
   totalGames: number
+  monthlyGames?: number
   generatedAt: string
 }
 
-type Tab = 'global' | 'season0' | 'proofs' | 'week'
+type Tab = 'global' | 'monthly'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'global',  label: 'Global' },
-  { id: 'season0', label: 'Season 0' },
-  { id: 'proofs',  label: 'Proof Leaders' },
-  { id: 'week',    label: 'This Week' },
+  { id: 'monthly', label: 'This Month' },
 ]
+
+// Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
+const POINTS = { win: 100, draw: 40, loss: 10, shield: 15, survival: 20 } as const
+
+/** Fallback for rows from a backend that predates server-side points. */
+function computePoints(p: LeaderboardPlayer): number {
+  return (
+    p.wins * POINTS.win +
+    p.draws * POINTS.draw +
+    p.losses * POINTS.loss +
+    p.proofs * POINTS.shield +
+    (p.survivals ?? 0) * POINTS.survival
+  )
+}
+
+function pointsOf(p: LeaderboardPlayer): number {
+  return p.points ?? computePoints(p)
+}
+
+function sortByPoints(players: LeaderboardPlayer[]): LeaderboardPlayer[] {
+  return [...players].sort((a, b) =>
+    pointsOf(b) - pointsOf(a) || b.wins - a.wins || b.proofs - a.proofs
+  )
+}
 
 const RANK_COLORS = ['#f5c518', '#8fa882', '#cd7f32']
 
-function filterAndSort(players: LeaderboardPlayer[], tab: Tab): LeaderboardPlayer[] {
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-  switch (tab) {
-    case 'global':
-    case 'season0':
-      return [...players].sort((a, b) => b.wins - a.wins || b.proofs - a.proofs)
-    case 'proofs':
-      return [...players].sort((a, b) => b.proofs - a.proofs || b.wins - a.wins)
-    case 'week':
-      return players
-        .filter(p => p.lastPlayedAt && new Date(p.lastPlayedAt).getTime() >= weekAgo)
-        .sort((a, b) => b.wins - a.wins || b.proofs - a.proofs)
-  }
-}
-
-function getThisWeekTop(players: LeaderboardPlayer[]): LeaderboardPlayer | null {
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
-  return [...players]
-    .filter(p => p.lastPlayedAt && new Date(p.lastPlayedAt).getTime() >= cutoff)
-    .sort((a, b) => b.wins - a.wins)[0] ?? null
-}
-
 // Shared grid template — header and rows must match exactly
-const ROW_GRID = '2.5rem 1fr 5rem 5rem'
+const ROW_GRID = '2.5rem 1fr 5rem 4rem 4.5rem'
 
 function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }) {
   const rankColor = RANK_COLORS[rank - 1] ?? '#4a5e44'
@@ -108,12 +115,17 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
         </div>
       </div>
 
+      {/* Points */}
+      <div className="text-center">
+        <p className="font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(player).toLocaleString()}</p>
+      </div>
+
       {/* Wins */}
       <div className="text-center">
         <p className="font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{player.wins}</p>
       </div>
 
-      {/* Proofs */}
+      {/* Shields */}
       <div className="text-center">
         <p className="font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
       </div>
@@ -139,7 +151,7 @@ export default function LeaderboardPage() {
         const res = await fetch(`${backendUrl}/api/leaderboard`, { signal: controller.signal })
         if (!res.ok) throw new Error(`Leaderboard request failed: ${res.status}`)
         const json = await res.json() as LeaderboardResponse
-        setData({ players: json.players ?? [], totalGames: json.totalGames ?? 0, generatedAt: json.generatedAt })
+        setData(json)
         setError(null)
       } catch (err) {
         if (controller.signal.aborted) return
@@ -152,10 +164,24 @@ export default function LeaderboardPage() {
     return () => controller.abort()
   }, [])
 
-  const sorted = useMemo(() => {
+  const globalRows = useMemo(
+    () => data ? sortByPoints(data.global ?? data.players ?? []) : [],
+    [data]
+  )
+  // Legacy backends can't provide per-month aggregates; approximate with
+  // all-time rows for players active this month until the backend redeploys.
+  const monthlyRows = useMemo(() => {
     if (!data) return []
-    return filterAndSort(data.players, activeTab)
-  }, [data, activeTab])
+    if (data.monthly) return sortByPoints(data.monthly)
+    const monthStart = new Date()
+    monthStart.setUTCDate(1)
+    monthStart.setUTCHours(0, 0, 0, 0)
+    return sortByPoints(
+      (data.players ?? []).filter(p => p.lastPlayedAt && new Date(p.lastPlayedAt) >= monthStart)
+    )
+  }, [data])
+
+  const sorted = activeTab === 'global' ? globalRows : monthlyRows
 
   // Reset to page 1 whenever tab or data changes
   useEffect(() => { setPage(1) }, [activeTab, data])
@@ -164,8 +190,9 @@ export default function LeaderboardPage() {
   const pageSlice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const pageOffset = (page - 1) * PAGE_SIZE
 
-  const totalProofs = useMemo(() => data?.players.reduce((s, p) => s + p.proofs, 0) ?? 0, [data])
-  const thisWeekTop = useMemo(() => data ? getThisWeekTop(data.players) : null, [data])
+  const totalShields = useMemo(() => globalRows.reduce((s, p) => s + p.proofs, 0), [globalRows])
+  const monthChampion = monthlyRows[0] ?? null
+  const monthName = new Date().toLocaleString('en', { month: 'long' })
 
   return (
     <main
@@ -193,7 +220,7 @@ export default function LeaderboardPage() {
         <header className="px-6 py-14 text-center">
           <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-5">
             <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
-              Season Zero
+              Ranked by Points
             </span>
             <h1
               className="font-display text-5xl font-black leading-none sm:text-7xl lg:text-8xl"
@@ -207,7 +234,8 @@ export default function LeaderboardPage() {
               LEADERBOARD
             </h1>
             <p className="max-w-lg font-mono text-sm" style={{ color: '#8fa882' }}>
-              Global rankings of the deadliest operatives on Celo.
+              Every game counts — wins, draws, shields and survival all earn points.
+              The monthly board resets on the 1st; the global board is forever.
             </p>
 
             {/* Tabs */}
@@ -254,8 +282,9 @@ export default function LeaderboardPage() {
                 >
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>#</span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Operative</span>
+                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Points</span>
                   <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Wins</span>
-                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>Proofs</span>
+                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>Shields</span>
                 </div>
 
                 {/* Rows */}
@@ -272,8 +301,8 @@ export default function LeaderboardPage() {
                   )}
                   {!loading && !error && sorted.length === 0 && (
                     <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#4a5e44' }}>
-                      {activeTab === 'week'
-                        ? 'No games played this week yet.'
+                      {activeTab === 'monthly'
+                        ? `No games finished in ${monthName} yet — the first survivor tops this board.`
                         : 'No completed games yet. Rankings will appear once rooms finish.'}
                     </div>
                   )}
@@ -311,17 +340,77 @@ export default function LeaderboardPage() {
               {/* Sidebar */}
               <aside className="flex flex-col gap-5">
 
-                {/* Stats */}
+                {/* How points work */}
                 <div
                   className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)', animationDelay: '80ms' }}
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(245,197,24,0.2)', animationDelay: '80ms' }}
                 >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Season 0 Stats</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>How Points Work</p>
                   <div className="mt-4 space-y-2">
                     {[
-                      { label: 'Total games',    value: loading ? '…' : String(data?.totalGames ?? 0),       color: '#6b8e23' },
-                      { label: 'Total proofs',   value: loading ? '…' : String(totalProofs),                  color: '#e63329' },
-                      { label: 'Chain uptime',   value: '99.9%',                                             color: '#f5c518' },
+                      { label: 'Win a game',        value: `+${POINTS.win}`,      color: '#6b8e23' },
+                      { label: 'Draw',              value: `+${POINTS.draw}`,     color: '#f5c518' },
+                      { label: 'Play (even a loss)', value: `+${POINTS.loss}`,    color: '#8fa882' },
+                      { label: 'Shield used',       value: `+${POINTS.shield}`,   color: '#e63329' },
+                      { label: 'Survive to the end', value: `+${POINTS.survival}`, color: '#c97a12' },
+                    ].map(s => (
+                      <div
+                        key={s.label}
+                        className="flex items-center justify-between rounded-lg border px-4 py-2.5"
+                        style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}
+                      >
+                        <span className="font-mono text-xs" style={{ color: '#8fa882' }}>{s.label}</span>
+                        <span className="font-heading text-xl leading-none" style={{ color: s.color }}>{s.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
+                    Shields are on-chain innocence proofs — each one costs the room&apos;s proof fee.
+                  </p>
+                </div>
+
+                {/* Monthly champion */}
+                <div
+                  className="rise-in rounded-xl border p-5"
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '160ms' }}
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>{monthName} Champion</p>
+                  {monthChampion ? (
+                    <>
+                      <p className="mt-3 font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>{monthChampion.displayName}</p>
+                      <div className="mt-3 flex gap-4">
+                        <div className="text-center">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Points</p>
+                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(monthChampion).toLocaleString()}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
+                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{monthChampion.wins}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Shields</p>
+                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{monthChampion.proofs}</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                      {loading ? 'Loading…' : `No games in ${monthName} yet — the throne is empty.`}
+                    </p>
+                  )}
+                </div>
+
+                {/* All-time stats */}
+                <div
+                  className="rise-in rounded-xl border p-5"
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)', animationDelay: '240ms' }}
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>All-Time Stats</p>
+                  <div className="mt-4 space-y-2">
+                    {[
+                      { label: 'Total games',   value: loading ? '…' : String(data?.totalGames ?? 0), color: '#6b8e23' },
+                      { label: 'Total shields', value: loading ? '…' : String(totalShields),          color: '#e63329' },
+                      { label: 'Operatives',    value: loading ? '…' : String(globalRows.length),     color: '#f5c518' },
                     ].map(s => (
                       <div
                         key={s.label}
@@ -333,59 +422,6 @@ export default function LeaderboardPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-
-                {/* Weekly champion */}
-                <div
-                  className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(132,204,22,0.2)', animationDelay: '160ms' }}
-                >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#84cc16' }}>This Week&apos;s Champion</p>
-                  {thisWeekTop ? (
-                    <>
-                      <p className="mt-3 font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>{thisWeekTop.displayName}</p>
-                      <div className="mt-3 flex gap-4">
-                        <div className="text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
-                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{thisWeekTop.wins}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Proofs</p>
-                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{thisWeekTop.proofs}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Rate</p>
-                          <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>
-                            {Math.round(thisWeekTop.winRate * 100)}%
-                          </p>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                      {loading ? 'Loading…' : 'No games played this week yet.'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Tab context blurb */}
-                <div
-                  className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.12)', animationDelay: '240ms' }}
-                >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Viewing</p>
-                  <p className="mt-2 font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
-                    {TABS.find(t => t.id === activeTab)?.label}
-                  </p>
-                  <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                    {activeTab === 'global'  && 'All-time rankings sorted by total wins, then proof count.'}
-                    {activeTab === 'season0' && 'Season 0 standings — the inaugural Zombie Plague season.'}
-                    {activeTab === 'proofs'  && 'Ranked by total innocence proofs submitted on-chain.'}
-                    {activeTab === 'week'    && 'Players active in the last 7 days, ranked by wins.'}
-                  </p>
-                  <p className="mt-3 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
-                    {sorted.length} operative{sorted.length !== 1 ? 's' : ''} shown
-                  </p>
                 </div>
 
               </aside>
@@ -424,6 +460,8 @@ export default function LeaderboardPage() {
             </a>
           </div>
         </section>
+
+        <SiteFooter />
       </div>
     </main>
   )

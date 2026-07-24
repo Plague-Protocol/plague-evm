@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import type { Prisma } from '../generated/prisma/client'
 import { prisma } from '../db/prisma'
 import { chainAdapter } from '../services/chainAdapter'
 import { upsertGameSummary } from '../repositories/rooms'
@@ -13,10 +14,26 @@ type LeaderboardRow = {
   losses: number
   draws: number
   proofs: number
+  survivals: number
+  points: number
   gamesPlayed: number
   winRate: number
   lastPlayedAt: string | null
 }
+
+/**
+ * Aggregate points formula. Weighs every way a player engages: winning,
+ * fighting to a draw, showing up at all, spending money on shields
+ * (innocence proofs), and surviving to the end of a game. Mirrored in the
+ * frontend's "How points work" card — keep the two in sync.
+ */
+export const POINTS = {
+  win: 100,
+  draw: 40,
+  loss: 10,
+  shield: 15,   // per innocence proof submitted (costs the proof fee in USDm)
+  survival: 20, // reached game end without being eliminated
+} as const
 
 /**
  * Backfill GameSummary records for any ended rooms on-chain that are
@@ -154,6 +171,65 @@ leaderboardRouter.post('/backfill', async (_req, res) => {
   }
 })
 
+type SummaryWithPlayers = Prisma.GameSummaryGetPayload<{ include: { players: true } }>
+
+function aggregateRows(
+  summaries: SummaryWithPlayers[],
+  nicknameByAddress: Map<string, string>
+): LeaderboardRow[] {
+  const statsByAddress = new Map<string, LeaderboardRow>()
+
+  for (const summary of summaries) {
+    for (const player of summary.players) {
+      const address = player.address.toLowerCase()
+      const existing = statsByAddress.get(address) ?? {
+        address: player.address,
+        displayName: nicknameByAddress.get(address) ?? player.displayNameSnapshot ?? `${player.address.slice(0, 6)}…${player.address.slice(-4)}`,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        proofs: 0,
+        survivals: 0,
+        points: 0,
+        gamesPlayed: 0,
+        winRate: 0,
+        lastPlayedAt: null,
+      }
+
+      existing.displayName = nicknameByAddress.get(address) ?? existing.displayName
+      existing.proofs += player.proofsSubmittedTotal
+      existing.gamesPlayed += 1
+      if (player.statusAtEnd !== 'eliminated') existing.survivals += 1
+      // Summaries arrive newest-first; only take the first (most recent) endedAt.
+      existing.lastPlayedAt ??= summary.endedAt.toISOString()
+
+      if (player.result === 'win') existing.wins += 1
+      else if (player.result === 'draw') existing.draws += 1
+      else existing.losses += 1
+
+      existing.winRate = existing.gamesPlayed > 0
+        ? Number((existing.wins / existing.gamesPlayed).toFixed(3))
+        : 0
+
+      existing.points =
+        existing.wins * POINTS.win +
+        existing.draws * POINTS.draw +
+        existing.losses * POINTS.loss +
+        existing.proofs * POINTS.shield +
+        existing.survivals * POINTS.survival
+
+      statsByAddress.set(address, existing)
+    }
+  }
+
+  return Array.from(statsByAddress.values()).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points
+    if (b.wins !== a.wins) return b.wins - a.wins
+    if (b.proofs !== a.proofs) return b.proofs - a.proofs
+    return (a.displayName ?? a.address).localeCompare(b.displayName ?? b.address)
+  })
+}
+
 leaderboardRouter.get('/', async (_req, res) => {
   try {
     // Always check the chain for missing summaries (function skips already-persisted rooms).
@@ -172,49 +248,22 @@ leaderboardRouter.get('/', async (_req, res) => {
     const nicknameRows = await prisma.playerNickname.findMany()
     const nicknameByAddress = new Map(nicknameRows.map(row => [row.address.toLowerCase(), row.nickname]))
 
-    const statsByAddress = new Map<string, LeaderboardRow>()
+    // Monthly window = current calendar month, UTC.
+    const now = new Date()
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const monthlySummaries = summaries.filter(s => s.endedAt >= monthStart)
 
-    for (const summary of summaries) {
-      for (const player of summary.players) {
-        const address = player.address.toLowerCase()
-        const existing = statsByAddress.get(address) ?? {
-          address: player.address,
-          displayName: nicknameByAddress.get(address) ?? player.displayNameSnapshot ?? `${player.address.slice(0, 6)}…${player.address.slice(-4)}`,
-          wins: 0,
-          losses: 0,
-          draws: 0,
-          proofs: 0,
-          gamesPlayed: 0,
-          winRate: 0,
-          lastPlayedAt: null,
-        }
-
-        existing.displayName = nicknameByAddress.get(address) ?? existing.displayName
-        existing.proofs += player.proofsSubmittedTotal
-        existing.gamesPlayed += 1
-        existing.lastPlayedAt = summary.endedAt.toISOString()
-
-        if (player.result === 'win') existing.wins += 1
-        else if (player.result === 'draw') existing.draws += 1
-        else existing.losses += 1
-
-        existing.winRate = existing.gamesPlayed > 0
-          ? Number((existing.wins / existing.gamesPlayed).toFixed(3))
-          : 0
-
-        statsByAddress.set(address, existing)
-      }
-    }
-
-    const rows = Array.from(statsByAddress.values()).sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins
-      if (b.proofs !== a.proofs) return b.proofs - a.proofs
-      return (a.displayName ?? a.address).localeCompare(b.displayName ?? b.address)
-    })
+    const global = aggregateRows(summaries, nicknameByAddress)
+    const monthly = aggregateRows(monthlySummaries, nicknameByAddress)
 
     res.json({
-      players: rows,
+      global,
+      monthly,
+      // Legacy alias kept so an older frontend deploy keeps working.
+      players: global,
       totalGames: summaries.length,
+      monthlyGames: monthlySummaries.length,
+      monthStart: monthStart.toISOString(),
       generatedAt: new Date().toISOString(),
     })
   } catch (err) {
