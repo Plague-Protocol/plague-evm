@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
+import { SiteFooter } from '@/components/ui/site-footer'
 
 // ─── Section data ──────────────────────────────────────────────────────────
 
@@ -616,11 +617,19 @@ export default function HowToPlayPage() {
                 Back to Home
               </Link>
             </div>
+            <p className="mt-6 font-mono text-xs" style={{ color: '#4a5e44' }}>
+              More questions?{' '}
+              <Link href="/support" className="underline underline-offset-4" style={{ color: '#6b8e23' }}>
+                FAQ &amp; Support
+              </Link>
+            </p>
           </div>
         </section>
 
       </div>
       </div>
+
+      <SiteFooter />
     </main>
   )
 }

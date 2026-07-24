@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
+import { SiteFooter } from '@/components/ui/site-footer'
 import { HeroStats } from '@/components/ui/home-stats'
 
 const features = [
@@ -317,6 +318,8 @@ export default function HomePage() {
           </Link>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   )
 }
