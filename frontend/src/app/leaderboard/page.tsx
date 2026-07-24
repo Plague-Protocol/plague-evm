@@ -18,9 +18,20 @@ type LeaderboardPlayer = {
   lastPlayedAt: string | null
 }
 
+type SeasonBoard = {
+  id: string
+  name: string
+  startsAt: string | null
+  endsAt: string | null
+  current: boolean
+  games: number
+  rows: LeaderboardPlayer[]
+}
+
 type LeaderboardResponse = {
   global?: LeaderboardPlayer[]
   monthly?: LeaderboardPlayer[]
+  seasons?: SeasonBoard[]
   /** Legacy field — older backend deploys return only this (all-time rows). */
   players?: LeaderboardPlayer[]
   totalGames: number
@@ -28,14 +39,8 @@ type LeaderboardResponse = {
   generatedAt: string
 }
 
-type Tab = 'global' | 'monthly'
-
-// This Month first and default: a board that resets on the 1st is winnable
-// for a newcomer, while all-time totals read as an unreachable wall.
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'monthly', label: 'This Month' },
-  { id: 'global',  label: 'Global' },
-]
+// 'monthly', or 'season:<id>', or the legacy 'global' fallback.
+type Tab = string
 
 // Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
 const POINTS = { win: 10, draw: 4, loss: 1, shield: 3, survival: 2 } as const
@@ -59,6 +64,13 @@ function sortByPoints(players: LeaderboardPlayer[]): LeaderboardPlayer[] {
   return [...players].sort((a, b) =>
     pointsOf(b) - pointsOf(a) || b.wins - a.wins || b.proofs - a.proofs
   )
+}
+
+function seasonWindow(s: SeasonBoard): string {
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('en', { month: 'short', year: 'numeric' })
+  const start = s.startsAt ? fmt(s.startsAt) : 'Genesis'
+  const end = s.endsAt ? fmt(s.endsAt) : 'ongoing'
+  return `${start} → ${end}`
 }
 
 const RANK_COLORS = ['#f5c518', '#8fa882', '#cd7f32']
@@ -183,7 +195,32 @@ export default function LeaderboardPage() {
     )
   }, [data])
 
-  const sorted = activeTab === 'global' ? globalRows : monthlyRows
+  const seasonBoards = useMemo(() => {
+    const map = new Map<string, LeaderboardPlayer[]>()
+    for (const s of data?.seasons ?? []) map.set(`season:${s.id}`, sortByPoints(s.rows))
+    return map
+  }, [data])
+
+  // This Month first and default: a board that resets on the 1st is winnable
+  // for a newcomer, while long-running totals read as an unreachable wall.
+  // Seasons come newest-first; a backend without seasons degrades to Global.
+  const tabs = useMemo<{ id: Tab; label: string }[]>(() => {
+    const seasonTabs = (data?.seasons ?? [])
+      .slice()
+      .reverse()
+      .map(s => ({ id: `season:${s.id}`, label: s.name }))
+    return [
+      { id: 'monthly', label: 'This Month' },
+      ...(seasonTabs.length > 0 ? seasonTabs : [{ id: 'global', label: 'Global' }]),
+    ]
+  }, [data])
+
+  const activeSeason = (data?.seasons ?? []).find(s => `season:${s.id}` === activeTab) ?? null
+
+  const sorted =
+    activeTab === 'monthly' ? monthlyRows
+    : activeTab === 'global' ? globalRows
+    : seasonBoards.get(activeTab) ?? globalRows
 
   // Reset to page 1 whenever tab or data changes
   useEffect(() => { setPage(1) }, [activeTab, data])
@@ -237,12 +274,13 @@ export default function LeaderboardPage() {
             </h1>
             <p className="max-w-lg font-mono text-sm" style={{ color: '#8fa882' }}>
               Every game counts — wins, draws, shields and survival all earn points.
-              The monthly board resets on the 1st; the global board is forever.
+              The monthly board resets on the 1st; seasons carry the long record,
+              and a closed season is archived forever.
             </p>
 
             {/* Tabs */}
             <div className="mt-2 flex flex-wrap justify-center gap-2">
-              {TABS.map(tab => {
+              {tabs.map(tab => {
                 const isActive = activeTab === tab.id
                 return (
                   <button
@@ -260,6 +298,15 @@ export default function LeaderboardPage() {
                 )
               })}
             </div>
+
+            {/* Active board window */}
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+              {activeTab === 'monthly'
+                ? `${monthName} — resets on the 1st (UTC)`
+                : activeSeason
+                  ? `${seasonWindow(activeSeason)}${activeSeason.current ? ' · current season' : ' · archived'}`
+                  : 'All-time record'}
+            </p>
           </div>
         </header>
 
@@ -305,7 +352,9 @@ export default function LeaderboardPage() {
                     <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#4a5e44' }}>
                       {activeTab === 'monthly'
                         ? `No games finished in ${monthName} yet — the first survivor tops this board.`
-                        : 'No completed games yet. Rankings will appear once rooms finish.'}
+                        : activeSeason && !activeSeason.current
+                          ? `No games were recorded in ${activeSeason.name}.`
+                          : 'No completed games yet. Rankings will appear once rooms finish.'}
                     </div>
                   )}
                   {pageSlice.map((player, i) => (

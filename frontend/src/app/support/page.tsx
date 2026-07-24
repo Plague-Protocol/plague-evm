@@ -46,7 +46,7 @@ const FAQS: Faq[] = [
   {
     question: 'How do leaderboard points work?',
     answer:
-      'Every game earns points: 10 for a win, 4 for a draw, 1 just for playing, 3 per shield used, and 2 for surviving to the end. Points build slowly by design — a high rank means sustained play, not one lucky night. The monthly board starts fresh on the 1st of each month, so everyone gets a clean shot at the top; the Global board keeps the all-time record.',
+      'Every game earns points: 10 for a win, 4 for a draw, 1 just for playing, 3 per shield used, and 2 for surviving to the end. Points build slowly by design — a high rank means sustained play, not one lucky night. The monthly board starts fresh on the 1st of each month, so everyone gets a clean shot at the top; season boards carry the long record, and when a season closes it is archived forever and a new one begins.',
     body: (
       <p>
         Every game earns points: <strong>10</strong> for a win,{' '}
@@ -54,8 +54,9 @@ const FAQS: Faq[] = [
         <strong>3</strong> per shield used, and <strong>2</strong> for
         surviving to the end. Points build slowly by design — a high rank
         means sustained play, not one lucky night. The monthly board starts
-        fresh on the 1st, so everyone gets a clean shot at the top; the
-        Global board keeps the all-time record. See the{' '}
+        fresh on the 1st, so everyone gets a clean shot at the top; season
+        boards carry the long record, and when a season closes it is
+        archived forever and a new one begins. See the{' '}
         <Link href="/leaderboard" style={link}>leaderboard</Link>.
       </p>
     ),

@@ -36,6 +36,26 @@ export const POINTS = {
   survival: 2, // reached game end without being eliminated
 } as const
 
+type SeasonDef = {
+  id: string
+  name: string
+  startsAt: string | null // ISO UTC; null = from genesis
+  endsAt: string | null   // ISO UTC (exclusive); null = ongoing/current
+}
+
+/**
+ * Named leaderboard seasons, chronological. Games are bucketed by endedAt.
+ * To archive the current season and start a fresh board: set endsAt on the
+ * last entry and append the new season, e.g.
+ *   { id: 'season-0', name: 'Season Zero', startsAt: null, endsAt: '2027-01-01T00:00:00Z' },
+ *   { id: 'season-1', name: 'Season One',  startsAt: '2027-01-01T00:00:00Z', endsAt: null },
+ * then redeploy the backend. Adjacent seasons should share the boundary
+ * instant (endsAt is exclusive, startsAt inclusive) so no game falls in a gap.
+ */
+export const SEASONS: SeasonDef[] = [
+  { id: 'season-0', name: 'Season Zero', startsAt: null, endsAt: null },
+]
+
 /**
  * Backfill GameSummary records for any ended rooms on-chain that are
  * missing from the database (e.g. games that finished while the backend
@@ -309,9 +329,27 @@ leaderboardRouter.get('/', async (_req, res) => {
     const global = aggregateRows(summaries, nicknameByAddress)
     const monthly = aggregateRows(monthlySummaries, nicknameByAddress)
 
+    const seasons = SEASONS.map(s => {
+      const start = s.startsAt ? new Date(s.startsAt) : null
+      const end = s.endsAt ? new Date(s.endsAt) : null
+      const windowed = summaries.filter(x =>
+        (!start || x.endedAt >= start) && (!end || x.endedAt < end)
+      )
+      return {
+        id: s.id,
+        name: s.name,
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+        current: s.endsAt === null,
+        games: windowed.length,
+        rows: aggregateRows(windowed, nicknameByAddress),
+      }
+    })
+
     res.json({
       global,
       monthly,
+      seasons,
       // Legacy alias kept so an older frontend deploy keeps working.
       players: global,
       totalGames: summaries.length,
