@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import Image from 'next/image'
 import { SiteNav } from '@/components/ui/site-nav'
 import { SiteFooter } from '@/components/ui/site-footer'
 
@@ -472,6 +473,8 @@ export default function LeaderboardPage() {
                 <div className="champion-scene rise-in">
                   <div className="champion-card">
                     <div className="champion-inner p-5 text-center">
+                      <div className="champion-backdrop" aria-hidden />
+                      <div className="relative">
                       <p
                         className="font-heading text-xl font-bold uppercase tracking-[0.14em]"
                         style={{ color: '#f5c518', textShadow: '0 0 12px rgba(245,197,24,0.35)' }}
@@ -480,11 +483,17 @@ export default function LeaderboardPage() {
                       </p>
                       {monthChampion ? (
                         <>
-                          <div
-                            className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full border-2 font-display text-3xl"
-                            style={{ borderColor: 'rgba(245,197,24,0.6)', color: '#f5c518', backgroundColor: 'rgba(245,197,24,0.08)' }}
-                          >
-                            {monthChampion.displayName.charAt(0).toUpperCase()}
+                          <div className="champion-avatar mx-auto mt-4">
+                            <Image
+                              src="/images/bg-patient-zero.webp"
+                              alt=""
+                              width={112}
+                              height={112}
+                              className="champion-avatar-img"
+                            />
+                            <span className="champion-avatar-initial font-display">
+                              {monthChampion.displayName.charAt(0).toUpperCase()}
+                            </span>
                           </div>
                           <p className="mt-3 truncate font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
                             {monthChampion.displayName}
@@ -515,43 +524,16 @@ export default function LeaderboardPage() {
                       >
                         Zombie Plague · No. 1 of {monthlyRows.length || '—'}
                       </p>
+                      </div>
                       <div className="champion-sheen" />
                     </div>
                   </div>
                 </div>
 
-                {/* How points work */}
-                <div
-                  className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(245,197,24,0.2)', animationDelay: '80ms' }}
-                >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>How Points Work</p>
-                  <div className="mt-4 space-y-2">
-                    {[
-                      { label: 'Win a game',        value: `+${POINTS.win}`,    color: '#6b8e23' },
-                      { label: 'Draw',              value: `+${POINTS.draw}`,   color: '#f5c518' },
-                      { label: 'Shield used',       value: `+${POINTS.shield}`, color: '#e63329' },
-                      { label: 'Loss (still counts)', value: `+${POINTS.loss}`, color: '#8fa882' },
-                    ].map(s => (
-                      <div
-                        key={s.label}
-                        className="flex items-center justify-between rounded-lg border px-4 py-2.5"
-                        style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}
-                      >
-                        <span className="font-mono text-xs" style={{ color: '#8fa882' }}>{s.label}</span>
-                        <span className="font-heading text-xl leading-none" style={{ color: s.color }}>{s.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
-                    Shields are on-chain innocence proofs — each one costs the room&apos;s proof fee.
-                  </p>
-                </div>
-
                 {/* Bounties teaser */}
                 <div
                   className="rise-in rounded-xl border p-5"
-                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(204,20,20,0.3)', animationDelay: '120ms' }}
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(204,20,20,0.3)', animationDelay: '80ms' }}
                 >
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#cc1414' }}>Bounties</p>
                   {bounty?.active ? (
@@ -595,6 +577,34 @@ export default function LeaderboardPage() {
                       </p>
                     </>
                   )}
+                </div>
+
+                {/* How points work */}
+                <div
+                  className="rise-in rounded-xl border p-5"
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(245,197,24,0.2)', animationDelay: '120ms' }}
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>How Points Work</p>
+                  <div className="mt-4 space-y-2">
+                    {[
+                      { label: 'Win a game',        value: `+${POINTS.win}`,    color: '#6b8e23' },
+                      { label: 'Draw',              value: `+${POINTS.draw}`,   color: '#f5c518' },
+                      { label: 'Shield used',       value: `+${POINTS.shield}`, color: '#e63329' },
+                      { label: 'Loss (still counts)', value: `+${POINTS.loss}`, color: '#8fa882' },
+                    ].map(s => (
+                      <div
+                        key={s.label}
+                        className="flex items-center justify-between rounded-lg border px-4 py-2.5"
+                        style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}
+                      >
+                        <span className="font-mono text-xs" style={{ color: '#8fa882' }}>{s.label}</span>
+                        <span className="font-heading text-xl leading-none" style={{ color: s.color }}>{s.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
+                    Shields are on-chain innocence proofs — each one costs the room&apos;s proof fee.
+                  </p>
                 </div>
 
                 {/* All-time stats */}
