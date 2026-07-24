@@ -28,9 +28,20 @@ type SeasonBoard = {
   rows: LeaderboardPlayer[]
 }
 
+type MonthBoard = {
+  id: string
+  name: string
+  startsAt: string
+  endsAt: string
+  current: boolean
+  games: number
+  rows: LeaderboardPlayer[]
+}
+
 type LeaderboardResponse = {
   global?: LeaderboardPlayer[]
   monthly?: LeaderboardPlayer[]
+  months?: MonthBoard[]
   seasons?: SeasonBoard[]
   /** Legacy field — older backend deploys return only this (all-time rows). */
   players?: LeaderboardPlayer[]
@@ -43,7 +54,7 @@ type LeaderboardResponse = {
 type Tab = string
 
 // Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
-const POINTS = { win: 10, draw: 4, loss: 1, shield: 3, survival: 2 } as const
+const POINTS = { win: 7, draw: 3, loss: 1, shield: 3, survival: 2 } as const
 
 /** Fallback for rows from a backend that predates server-side points. */
 function computePoints(p: LeaderboardPlayer): number {
@@ -201,6 +212,15 @@ export default function LeaderboardPage() {
     return map
   }, [data])
 
+  // Current + past calendar months (months[0] is always the current one);
+  // absent on a backend that predates month history.
+  const monthBoards = useMemo(
+    () => (data?.months ?? []).map(m => ({ ...m, rows: sortByPoints(m.rows) })),
+    [data]
+  )
+  const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
+  const activeMonth = monthBoards.find(m => m.id === selectedMonthId) ?? monthBoards[0] ?? null
+
   // This Month first and default: a board that resets on the 1st is winnable
   // for a newcomer, while long-running totals read as an unreachable wall.
   // Seasons come newest-first; a backend without seasons degrades to Global.
@@ -218,12 +238,13 @@ export default function LeaderboardPage() {
   const activeSeason = (data?.seasons ?? []).find(s => `season:${s.id}` === activeTab) ?? null
 
   const sorted =
-    activeTab === 'monthly' ? monthlyRows
+    activeTab === 'monthly' ? (activeMonth?.rows ?? monthlyRows)
     : activeTab === 'global' ? globalRows
     : seasonBoards.get(activeTab) ?? globalRows
 
-  // Reset to page 1 whenever tab or data changes
-  useEffect(() => { setPage(1) }, [activeTab, data])
+  // Reset paging (and month selection when leaving the tab) on any view change
+  useEffect(() => { setPage(1) }, [activeTab, selectedMonthId, data])
+  useEffect(() => { setSelectedMonthId(null) }, [activeTab])
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const pageSlice = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -299,10 +320,35 @@ export default function LeaderboardPage() {
               })}
             </div>
 
+            {/* Month picker — current month plus archived past months */}
+            {activeTab === 'monthly' && monthBoards.length > 1 && (
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {monthBoards.map(m => {
+                  const isActive = m.id === activeMonth?.id
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedMonthId(m.id)}
+                      className="rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-all duration-150 hover:opacity-90"
+                      style={{
+                        borderColor: isActive ? 'rgba(245,197,24,0.5)' : 'rgba(107,142,35,0.2)',
+                        backgroundColor: isActive ? 'rgba(245,197,24,0.1)' : 'transparent',
+                        color: isActive ? '#f5c518' : '#4a5e44',
+                      }}
+                    >
+                      {m.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             {/* Active board window */}
             <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
               {activeTab === 'monthly'
-                ? `${monthName} — resets on the 1st (UTC)`
+                ? activeMonth
+                  ? `${activeMonth.name} — ${activeMonth.current ? 'resets on the 1st (UTC)' : 'archived month'}`
+                  : `${monthName} — resets on the 1st (UTC)`
                 : activeSeason
                   ? `${seasonWindow(activeSeason)}${activeSeason.current ? ' · current season' : ' · archived'}`
                   : 'All-time record'}

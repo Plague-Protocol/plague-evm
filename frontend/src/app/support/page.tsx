@@ -46,18 +46,18 @@ const FAQS: Faq[] = [
   {
     question: 'How do leaderboard points work?',
     answer:
-      'Every game earns points: 10 for a win, 4 for a draw, 1 just for playing, 3 per shield used, and 2 for surviving to the end. Points build slowly by design — a high rank means sustained play, not one lucky night. The monthly board starts fresh on the 1st of each month, so everyone gets a clean shot at the top; season boards carry the long record, and when a season closes it is archived forever and a new one begins.',
+      'Every game earns points: 7 for a win, 3 for a draw, 1 just for playing, 3 per shield used, and 2 for surviving to the end. Points build slowly by design — a high rank means sustained play, not one lucky night. The monthly board starts fresh on the 1st of each month (past months stay browsable), so everyone gets a clean shot at the top; season boards carry the long record, and when a season closes it is archived forever and a new one begins.',
     body: (
       <p>
-        Every game earns points: <strong>10</strong> for a win,{' '}
-        <strong>4</strong> for a draw, <strong>1</strong> just for playing,{' '}
+        Every game earns points: <strong>7</strong> for a win,{' '}
+        <strong>3</strong> for a draw, <strong>1</strong> just for playing,{' '}
         <strong>3</strong> per shield used, and <strong>2</strong> for
         surviving to the end. Points build slowly by design — a high rank
         means sustained play, not one lucky night. The monthly board starts
-        fresh on the 1st, so everyone gets a clean shot at the top; season
-        boards carry the long record, and when a season closes it is
-        archived forever and a new one begins. See the{' '}
-        <Link href="/leaderboard" style={link}>leaderboard</Link>.
+        fresh on the 1st (past months stay browsable), so everyone gets a
+        clean shot at the top; season boards carry the long record, and
+        when a season closes it is archived forever and a new one begins.
+        See the <Link href="/leaderboard" style={link}>leaderboard</Link>.
       </p>
     ),
   },

@@ -28,8 +28,9 @@ type LeaderboardRow = {
  * frontend's "How points work" card — keep the two in sync.
  */
 export const POINTS = {
-  win: 10,
-  draw: 4,
+  win: 7,
+  draw: 3,     // kept under half a win so stalling a game into a draw
+               // is never the smart play
   loss: 1,
   shield: 3,   // per innocence proof submitted — costs real USDm (proof fee)
                // and is capped at one per round, so it can't be grinded
@@ -329,6 +330,33 @@ leaderboardRouter.get('/', async (_req, res) => {
     const global = aggregateRows(summaries, nicknameByAddress)
     const monthly = aggregateRows(monthlySummaries, nicknameByAddress)
 
+    // Boards for the current + up to 5 previous calendar months (UTC),
+    // skipping past months with no games. months[0] is always the current one.
+    const months: {
+      id: string
+      name: string
+      startsAt: string
+      endsAt: string
+      current: boolean
+      games: number
+      rows: LeaderboardRow[]
+    }[] = []
+    for (let i = 0; i < 6; i++) {
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 1))
+      const windowed = summaries.filter(s => s.endedAt >= start && s.endedAt < end)
+      if (i > 0 && windowed.length === 0) continue
+      months.push({
+        id: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`,
+        name: start.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+        startsAt: start.toISOString(),
+        endsAt: end.toISOString(),
+        current: i === 0,
+        games: windowed.length,
+        rows: aggregateRows(windowed, nicknameByAddress),
+      })
+    }
+
     const seasons = SEASONS.map(s => {
       const start = s.startsAt ? new Date(s.startsAt) : null
       const end = s.endsAt ? new Date(s.endsAt) : null
@@ -349,6 +377,7 @@ leaderboardRouter.get('/', async (_req, res) => {
     res.json({
       global,
       monthly,
+      months,
       seasons,
       // Legacy alias kept so an older frontend deploy keeps working.
       players: global,
