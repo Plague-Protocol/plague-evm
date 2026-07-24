@@ -29,8 +29,8 @@ type LeaderboardRow = {
  */
 export const POINTS = {
   win: 7,
-  draw: 3,     // kept under half a win so stalling a game into a draw
-               // is never the smart play
+  draw: 5,     // draws (surviving to max rounds) are rarer and harder than
+               // wins in practice — score them as near-wins
   loss: 1,
   shield: 3,   // per innocence proof submitted — costs real USDm (proof fee)
                // and is capped at one per round, so it can't be grinded

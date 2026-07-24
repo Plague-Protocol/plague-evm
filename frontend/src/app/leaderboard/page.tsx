@@ -54,7 +54,7 @@ type LeaderboardResponse = {
 type Tab = string
 
 // Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
-const POINTS = { win: 7, draw: 3, loss: 1, shield: 3, survival: 2 } as const
+const POINTS = { win: 7, draw: 5, loss: 1, shield: 3, survival: 2 } as const
 
 /** Fallback for rows from a backend that predates server-side points. */
 function computePoints(p: LeaderboardPlayer): number {
@@ -86,8 +86,11 @@ function seasonWindow(s: SeasonBoard): string {
 
 const RANK_COLORS = ['#f5c518', '#8fa882', '#cd7f32']
 
-// Shared grid template — header and rows must match exactly
-const ROW_GRID = '2.5rem 1fr 5rem 4rem 4.5rem'
+// Shared grid template — header and rows must match exactly. Phones get a
+// 3-column layout (#, operative, points; wins/shields live in the W/L/D chip)
+// so the table never forces horizontal scrolling on narrow screens.
+const ROW_GRID_CLASS =
+  'grid-cols-[2rem_minmax(0,1fr)_3.5rem] sm:grid-cols-[2.5rem_minmax(0,1fr)_5rem_4rem_4.5rem] gap-2 sm:gap-4 px-3 sm:px-5'
 
 function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }) {
   const rankColor = RANK_COLORS[rank - 1] ?? '#4a5e44'
@@ -95,9 +98,8 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
   return (
     <div
-      className="rise-in grid items-center gap-4 rounded-xl border px-5 py-4 transition-all duration-150 hover:scale-[1.005]"
+      className={`rise-in grid items-center ${ROW_GRID_CLASS} rounded-xl border py-4 transition-all duration-150 hover:scale-[1.005]`}
       style={{
-        gridTemplateColumns: ROW_GRID,
         borderColor: isTop3 ? `${rankColor}44` : 'rgba(107,142,35,0.12)',
         backgroundColor: isTop3 ? `${rankColor}0a` : '#0e180d',
         animationDelay: `${Math.min((rank - 1) * 45, 450)}ms`,
@@ -105,7 +107,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
     >
       {/* Rank — #1 gets the slow toxic glow */}
       <div
-        className={`flex h-9 w-9 items-center justify-center rounded-lg font-heading text-lg leading-none${rank === 1 ? ' toxic-pulse' : ''}`}
+        className={`flex h-7 w-7 items-center justify-center rounded-lg font-heading text-base leading-none sm:h-9 sm:w-9 sm:text-lg${rank === 1 ? ' toxic-pulse' : ''}`}
         style={{ backgroundColor: `${rankColor}22`, color: rankColor }}
       >
         {rank}
@@ -142,16 +144,16 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
       {/* Points */}
       <div className="text-center">
-        <p className="font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(player).toLocaleString()}</p>
+        <p className="font-heading text-xl sm:text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(player).toLocaleString()}</p>
       </div>
 
-      {/* Wins */}
-      <div className="text-center">
+      {/* Wins — desktop only; phones see it in the W/L/D chip */}
+      <div className="hidden text-center sm:block">
         <p className="font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{player.wins}</p>
       </div>
 
-      {/* Shields */}
-      <div className="text-center">
+      {/* Shields — desktop only */}
+      <div className="hidden text-center sm:block">
         <p className="font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{player.proofs}</p>
       </div>
     </div>
@@ -368,9 +370,8 @@ export default function LeaderboardPage() {
               >
                 {/* Header row */}
                 <div
-                  className="mb-3 grid items-center gap-4 rounded-lg border px-5 py-3"
+                  className={`mb-3 grid items-center ${ROW_GRID_CLASS} rounded-lg border py-3`}
                   style={{
-                    gridTemplateColumns: ROW_GRID,
                     borderColor: 'rgba(107,142,35,0.25)',
                     backgroundColor: '#0e180d',
                   }}
@@ -378,8 +379,8 @@ export default function LeaderboardPage() {
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>#</span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Operative</span>
                   <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Points</span>
-                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Wins</span>
-                  <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>Shields</span>
+                  <span className="hidden text-center font-mono text-[10px] uppercase tracking-[0.2em] sm:block" style={{ color: '#6b8e23' }}>Wins</span>
+                  <span className="hidden text-center font-mono text-[10px] uppercase tracking-[0.2em] sm:block" style={{ color: '#e63329' }}>Shields</span>
                 </div>
 
                 {/* Rows */}
@@ -420,7 +421,7 @@ export default function LeaderboardPage() {
                       ← Prev
                     </button>
                     <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
-                      Page {page} / {totalPages} &nbsp;·&nbsp; {sorted.length} operatives
+                      Page {page} / {totalPages}<span className="hidden sm:inline"> &nbsp;·&nbsp; {sorted.length} operatives</span>
                     </span>
                     <button
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
