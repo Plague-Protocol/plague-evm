@@ -1,6 +1,7 @@
 'use client'
 
 import { SiteNav } from '@/components/ui/site-nav'
+import { SiteFooter } from '@/components/ui/site-footer'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
@@ -90,7 +91,7 @@ function activeRoomNotice(ar: RoomRow, now: number): string {
     return `${label} is full — auto-starting now.`
   }
   if (now >= ar.expiresAt) {
-    return `${label} has expired — tap “End & Refund” on its card to reclaim your stake and free up, then create a new one.`
+    return `${label} has expired — tap “End & Refund” on its card to reclaim your stake and free up, then create a new one. Any player in the room can do this; no need to wait for the host.`
   }
   return `You have an open room (${label}) waiting for players. It frees up when it fills and plays out, or when it expires.`
 }
@@ -606,15 +607,20 @@ function RoomCard({
             full-width CTA bar when the row wraps on mobile. */}
         <div className="flex w-full flex-col gap-2 md:w-auto md:shrink-0 md:items-end">
           {showEndRoom && (
-            <button
-              onClick={() => onEnd(room)}
-              disabled={isEnding}
-              title="Ends this expired room and refunds all staked USDm to every player."
-              className="w-full whitespace-nowrap rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40 md:w-auto"
-              style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.08)' }}
-            >
-              {isEnding ? 'Ending\u2026' : 'End & Refund'}
-            </button>
+            <div className="flex w-full flex-col gap-1 md:w-auto md:items-end">
+              <button
+                onClick={() => onEnd(room)}
+                disabled={isEnding}
+                title="Ends this expired room and refunds all staked USDm to every player. Any player in the room can do this \u2014 host not required."
+                className="w-full whitespace-nowrap rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40 md:w-auto"
+                style={{ borderColor: '#e63329', color: '#e63329', backgroundColor: 'rgba(230,51,41,0.08)' }}
+              >
+                {isEnding ? 'Ending\u2026' : 'End & Refund'}
+              </button>
+              <p className="font-mono text-[9px] uppercase tracking-[0.1em]" style={{ color: '#4a5e44' }}>
+                Refunds everyone \u2014 host not required
+              </p>
+            </div>
           )}
           <button
             onClick={() => onJoin(room)}
@@ -994,6 +1000,17 @@ export default function LobbyPage() {
       await client.expireRoom(address, room.id)
       await loadRooms()
     } catch (err) {
+      // Two players racing to end the same expired room is normal: the loser's
+      // tx (or simulation) reverts with RoomNotWaiting AFTER the winner's tx
+      // already refunded everyone — so "failure" here can mean "already done".
+      try {
+        const onchain = await client.getRoom(room.id)
+        if (Number(onchain.status) === 3 /* Ended */) {
+          toast.success('Someone in the room already ended it — your stake is refunded.')
+          await loadRooms()
+          return
+        }
+      } catch { /* chain read failed — report the original error instead */ }
       toast.error(getFriendlyError(err))
     } finally {
       setEndingRoomId(null)
@@ -1441,6 +1458,8 @@ export default function LobbyPage() {
           </div>
         </div>
       </div>
+
+      <SiteFooter />
       </div>
     </main>
   )
