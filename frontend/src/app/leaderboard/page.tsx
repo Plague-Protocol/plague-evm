@@ -30,13 +30,15 @@ type LeaderboardResponse = {
 
 type Tab = 'global' | 'monthly'
 
+// This Month first and default: a board that resets on the 1st is winnable
+// for a newcomer, while all-time totals read as an unreachable wall.
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'global',  label: 'Global' },
   { id: 'monthly', label: 'This Month' },
+  { id: 'global',  label: 'Global' },
 ]
 
 // Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
-const POINTS = { win: 100, draw: 40, loss: 10, shield: 15, survival: 20 } as const
+const POINTS = { win: 10, draw: 4, loss: 1, shield: 3, survival: 2 } as const
 
 /** Fallback for rows from a backend that predates server-side points. */
 function computePoints(p: LeaderboardPlayer): number {
@@ -139,7 +141,7 @@ export default function LeaderboardPage() {
   const [data, setData] = useState<LeaderboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<Tab>('global')
+  const [activeTab, setActiveTab] = useState<Tab>('monthly')
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -366,6 +368,22 @@ export default function LeaderboardPage() {
                   </div>
                   <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
                     Shields are on-chain innocence proofs — each one costs the room&apos;s proof fee.
+                  </p>
+                </div>
+
+                {/* Bounties teaser */}
+                <div
+                  className="rise-in rounded-xl border p-5"
+                  style={{ backgroundColor: '#0a100a', borderColor: 'rgba(204,20,20,0.3)', animationDelay: '120ms' }}
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#cc1414' }}>Bounties</p>
+                  <p className="mt-3 font-heading text-xl leading-tight" style={{ color: '#d4c9b2' }}>
+                    Monthly bounty seasons are coming.
+                  </p>
+                  <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                    Prize pools for the top of the This Month board, funded by
+                    platform fees. Details will be announced here first —
+                    champions crowned before launch will be remembered.
                   </p>
                 </div>
 

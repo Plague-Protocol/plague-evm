@@ -28,11 +28,12 @@ type LeaderboardRow = {
  * frontend's "How points work" card — keep the two in sync.
  */
 export const POINTS = {
-  win: 100,
-  draw: 40,
-  loss: 10,
-  shield: 15,   // per innocence proof submitted (costs the proof fee in USDm)
-  survival: 20, // reached game end without being eliminated
+  win: 10,
+  draw: 4,
+  loss: 1,
+  shield: 3,   // per innocence proof submitted — costs real USDm (proof fee)
+               // and is capped at one per round, so it can't be grinded
+  survival: 2, // reached game end without being eliminated
 } as const
 
 /**
@@ -134,6 +135,16 @@ async function backfillMissingSummaries(): Promise<number> {
 
         const chainId = Number(process.env.CHAIN_ID ?? 11142220)
 
+        // Chain-derived end time. phaseStartedAt is the last phase flip
+        // before the room ended, i.e. within one round of the true end.
+        // Stamping new Date() here would date every backfilled game to the
+        // backfill run and corrupt the monthly leaderboard window.
+        const endedSecs =
+          Number(rawRoom.phaseStartedAt ?? 0) ||
+          Number(rawRoom.startedAt ?? 0) ||
+          Number(rawRoom.createdAt ?? 0)
+        const endedAt = endedSecs > 0 ? new Date(endedSecs * 1000) : new Date()
+
         await upsertGameSummary({
           roomId: roomIdStr,
           chainId,
@@ -143,7 +154,7 @@ async function backfillMissingSummaries(): Promise<number> {
           totalPot: totalPot.toString(),
           potPerWinner: potPerWinner.toString(),
           winnerCount,
-          endedAt: new Date(),
+          endedAt,
           players: playerSummaries,
         })
 
@@ -165,6 +176,48 @@ leaderboardRouter.post('/backfill', async (_req, res) => {
   try {
     const backfilled = await backfillMissingSummaries()
     res.json({ success: true, backfilled })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
+
+/**
+ * POST /api/leaderboard/repair-timestamps
+ * One-off repair for summaries whose endedAt was stamped with the backfill
+ * run time instead of the on-chain end time (the pre-2026-07-24 backfill did
+ * this, which made the monthly board identical to the global one). Re-reads
+ * each room and resets endedAt to the chain-derived time when they disagree
+ * by more than an hour. Idempotent — safe to run repeatedly.
+ */
+leaderboardRouter.post('/repair-timestamps', async (_req, res) => {
+  try {
+    const summaries = await prisma.gameSummary.findMany({
+      select: { id: true, roomId: true, endedAt: true },
+    })
+    let repaired = 0
+    let failed = 0
+    for (const s of summaries) {
+      try {
+        const rawRoom = await chainAdapter.getRoom(BigInt(s.roomId))
+        const endedSecs =
+          Number(rawRoom.phaseStartedAt ?? 0) ||
+          Number(rawRoom.startedAt ?? 0) ||
+          Number(rawRoom.createdAt ?? 0)
+        if (endedSecs <= 0) continue
+        const chainEndedAt = new Date(endedSecs * 1000)
+        if (Math.abs(chainEndedAt.getTime() - s.endedAt.getTime()) > 60 * 60 * 1000) {
+          await prisma.gameSummary.update({ where: { id: s.id }, data: { endedAt: chainEndedAt } })
+          repaired++
+        }
+      } catch (err) {
+        failed++
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn(`[leaderboard] repair failed for room ${s.roomId}: ${message}`)
+      }
+    }
+    logger.info(`[leaderboard] timestamp repair: ${repaired} fixed of ${summaries.length} (${failed} unreadable)`)
+    res.json({ success: true, scanned: summaries.length, repaired, failed })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: message })
