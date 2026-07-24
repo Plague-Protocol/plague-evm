@@ -562,6 +562,11 @@ export class PlagueContractClient {
     })
   }
 
+  /** Sign an arbitrary message with the connected wallet (admin config edits). */
+  async signMessage(account: `0x${string}`, message: string): Promise<`0x${string}`> {
+    return this.walletClient(account).signMessage({ account, message })
+  }
+
   /** The contract's admin address (used to gate the ops UI; writes are enforced on-chain). */
   async getAdmin(): Promise<`0x${string}`> {
     return this.publicClient.readContract({

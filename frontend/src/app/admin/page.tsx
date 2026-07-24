@@ -53,6 +53,16 @@ type RoomRow = {
 
 type BotState = { online: boolean; available: number; total: number }
 
+type BountyForm = {
+  active: boolean
+  title: string
+  body: string
+  prize: string
+  endsAt: string
+}
+
+const EMPTY_BOUNTY: BountyForm = { active: false, title: '', body: '', prize: '', endsAt: '' }
+
 type Analytics = {
   totalGames: number
   uniquePlayers: number
@@ -97,6 +107,8 @@ export default function AdminPage() {
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
   const [bots, setBots] = useState<BotState | null>(null)
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
+  const [bountyForm, setBountyForm] = useState<BountyForm>(EMPTY_BOUNTY)
+  const [savingBounty, setSavingBounty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [withdrawing, setWithdrawing] = useState(false)
@@ -155,9 +167,23 @@ export default function AdminPage() {
     } catch { setAnalytics(null) }
   }, [])
 
+  // Load bounty content once on mount — NOT in the 30s refresh loop, which
+  // would clobber the form while the admin is typing.
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/config/bounty`, { signal: AbortSignal.timeout(5000) })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.value) setBountyForm({ ...EMPTY_BOUNTY, ...j.value }) })
+      .catch(() => { /* editor starts blank */ })
+  }, [])
+
   useEffect(() => {
     void load()
-    const t = setInterval(load, 30_000)
+    // 60s cadence, and skip entirely while the tab is hidden — an ops page
+    // left open in a background tab must not drip RPC credits all day.
+    const t = setInterval(() => {
+      if (document.hidden || !navigator.onLine) return
+      void load()
+    }, 60_000)
     return () => clearInterval(t)
   }, [load])
 
@@ -178,6 +204,43 @@ export default function AdminPage() {
     }
   }, [address, load])
 
+  const handleSaveBounty = useCallback(async () => {
+    const client = getContractClient()
+    if (!client || !address) return
+    if (bountyForm.active && (!bountyForm.title.trim() || !bountyForm.body.trim())) {
+      toast.error('An active bounty needs a title and a description.')
+      return
+    }
+    setSavingBounty(true)
+    try {
+      const value = {
+        active: bountyForm.active,
+        title:  bountyForm.title.trim(),
+        body:   bountyForm.body.trim(),
+        prize:  bountyForm.prize.trim(),
+        endsAt: bountyForm.endsAt.trim(),
+      }
+      const valueJson = JSON.stringify(value)
+      const timestamp = Date.now()
+      // Must match configMessage() in backend/src/routes/config.ts.
+      const signature = await client.signMessage(address, `plague-config:bounty:${timestamp}:${valueJson}`)
+      const r = await fetch(`${BACKEND_URL}/api/config/bounty`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, timestamp, signature, valueJson }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error(j?.message ?? j?.error ?? `Save failed (${r.status})`)
+      }
+      toast.success(value.active ? 'Bounty card is live on the leaderboard.' : 'Bounty card saved (hidden — teaser shows instead).')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed.')
+    } finally {
+      setSavingBounty(false)
+    }
+  }, [address, bountyForm])
+
   const gated = !isConnected || (info !== null && !isAdmin)
 
   return (
@@ -194,7 +257,7 @@ export default function AdminPage() {
             <div>
               <h1 className="font-heading text-3xl font-bold" style={{ color: '#d4c9b2' }}>Ops Console</h1>
               <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
-                Internal — contract, backend and bot-pool state at a glance. Refreshes every 30s.
+                Internal — contract, backend and bot-pool state at a glance. Refreshes every 60s while visible.
               </p>
             </div>
             <button
@@ -335,6 +398,72 @@ export default function AdminPage() {
                       {loading ? 'Loading…' : 'No monthly data yet.'}
                     </p>
                   )}
+                </div>
+              </div>
+
+              {/* Bounty card editor */}
+              <div className="mt-8 rounded-xl border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(204,20,20,0.25)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#cc1414' }}>
+                    Bounty Card (shown on the leaderboard)
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2 font-mono text-xs" style={{ color: bountyForm.active ? '#f5c518' : '#4a5e44' }}>
+                    <input
+                      type="checkbox"
+                      checked={bountyForm.active}
+                      onChange={e => setBountyForm(f => ({ ...f, active: e.target.checked }))}
+                      className="h-4 w-4 accent-[#f5c518]"
+                    />
+                    {bountyForm.active ? 'LIVE' : 'Hidden (default teaser shows)'}
+                  </label>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <input
+                    value={bountyForm.title}
+                    onChange={e => setBountyForm(f => ({ ...f, title: e.target.value }))}
+                    maxLength={80}
+                    placeholder="Title — e.g. August Bounty: 50 USDm pool"
+                    className="rounded-lg border bg-transparent px-3 py-2 font-heading text-sm outline-none sm:col-span-2"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#d4c9b2' }}
+                  />
+                  <textarea
+                    value={bountyForm.body}
+                    onChange={e => setBountyForm(f => ({ ...f, body: e.target.value }))}
+                    maxLength={400}
+                    rows={3}
+                    placeholder="Body — how it works, who wins, when it pays out."
+                    className="rounded-lg border bg-transparent px-3 py-2 font-mono text-xs leading-relaxed outline-none sm:col-span-2"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#8fa882' }}
+                  />
+                  <input
+                    value={bountyForm.prize}
+                    onChange={e => setBountyForm(f => ({ ...f, prize: e.target.value }))}
+                    maxLength={60}
+                    placeholder="Prize chip (optional) — e.g. 50 USDm · top 5"
+                    className="rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#f5c518' }}
+                  />
+                  <input
+                    value={bountyForm.endsAt}
+                    onChange={e => setBountyForm(f => ({ ...f, endsAt: e.target.value }))}
+                    maxLength={40}
+                    placeholder="Ends chip (optional) — e.g. Aug 31, 23:59 UTC"
+                    className="rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#8fa882' }}
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => void handleSaveBounty()}
+                    disabled={savingBounty}
+                    className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                    style={{ borderColor: '#cc1414', color: '#cc1414', backgroundColor: 'rgba(204,20,20,0.08)' }}
+                  >
+                    {savingBounty ? 'Signing…' : 'Sign & Publish'}
+                  </button>
+                  <p className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                    Publishing asks your wallet for a signature — the backend only accepts edits signed by the contract admin.
+                  </p>
                 </div>
               </div>
 

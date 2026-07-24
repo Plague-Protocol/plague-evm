@@ -305,12 +305,22 @@ function aggregateRows(
   })
 }
 
+// The backfill scan costs RPC calls (roomCount + a getRoom per non-persisted
+// room) — running it on EVERY leaderboard view burns upstream credits for
+// nothing, since the live GameEnded event path records games as they finish
+// and the scan is only a safety net. Throttle it to once per window; views
+// in between serve straight from Postgres.
+const BACKFILL_MIN_INTERVAL_MS = 5 * 60 * 1000
+let lastBackfillAt = 0
+
 leaderboardRouter.get('/', async (_req, res) => {
   try {
-    // Always check the chain for missing summaries (function skips already-persisted rooms).
-    const backfilled = await backfillMissingSummaries()
-    if (backfilled > 0) {
-      logger.info(`[leaderboard] backfilled ${backfilled} game summaries from chain`)
+    if (Date.now() - lastBackfillAt >= BACKFILL_MIN_INTERVAL_MS) {
+      lastBackfillAt = Date.now()
+      const backfilled = await backfillMissingSummaries()
+      if (backfilled > 0) {
+        logger.info(`[leaderboard] backfilled ${backfilled} game summaries from chain`)
+      }
     }
 
     const summaries = await prisma.gameSummary.findMany({

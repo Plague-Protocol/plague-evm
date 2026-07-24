@@ -4,9 +4,19 @@ import { useEffect, useState } from 'react'
 import { useWallet } from './useWallet'
 import { createContractClient } from '@/lib/contract'
 
-// Module-level cache: the contract admin never changes within a session, and
-// the nav renders on every page — one RPC read total, not one per navigation.
+// The contract admin never changes within a session and the nav renders on
+// every page, so the admin() read is cached twice over: a module variable
+// (client-side navigations) and sessionStorage (full page reloads) — one
+// RPC call per browser tab per session, total.
+const STORAGE_KEY = 'plague-admin-address'
 let cachedAdmin: `0x${string}` | null | undefined
+
+function readStoredAdmin(): `0x${string}` | undefined {
+  try {
+    const v = globalThis.sessionStorage?.getItem(STORAGE_KEY)
+    return v && /^0x[0-9a-fA-F]{40}$/.test(v) ? (v as `0x${string}`) : undefined
+  } catch { return undefined }
+}
 
 /** True when the connected wallet is the contract's admin(). */
 export function useIsAdmin(): boolean {
@@ -15,6 +25,8 @@ export function useIsAdmin(): boolean {
 
   useEffect(() => {
     if (cachedAdmin !== undefined) { setAdmin(cachedAdmin); return }
+    const stored = readStoredAdmin()
+    if (stored) { cachedAdmin = stored; setAdmin(stored); return }
     if (!address) return // don't spend an RPC read until a wallet connects
 
     const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}` | undefined
@@ -23,7 +35,11 @@ export function useIsAdmin(): boolean {
 
     createContractClient({ contractAddress, network })
       .getAdmin()
-      .then(a => { cachedAdmin = a; setAdmin(a) })
+      .then(a => {
+        cachedAdmin = a
+        setAdmin(a)
+        try { globalThis.sessionStorage?.setItem(STORAGE_KEY, a) } catch { /* private mode */ }
+      })
       .catch(() => { /* leave uncached; retried on next mount */ })
   }, [address])
 

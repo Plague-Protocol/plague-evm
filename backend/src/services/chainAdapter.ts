@@ -102,6 +102,7 @@ const PLAGUE_ABI = parseAbi([
   'function getPlayer(uint256 roomId, address player) external view returns ((address addr, uint8 status, bytes32 roleCommitment, uint256 staked, address voteTarget, uint64 joinedAt, bool freeProofUsed, uint32 proofsSubmittedTotal, bool pendingInfectionNextRound, bool hasProofThisRound, bool hasVotedThisRound, bool roleCommitted))',
   'function currentPatientZero(uint256 roomId) external view returns (address)',
   'function roomCount() external view returns (uint256)',
+  'function admin() external view returns (address)',
   // Events
   'event PlayerJoined(uint256 indexed roomId, address player)',
   'event GameStarted(uint256 indexed roomId)',
@@ -286,6 +287,16 @@ export const chainAdapter = {
       address,
       abi:          PLAGUE_ABI,
       functionName: 'roomCount',
+    })
+  },
+
+  /** The contract's admin address — used to verify signed config edits. */
+  async getAdmin(): Promise<`0x${string}`> {
+    const { publicClient, address } = clients()
+    return publicClient.readContract({
+      address,
+      abi:          PLAGUE_ABI,
+      functionName: 'admin',
     })
   },
 

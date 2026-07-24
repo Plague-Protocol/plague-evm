@@ -53,6 +53,15 @@ type LeaderboardResponse = {
 // 'monthly', or 'season:<id>', or the legacy 'global' fallback.
 type Tab = string
 
+/** Admin-editable bounty card content (backend /api/config/bounty). */
+type BountyConfig = {
+  active: boolean
+  title: string
+  body: string
+  prize?: string
+  endsAt?: string
+}
+
 // Mirrors POINTS in backend/src/routes/leaderboard.ts — keep in sync.
 const POINTS = { win: 7, draw: 5, loss: 2, shield: 3 } as const
 
@@ -178,6 +187,17 @@ export default function LeaderboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('monthly')
   const [page, setPage] = useState(1)
+  const [bounty, setBounty] = useState<BountyConfig | null>(null)
+
+  // Live bounty card content — independent of the leaderboard fetch so a
+  // failure in either doesn't blank the other.
+  useEffect(() => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
+    fetch(`${backendUrl}/api/config/bounty`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => setBounty(j?.value ?? null))
+      .catch(() => { /* keep the default teaser */ })
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -452,7 +472,10 @@ export default function LeaderboardPage() {
                 <div className="champion-scene rise-in">
                   <div className="champion-card">
                     <div className="champion-inner p-5 text-center">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.28em]" style={{ color: '#f5c518' }}>
+                      <p
+                        className="font-heading text-xl font-bold uppercase tracking-[0.14em]"
+                        style={{ color: '#f5c518', textShadow: '0 0 12px rgba(245,197,24,0.35)' }}
+                      >
                         ★ {monthName} Champion ★
                       </p>
                       {monthChampion ? (
@@ -508,7 +531,7 @@ export default function LeaderboardPage() {
                       { label: 'Win a game',        value: `+${POINTS.win}`,    color: '#6b8e23' },
                       { label: 'Draw',              value: `+${POINTS.draw}`,   color: '#f5c518' },
                       { label: 'Shield used',       value: `+${POINTS.shield}`, color: '#e63329' },
-                      { label: 'Play (even a loss)', value: `+${POINTS.loss}`,  color: '#8fa882' },
+                      { label: 'Loss (still counts)', value: `+${POINTS.loss}`, color: '#8fa882' },
                     ].map(s => (
                       <div
                         key={s.label}
@@ -531,14 +554,47 @@ export default function LeaderboardPage() {
                   style={{ backgroundColor: '#0a100a', borderColor: 'rgba(204,20,20,0.3)', animationDelay: '120ms' }}
                 >
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#cc1414' }}>Bounties</p>
-                  <p className="mt-3 font-heading text-xl leading-tight" style={{ color: '#d4c9b2' }}>
-                    Monthly bounty seasons are coming.
-                  </p>
-                  <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                    Prize pools for the top of the This Month board, funded by
-                    platform fees. Details will be announced here first —
-                    champions crowned before launch will be remembered.
-                  </p>
+                  {bounty?.active ? (
+                    <>
+                      <p className="mt-3 font-heading text-xl leading-tight" style={{ color: '#d4c9b2' }}>
+                        {bounty.title}
+                      </p>
+                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                        {bounty.body}
+                      </p>
+                      {(bounty.prize || bounty.endsAt) && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {bounty.prize && (
+                            <span
+                              className="rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase"
+                              style={{ backgroundColor: 'rgba(245,197,24,0.12)', color: '#f5c518' }}
+                            >
+                              {bounty.prize}
+                            </span>
+                          )}
+                          {bounty.endsAt && (
+                            <span
+                              className="rounded-full px-2.5 py-1 font-mono text-[10px] uppercase"
+                              style={{ backgroundColor: 'rgba(107,142,35,0.12)', color: '#8fa882' }}
+                            >
+                              ends {bounty.endsAt}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-3 font-heading text-xl leading-tight" style={{ color: '#d4c9b2' }}>
+                        Monthly bounty seasons are coming.
+                      </p>
+                      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+                        Prize pools for the top of the This Month board, funded by
+                        platform fees. Details will be announced here first —
+                        champions crowned before launch will be remembered.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 {/* All-time stats */}

@@ -96,3 +96,11 @@ model GameSummaryPlayer {
   @@index([address])
   @@index([result])
 }
+
+// Small admin-editable key-value store (e.g. the leaderboard bounty card).
+// Values are JSON-encoded strings; writes are signature-gated in the API.
+model SiteConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
