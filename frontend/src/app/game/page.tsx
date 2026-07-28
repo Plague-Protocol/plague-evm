@@ -936,11 +936,13 @@ function GamePageInner() { // NOSONAR
         </div>
       </div>
 
-      {/* Set Shield Password — phone slot, directly under the nav so the
-          commit window is the first thing on screen. Desktop keeps it at the
-          top of the left column. */}
-      {isMobile && shieldCommitCard && (
-        <div className="px-4 pt-4">
+      {/* Set Shield Password — directly under the nav on EVERY screen size.
+          It's a timed, mandatory action, so it must never be something a
+          player has to go looking for. On desktop the header alone (room row,
+          display title, countdown, sync strip, telemetry) runs 500-600px, so
+          "top of the left column" was still below the fold on a laptop. */}
+      {shieldCommitCard && (
+        <div className="px-4 pt-4 sm:px-6">
           <div className="mx-auto w-full max-w-6xl">{shieldCommitCard}</div>
         </div>
       )}
@@ -1183,11 +1185,6 @@ function GamePageInner() { // NOSONAR
 
             {/* ── LEFT COLUMN ── */}
             <div className="flex flex-col gap-6">
-
-              {/* Set Shield Password — desktop slot, first in the left column so
-                  it's above the fold. Phones render the same card above the
-                  header instead (see shieldCommitCard). */}
-              {!isMobile && shieldCommitCard}
 
               {/* Host Controls — hoisted to the top of the left column (was below
                   the Area 51 board, below the fold) so the host recruits bots

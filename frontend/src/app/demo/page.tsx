@@ -945,6 +945,16 @@ export default function DemoPage() {
               {/* Left column */}
               <div className="flex flex-col gap-6">
 
+                {/* Set Shield Password — hoisted ABOVE the board. This is a
+                    required action, and during `starting` the board below has
+                    nothing to show yet (nobody infected, nobody voted, the cam
+                    is idle), so leading with the action costs no context. Every
+                    later phase keeps its panel under the grid, where the grid
+                    IS the interface (tap a player, then act). */}
+                {phase === 'starting' && (
+                  <StartingPanel shieldSet={shieldSet} onCommit={commitShield} />
+                )}
+
                 {/* Player grid */}
                 <article className="rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
                   <div className="flex items-center justify-between gap-3 mb-4">
@@ -1005,11 +1015,7 @@ export default function DemoPage() {
                   )}
                 </article>
 
-                {/* Phase action panel */}
-                {phase === 'starting' && (
-                  <StartingPanel shieldSet={shieldSet} onCommit={commitShield} />
-                )}
-
+                {/* Phase action panel (starting is hoisted above the board) */}
                 {phase === 'infection' && (
                   <div className="rounded-lg border p-5" style={{ borderColor: 'rgba(230,51,41,0.4)', backgroundColor: 'rgba(230,51,41,0.08)' }}>
                     <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#e63329' }}>Infection Phase</p>
@@ -1184,29 +1190,43 @@ function StartingPanel({ shieldSet, onCommit }: { shieldSet: boolean; onCommit: 
     )
   }
 
+  // Amber + pulse while pending, matching the live game's "action required"
+  // treatment — the demo teaches the cues players will meet for real money.
   return (
-    <div className="rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
-      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Set Shield Password</p>
-      <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-        Choose a secret password. You&apos;ll use it later to activate your Shield — a ZK proof of innocence the contract verifies without ever seeing your password.
-      </p>
-      <input
-        type="password"
-        placeholder="My Shield Password…"
-        value={input}
-        onChange={e => setInput(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && input.trim() && onCommit(input)}
-        className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-        style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
-      />
-      <button
-        onClick={() => input.trim() && onCommit(input)}
-        disabled={!input.trim()}
-        className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-        style={{ backgroundColor: '#6b8e23', borderColor: '#6b8e23', color: '#060b06' }}
+    <div className="toxic-pulse rounded-lg">
+      <div
+        className="rounded-lg border p-5"
+        style={{ borderColor: 'rgba(245,197,24,0.7)', backgroundColor: 'rgba(245,197,24,0.08)', boxShadow: '0 0 18px rgba(245,197,24,0.25)' }}
       >
-        Set Shield Password
-      </button>
+        <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
+          ⚠ Action required — Set Shield Password
+        </p>
+        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+          Choose a secret password and <strong style={{ color: '#d4c9b2' }}>remember it</strong> — you&apos;ll need
+          the exact same one later to activate your Shield. It proves your innocence without
+          the contract ever seeing the password itself.
+        </p>
+        <input
+          type="password"
+          placeholder="My Shield Password…"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && input.trim() && onCommit(input)}
+          className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
+          style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#d4c9b2' }}
+        />
+        <button
+          onClick={() => input.trim() && onCommit(input)}
+          disabled={!input.trim()}
+          className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+          style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
+        >
+          Set Shield Password
+        </button>
+        <p className="mt-2 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+          The game can&apos;t start until every player has set one.
+        </p>
+      </div>
     </div>
   )
 }
