@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { isAddress } from 'viem'
 import { prisma } from '../db/prisma'
+import { invalidateLeaderboardCache } from '../lib/leaderboardCache'
 
 export const playerRouter = Router()
 
@@ -117,6 +118,8 @@ playerRouter.put('/nickname', async (req, res) => {
       update: { nickname },
       create: { address, nickname },
     })
+    // Leaderboard rows resolve display names through this table.
+    invalidateLeaderboardCache()
     res.json({ address: record.address, nickname: record.nickname })
   } catch (err: unknown) {
     // Catch Prisma unique constraint violation (P2002) as a race-condition fallback

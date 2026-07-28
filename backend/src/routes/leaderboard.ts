@@ -4,6 +4,7 @@ import { prisma } from '../db/prisma'
 import { chainAdapter } from '../services/chainAdapter'
 import { upsertGameSummary } from '../repositories/rooms'
 import { logger } from '../lib/logger'
+import { getCachedLeaderboard, setCachedLeaderboard, invalidateLeaderboardCache } from '../lib/leaderboardCache'
 
 export const leaderboardRouter = Router()
 
@@ -19,6 +20,10 @@ type LeaderboardRow = {
   gamesPlayed: number
   winRate: number
   lastPlayedAt: string | null
+  /** Consecutive wins ending at the player's most recent game (0 = streak broken). */
+  currentStreak: number
+  /** Longest run of consecutive wins inside this board's window. */
+  bestStreak: number
 }
 
 /**
@@ -240,6 +245,7 @@ leaderboardRouter.post('/repair-timestamps', async (_req, res) => {
       }
     }
     logger.info(`[leaderboard] timestamp repair: ${repaired} fixed of ${summaries.length} (${failed} unreadable)`)
+    if (repaired > 0) invalidateLeaderboardCache()
     res.json({ success: true, scanned: summaries.length, repaired, failed })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -254,6 +260,10 @@ function aggregateRows(
   nicknameByAddress: Map<string, string>
 ): LeaderboardRow[] {
   const statsByAddress = new Map<string, LeaderboardRow>()
+  // Per-player result timeline, kept in the caller's newest-first order so the
+  // current streak is just the leading run of wins. Streaks are derived from
+  // existing GameSummary rows — no schema change, and they backfill for free.
+  const timelineByAddress = new Map<string, string[]>()
 
   for (const summary of summaries) {
     for (const player of summary.players) {
@@ -270,7 +280,13 @@ function aggregateRows(
         gamesPlayed: 0,
         winRate: 0,
         lastPlayedAt: null,
+        currentStreak: 0,
+        bestStreak: 0,
       }
+
+      const timeline = timelineByAddress.get(address) ?? []
+      timeline.push(player.result)
+      timelineByAddress.set(address, timeline)
 
       existing.displayName = nicknameByAddress.get(address) ?? existing.displayName
       existing.proofs += player.proofsSubmittedTotal
@@ -297,6 +313,21 @@ function aggregateRows(
     }
   }
 
+  for (const [address, timeline] of timelineByAddress) {
+    const row = statsByAddress.get(address)
+    if (!row) continue
+    let current = 0
+    while (current < timeline.length && timeline[current] === 'win') current++
+    let best = 0
+    let run = 0
+    for (const result of timeline) {
+      run = result === 'win' ? run + 1 : 0
+      if (run > best) best = run
+    }
+    row.currentStreak = current
+    row.bestStreak = best
+  }
+
   return Array.from(statsByAddress.values()).sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points
     if (b.wins !== a.wins) return b.wins - a.wins
@@ -315,6 +346,12 @@ let lastBackfillAt = 0
 
 leaderboardRouter.get('/', async (_req, res) => {
   try {
+    // Serve the memoized aggregation when fresh — every branch below here
+    // recomputes identical boards from a full-table scan. `generatedAt`
+    // inside the cached body tells the truth about its age.
+    const cachedBody = getCachedLeaderboard()
+    if (cachedBody) return res.json(cachedBody)
+
     if (Date.now() - lastBackfillAt >= BACKFILL_MIN_INTERVAL_MS) {
       lastBackfillAt = Date.now()
       const backfilled = await backfillMissingSummaries()
@@ -385,7 +422,7 @@ leaderboardRouter.get('/', async (_req, res) => {
       }
     })
 
-    res.json({
+    const body = {
       global,
       monthly,
       months,
@@ -396,7 +433,9 @@ leaderboardRouter.get('/', async (_req, res) => {
       monthlyGames: monthlySummaries.length,
       monthStart: monthStart.toISOString(),
       generatedAt: new Date().toISOString(),
-    })
+    }
+    setCachedLeaderboard(body)
+    res.json(body)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: message })

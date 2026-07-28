@@ -333,13 +333,18 @@ export default function DemoPage() {
     clearTimers()
     setState(prev => {
       const alive = prev.players.filter(p => !p.eliminated)
+      // Payout must mirror PlagueGame._distributePot: a faction win pays the
+      // surviving members of that faction, a draw pays EVERY survivor
+      // regardless of status. The demo teaches the rules for a real-money
+      // game — it can't diverge from the contract.
       let winners: DemoPlayer[] = []
       if (outcome === 'clean_win') winners = alive.filter(p => p.status === 'clean')
-      if (outcome === 'infected_win') winners = alive.filter(p => p.status === 'infected')
+      else if (outcome === 'infected_win') winners = alive.filter(p => p.status === 'infected')
+      else winners = alive
       const potNet = POT_TOTAL * (1 - PLATFORM_FEE)
       const per = winners.length > 0 ? potNet / winners.length : 0
       const feed = [...prev.feed]
-      if (maxRoundsHit) feed.push(`Round limit reached (${MAX_ROUNDS}) — counts as an infected win.`)
+      if (maxRoundsHit) feed.push(`Round limit reached (${MAX_ROUNDS}) — the game is a draw; every survivor splits the pot.`)
       feed.push(`Game over: ${outcome.replaceAll('_', ' ')}. Pot ${POT_TOTAL} USDm − ${PLATFORM_FEE * 100}% fee → ${per > 0 ? `${per.toFixed(2)} USDm per winner.` : 'no faction payout.'}`)
       // Reveal everyone at game end, like the real post-game state.
       const players = prev.players.map(p => ({ ...p, revealedStatus: p.status }))
@@ -364,7 +369,7 @@ export default function DemoPage() {
     if (infected === 0) { finishGame('clean_win'); return }
     if (infected === 1 && clean === 1) { finishGame('draw'); return }
     if (infected > clean) { finishGame('infected_win'); return }
-    if (s.round >= MAX_ROUNDS) { finishGame('infected_win', true); return }
+    if (s.round >= MAX_ROUNDS) { finishGame('draw', true); return }
     startRoundRef.current(s.round + 1)
   }, [finishGame])
 
@@ -1391,11 +1396,11 @@ function GameOverPanel({
       >
         <p className="font-display text-4xl leading-none" style={{ color }}>{title}</p>
         {maxRoundsHit && (
-          <p className="mt-2 font-mono text-xs" style={{ color: '#8fa882' }}>Round limit reached — counts as an infected win.</p>
+          <p className="mt-2 font-mono text-xs" style={{ color: '#8fa882' }}>Round limit reached — the game ends as a draw.</p>
         )}
         <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#8fa882' }}>
           {outcome === 'draw'
-            ? 'One infected, one clean — a standoff. In a real game, no faction payout is declared.'
+            ? 'A standoff — neither faction closed it out. Every player still alive splits the pot, infected or not.'
             : won
               ? 'The village purged every carrier. The pot goes to the surviving clean players.'
               : 'The infected reached parity with the living. The pot goes to the surviving infected.'}

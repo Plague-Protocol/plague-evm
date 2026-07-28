@@ -269,6 +269,11 @@ function GamePageInner() { // NOSONAR
   const activePlayers = room?.players?.filter(p => !p.isEliminated) ?? []
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
+  // Infected majority reached, but the room hasn't ended yet — the contract
+  // only settles this at the next infection assignment. Drives the "outbreak
+  // decided" banner so the gap doesn't look like a broken rule.
+  const outbreakDecided =
+    room?.status === 'active' && infectedCount > activePlayers.length - infectedCount
   const potCUSD       = room ? formatToken(Number(room.stakeAmount) * totalPlayers) : '—'
   const hasVoted      = Boolean(optimisticVotedFor || localPlayer?.hasVotedThisRound)
   const myVotedTarget = optimisticVotedFor ?? localPlayer?.voteTarget
@@ -846,6 +851,59 @@ function GamePageInner() { // NOSONAR
     )
   }
 
+  // ── Set Shield Password card ────────────────────────────────────────────
+  // One instance, two slots: on desktop it heads the left column; on phones
+  // it's hoisted above the game header, because the header (title, countdown,
+  // sync strip, telemetry) pushed this time-limited action below the fold and
+  // players were missing the commit window entirely.
+  const shieldCommitCard = room?.status === 'starting' && showOnTab('game') ? (
+    <div className={commitDone ? undefined : 'toxic-pulse rounded-lg'}>
+      <div
+        className="rise-in rounded-lg border p-5"
+        style={commitDone
+          ? { borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }
+          : { borderColor: 'rgba(245,197,24,0.7)', backgroundColor: 'rgba(245,197,24,0.08)', boxShadow: '0 0 18px rgba(245,197,24,0.25)' }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: commitDone ? '#6b8e23' : '#f5c518' }}>
+            {commitDone ? 'Shield Password' : '⚠ Action required — Set Shield Password'}
+          </p>
+          {!commitDone && (
+            <span className="font-heading text-2xl leading-none tabular-nums" style={{ color: startCommitEndsAt - now < 60_000 ? '#e63329' : '#f5c518' }}>
+              {formatCountdown(Math.max(0, startCommitEndsAt - now))}
+            </span>
+          )}
+        </div>
+        {commitDone ? (
+          <p className="mt-3 font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Shield Password set. Waiting for all players…</p>
+        ) : (
+          <>
+            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
+              Enter your Shield Password before the timer runs out. Keep it secret — you&apos;ll need it to activate your Shield later.
+            </p>
+            <input
+              type="password"
+              placeholder="My Shield Password…"
+              value={secretPhrase}
+              onChange={e => setSecretPhrase(e.target.value)}
+              className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
+              style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#d4c9b2' }}
+            />
+            {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
+            <button
+              onClick={handleCommitRole}
+              disabled={!canCommit || !secretPhrase || committing}
+              className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+              style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
+            >
+              {committing ? 'Registering Shield Password…' : 'Set Shield Password'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  ) : null
+
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
@@ -877,6 +935,15 @@ function GamePageInner() { // NOSONAR
           <SiteNav currentPath="/game" />
         </div>
       </div>
+
+      {/* Set Shield Password — phone slot, directly under the nav so the
+          commit window is the first thing on screen. Desktop keeps it at the
+          top of the left column. */}
+      {isMobile && shieldCommitCard && (
+        <div className="px-4 pt-4">
+          <div className="mx-auto w-full max-w-6xl">{shieldCommitCard}</div>
+        </div>
+      )}
 
       {/* Game Header + Telemetry — visible on Game tab (mobile) or always (desktop) */}
       {showOnTab('game') && (
@@ -1068,6 +1135,26 @@ function GamePageInner() { // NOSONAR
       {/* Telemetry Strip */}
       <div className="px-6 pt-8">
         <div className="mx-auto w-full max-w-6xl">
+          {/* Parity already decided, game not ended yet. PlagueGame evaluates
+              `infectedAlive > cleanAlive` only after infection assignment
+              (L613), not in finalizeElimination — so a majority reached by
+              elimination stands for the rest of Reveal plus two backend txns
+              (~15-20s) before the win lands. Without this banner that window
+              reads as the rules being broken. */}
+          {outbreakDecided && (
+            <div
+              className="toxic-pulse mb-4 rounded-lg border px-4 py-3 text-center"
+              style={{ borderColor: 'rgba(230,51,41,0.6)', backgroundColor: 'rgba(230,51,41,0.1)' }}
+            >
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em]" style={{ color: '#e63329' }}>
+                ☣ Outbreak decided — infected hold the majority
+              </p>
+              <p className="mt-1.5 font-mono text-[11px] leading-relaxed" style={{ color: '#8fa882' }}>
+                {infectedCount} infected vs {activePlayers.length - infectedCount} clean. The
+                infected have already won — the result is being settled on-chain now.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {[
               { label: 'POT',          value: `${potCUSD} USDm`, accent: '#f5c518' },
@@ -1097,56 +1184,10 @@ function GamePageInner() { // NOSONAR
             {/* ── LEFT COLUMN ── */}
             <div className="flex flex-col gap-6">
 
-              {/* Set Shield Password — rendered FIRST so players see it without
-                  scrolling (it used to sit below the Area 51 board, below the
-                  fold on desktop). Pulses until committed. */}
-              {room?.status === 'starting' && showOnTab('game') && (
-                <div className={commitDone ? undefined : 'toxic-pulse rounded-lg'}>
-                  <div
-                    className="rise-in rounded-lg border p-5"
-                    style={commitDone
-                      ? { borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }
-                      : { borderColor: 'rgba(245,197,24,0.7)', backgroundColor: 'rgba(245,197,24,0.08)', boxShadow: '0 0 18px rgba(245,197,24,0.25)' }}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: commitDone ? '#6b8e23' : '#f5c518' }}>
-                        {commitDone ? 'Shield Password' : '⚠ Action required — Set Shield Password'}
-                      </p>
-                      {!commitDone && (
-                        <span className="font-heading text-2xl leading-none tabular-nums" style={{ color: startCommitEndsAt - now < 60_000 ? '#e63329' : '#f5c518' }}>
-                          {formatCountdown(Math.max(0, startCommitEndsAt - now))}
-                        </span>
-                      )}
-                    </div>
-                    {commitDone ? (
-                      <p className="mt-3 font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Shield Password set. Waiting for all players…</p>
-                    ) : (
-                      <>
-                        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                          Enter your Shield Password before the timer runs out. Keep it secret — you&apos;ll need it to activate your Shield later.
-                        </p>
-                        <input
-                          type="password"
-                          placeholder="My Shield Password…"
-                          value={secretPhrase}
-                          onChange={e => setSecretPhrase(e.target.value)}
-                          className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                          style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#d4c9b2' }}
-                        />
-                        {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
-                        <button
-                          onClick={handleCommitRole}
-                          disabled={!canCommit || !secretPhrase || committing}
-                          className="mt-3 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ backgroundColor: '#f5c518', borderColor: '#f5c518', color: '#060b06' }}
-                        >
-                          {committing ? 'Registering Shield Password…' : 'Set Shield Password'}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
+              {/* Set Shield Password — desktop slot, first in the left column so
+                  it's above the fold. Phones render the same card above the
+                  header instead (see shieldCommitCard). */}
+              {!isMobile && shieldCommitCard}
 
               {/* Host Controls — hoisted to the top of the left column (was below
                   the Area 51 board, below the fold) so the host recruits bots

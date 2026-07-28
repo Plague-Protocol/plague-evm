@@ -31,6 +31,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { celoSepolia, celo } from 'viem/chains'
 import { toDataSuffix } from '@celo/attribution-tags'
 import { logger } from '../lib/logger'
+import { createNonceQueue, type NonceQueue } from '../lib/nonceQueue'
 
 type RpcHealthState = {
   healthy: boolean
@@ -211,8 +212,30 @@ const FEE_CURRENCY_ADDRESS = process.env.FEE_CURRENCY_ADDRESS as `0x${string}` |
 // bytes; only the registered tag is credited. Override ATTRIBUTION_TAG if it changes.
 const ATTRIBUTION_SUFFIX = toDataSuffix(process.env.ATTRIBUTION_TAG ?? 'celo_c2d022d1d4ac')
 
+/** How long to wait for a receipt before giving up. A dropped txn must
+ *  surface — silently waiting forever would pin the queue's outstanding count
+ *  above zero and block its nonce counter from ever resyncing. */
+const RECEIPT_TIMEOUT_MS = Number(process.env.RECEIPT_TIMEOUT_MS ?? 90_000)
+
+// All nine writes funnel through here, so one queue serializes the signer's
+// nonce across every concurrently-advancing room. See lib/nonceQueue.ts.
+let _writeQueue: NonceQueue | null = null
+function writeQueue(): NonceQueue {
+  _writeQueue ??= createNonceQueue({
+    fetchNonce: () => {
+      const { publicClient, account } = clients()
+      return publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' })
+    },
+    onResync: reason => logger.debug(`[chain] nonce counter dropped: ${reason}`),
+  })
+  return _writeQueue
+}
+
 async function writeAndWait(functionName: string, args: readonly unknown[]) {
   const { publicClient, walletClient, address } = clients()
+
+  // Simulated before the queue is entered: an expected revert (WrongPhase,
+  // AlreadyVoted, …) must never burn a nonce or block another room's write.
   const { request } = await publicClient.simulateContract({
     address,
     abi:          PLAGUE_ABI,
@@ -222,8 +245,11 @@ async function writeAndWait(functionName: string, args: readonly unknown[]) {
     dataSuffix:   ATTRIBUTION_SUFFIX,
     ...(FEE_CURRENCY_ADDRESS ? { feeCurrency: FEE_CURRENCY_ADDRESS } : {}),
   })
-  const hash = await walletClient.writeContract(request as never)
-  return publicClient.waitForTransactionReceipt({ hash })
+
+  return writeQueue().run(
+    nonce => walletClient.writeContract({ ...request, nonce } as never),
+    hash  => publicClient.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS }),
+  )
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

@@ -3,7 +3,8 @@
 /**
  * OutbreakScene — the "quarantine cam": an anonymized live diorama of the room.
  *
- * Little canvas-drawn figures wander a dark chamber. When the plague picks its
+ * Little canvas-drawn figures wander a dark chamber, the clean ones breaking
+ * away whenever a zombie drifts too close. When the plague picks its
  * first host a figure is struck by a bolt and turns; later infections play as
  * a zombie chasing down and biting a victim; eliminations drop a figure where
  * it stands. Which body is which player is per-client fiction supplied by
@@ -29,6 +30,16 @@ const PAD_BOTTOM = 18
 const HUMAN_SPEED = 16
 const ZOMBIE_SPEED = 11
 const CHASE_SPEED = 58
+/** Distance at which a clean figure notices a zombie and breaks away. */
+const FLEE_RADIUS = 46
+/** Panic speed, scaled up the closer the nearest zombie gets. */
+const FLEE_SPEED_MIN = 22
+const FLEE_SPEED_MAX = 40
+/** Band along each wall that pushes a fleeing figure sideways instead of into a corner. */
+const WALL_MARGIN = 30
+/** While fleeing, the trigger radius widens by this much — hysteresis, so they run properly clear. */
+const FLEE_HOLD_FACTOR = 1.8
+const FLEE_HOLD_SECS = 0.9
 const ELECTRO_FLICKER_SECS = 1.1
 const ELECTRO_TOTAL_SECS = 1.7
 const BITE_CHASE_MAX_SECS = 3.5
@@ -62,6 +73,8 @@ interface Body {
   frozen: boolean
   chasing: boolean
   dying: boolean
+  /** Seconds of committed flight left — keeps a scared figure running past the trigger radius. */
+  fleeT: number
   staggerT: number
   transformT: number
   shieldT: number
@@ -93,6 +106,7 @@ function makeBody(fig: Figure, w: number, h: number): Body {
     frozen: false,
     chasing: false,
     dying: false,
+    fleeT: 0,
     staggerT: 0,
     transformT: 0,
     shieldT: 0,
@@ -422,6 +436,69 @@ export function OutbreakScene({
       return dist
     }
 
+    /**
+     * Clean figures keep their distance. Sums a repulsion vector from every
+     * zombie inside FLEE_RADIUS (plus a shove off nearby walls so panic never
+     * ends in a corner) and walks it. Returns false when nothing is close
+     * enough to spook them, so the caller falls back to idle wandering.
+     *
+     * A chase cue overrides this — CHASE_SPEED beats FLEE_SPEED_MAX, so a
+     * scripted bite still lands. That's the point: the only time a zombie
+     * catches anyone is when the public counts say an infection happened.
+     */
+    const fleeStep = (b: Body, dt: number): boolean => {
+      const { w, h } = sizeRef.current
+      // Hysteresis: already running → keep running until well clear, so the
+      // scene reads as a scramble instead of a twitch on the radius boundary.
+      const radius = b.fleeT > 0 ? FLEE_RADIUS * FLEE_HOLD_FACTOR : FLEE_RADIUS
+      let ax = 0
+      let ay = 0
+      let nearest = Infinity
+      for (const z of bodiesRef.current) {
+        if (!z.alive || z.kind !== 'zombie') continue
+        const dx = b.x - z.x
+        const dy = b.y - z.y
+        const d = Math.hypot(dx, dy) || 0.001
+        if (d > radius) continue
+        if (d < nearest) nearest = d
+        const weight = (radius - d) / radius
+        ax += (dx / d) * weight
+        ay += (dy / d) * weight
+      }
+      if (nearest === Infinity) return false
+      b.fleeT = FLEE_HOLD_SECS
+
+      const minX = PAD_X
+      const maxX = Math.max(PAD_X, w - PAD_X)
+      const minY = PAD_TOP
+      const maxY = Math.max(PAD_TOP, h - PAD_BOTTOM)
+      if (b.x - minX < WALL_MARGIN) ax += (WALL_MARGIN - (b.x - minX)) / WALL_MARGIN
+      if (maxX - b.x < WALL_MARGIN) ax -= (WALL_MARGIN - (maxX - b.x)) / WALL_MARGIN
+      if (b.y - minY < WALL_MARGIN) ay += (WALL_MARGIN - (b.y - minY)) / WALL_MARGIN
+      if (maxY - b.y < WALL_MARGIN) ay -= (WALL_MARGIN - (maxY - b.y)) / WALL_MARGIN
+
+      // Zombie repulsion and wall shove cancelled out (pinned, or flanked from
+      // both sides) — break along the chamber instead of freezing in place.
+      if (Math.hypot(ax, ay) < 0.001) {
+        ax = b.x < (minX + maxX) / 2 ? 1 : -1
+        ay = 0
+      }
+      const len = Math.hypot(ax, ay)
+      const urgency = Math.min(1, Math.max(0, 1 - nearest / FLEE_RADIUS))
+      const speed = FLEE_SPEED_MIN + (FLEE_SPEED_MAX - FLEE_SPEED_MIN) * urgency
+      const step = speed * dt
+      b.x = Math.min(Math.max(b.x + (ax / len) * step, minX), maxX)
+      b.y = Math.min(Math.max(b.y + (ay / len) * step, minY), maxY)
+      if (Math.abs(ax) > 0.05) b.facing = ax > 0 ? 1 : -1
+      b.walk += dt * speed * 0.42
+      // Wander target follows the retreat so they don't turn straight back
+      // around the moment the zombie falls out of range.
+      b.tx = b.x
+      b.ty = b.y
+      b.pauseUntil = 0
+      return true
+    }
+
     const stepCue = (dt: number) => {
       const active = activeRef.current
       if (!active) {
@@ -531,9 +608,16 @@ export function OutbreakScene({
         b.staggerT = Math.max(0, b.staggerT - dt * 2.2)
         b.transformT = Math.max(0, b.transformT - dt / 0.7)
         b.shieldT = Math.max(0, b.shieldT - dt / 0.9)
+        b.fleeT = Math.max(0, b.fleeT - dt)
         if (!b.alive || b.frozen || b.chasing || b.dying) { b.gait = Math.max(0, b.gait - dt * 4); continue }
         // game over — walkers halt where they stand while the scene settles
         if (settleRef.current !== null) { b.gait = Math.max(0, b.gait - dt * 4); continue }
+        // Clean figures break away before a zombie can reach them — checked
+        // ahead of the idle pause so panic always beats standing still.
+        if (b.kind === 'human' && fleeStep(b, dt)) {
+          b.gait = Math.min(1, b.gait + dt * 6)
+          continue
+        }
         if (tRef.current < b.pauseUntil) {
           b.gait = Math.max(0, b.gait - dt * 4)
           b.walk += dt * 0.6 // idle sway

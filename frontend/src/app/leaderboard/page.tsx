@@ -17,6 +17,10 @@ type LeaderboardPlayer = {
   gamesPlayed: number
   winRate: number
   lastPlayedAt: string | null
+  /** Consecutive wins ending at the player's most recent game (0 = streak broken). */
+  currentStreak?: number
+  /** Longest run of consecutive wins in the window. */
+  bestStreak?: number
 }
 
 type SeasonBoard = {
@@ -115,6 +119,8 @@ const ROW_GRID_CLASS =
 function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }) {
   const rankColor = RANK_COLORS[rank - 1] ?? '#4a5e44'
   const isTop3 = rank <= 3
+  const streak = player.currentStreak ?? 0
+  const best = player.bestStreak ?? 0
 
   return (
     <div
@@ -135,12 +141,23 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
 
       {/* Player info */}
       <div className="min-w-0">
-        <p className="truncate font-heading text-lg leading-none" style={{ color: '#d4c9b2' }}>
+        {/* Names stay small on phones — long operative names at text-lg crowded
+            the row and pushed the meta chips onto three lines. */}
+        <p className="truncate font-heading text-sm leading-tight sm:text-lg sm:leading-none" style={{ color: '#d4c9b2' }}>
           {player.displayName}
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {streak >= 2 && (
+            <span
+              className="rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase"
+              style={{ backgroundColor: 'rgba(245,197,24,0.14)', color: '#f5c518' }}
+              title={`${streak} wins in a row${best > streak ? ` · best ${best}` : ''}`}
+            >
+              🔥 {streak} streak
+            </span>
+          )}
           {player.lastPlayedAt && (
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em]" style={{ color: '#4a5e44' }}>
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] sm:inline" style={{ color: '#4a5e44' }}>
               {activeAgo(player.lastPlayedAt)}
             </span>
           )}
@@ -610,13 +627,29 @@ export default function LeaderboardPage() {
                   ) : (
                     <>
                       <p className="mt-3 font-heading text-xl leading-tight" style={{ color: '#d4c9b2' }}>
-                        Monthly bounty seasons are coming.
+                        Early testers, this is your window.
                       </p>
                       <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                        Prize pools for the top of the This Month board, funded by
-                        platform fees. Details will be announced here first —
-                        champions crowned before launch will be remembered.
+                        Bounty rewards are coming, funded by platform fees — and
+                        they will be weighted toward the operatives who played
+                        first. Every game, shield and win streak you record now is
+                        permanent history that counts when the first bounty season
+                        opens. Details will be announced here first.
                       </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span
+                          className="rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase"
+                          style={{ backgroundColor: 'rgba(245,197,24,0.12)', color: '#f5c518' }}
+                        >
+                          Early tester rewards
+                        </span>
+                        <span
+                          className="rounded-full px-2.5 py-1 font-mono text-[10px] uppercase"
+                          style={{ backgroundColor: 'rgba(107,142,35,0.12)', color: '#8fa882' }}
+                        >
+                          Season Zero · live now
+                        </span>
+                      </div>
                     </>
                   )}
                 </div>
@@ -646,6 +679,11 @@ export default function LeaderboardPage() {
                   </div>
                   <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
                     Shields are on-chain innocence proofs — each one costs the room&apos;s proof fee.
+                  </p>
+                  <p className="mt-2 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
+                    🔥 Win streaks are tracked from your game history. They don&apos;t score
+                    points yet — they&apos;re being recorded now so they can count toward
+                    bounty payouts later.
                   </p>
                 </div>
 

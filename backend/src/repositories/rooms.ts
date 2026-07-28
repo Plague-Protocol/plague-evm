@@ -1,6 +1,7 @@
 import type { Room, RoomStatus } from '../generated/prisma/client'
 import { prisma } from '../db/prisma'
 import { redis } from '../db/redis'
+import { invalidateLeaderboardCache } from '../lib/leaderboardCache'
 
 const WAITING_SET_KEY = 'rooms:waiting'
 const roomKey = (roomId: string) => `room:${roomId}`
@@ -175,6 +176,9 @@ export async function upsertGameSummary(input: CreateGameSummaryInput): Promise<
       },
     },
   })
+  // A new/updated summary changes every leaderboard aggregate — covers both
+  // the live GameEnded path and the backfill scan through this one funnel.
+  invalidateLeaderboardCache()
 }
 
 export async function getLeaderboardSummaries(limit = 100) {
