@@ -5,6 +5,7 @@ import { chainAdapter } from '../services/chainAdapter'
 import { upsertGameSummary } from '../repositories/rooms'
 import { logger } from '../lib/logger'
 import { getCachedLeaderboard, setCachedLeaderboard, invalidateLeaderboardCache } from '../lib/leaderboardCache'
+import { getKnownBotAddresses } from './bots'
 
 export const leaderboardRouter = Router()
 
@@ -465,10 +466,31 @@ leaderboardRouter.get('/analytics', async (_req, res) => {
     const outcomes = { clean_win: 0, infected_win: 0, max_rounds_draw: 0 }
     const byMonth = new Map<string, { name: string; games: number; volume: bigint }>()
 
+    // Bot seats are reported by the pool's heartbeat. Total match volume is a
+    // vanity number while bots self-play — the metric that actually says
+    // whether the game has traction is HUMAN participation, so track it apart.
+    const botAddresses = getKnownBotAddresses()
+    const uniqueHumans = new Set<string>()
+    let humanSeats = 0
+    let botSeats = 0
+    let gamesWithHumans = 0
+    let humanOnlyGames = 0
+
     for (const s of summaries) {
       const pot = BigInt(s.totalPot || '0')
       volume += pot
       if (s.outcome in outcomes) outcomes[s.outcome as keyof typeof outcomes]++
+
+      let humansHere = 0
+      for (const p of s.players) {
+        if (botAddresses.has(p.address.toLowerCase())) { botSeats++; continue }
+        humansHere++
+        humanSeats++
+        uniqueHumans.add(p.address.toLowerCase())
+      }
+      if (humansHere > 0) gamesWithHumans++
+      if (humansHere === s.players.length) humanOnlyGames++
+
       for (const p of s.players) unique.add(p.address.toLowerCase())
 
       const key = `${s.endedAt.getUTCFullYear()}-${String(s.endedAt.getUTCMonth() + 1).padStart(2, '0')}`
@@ -490,6 +512,17 @@ leaderboardRouter.get('/analytics', async (_req, res) => {
     res.json({
       totalGames: summaries.length,
       uniquePlayers: unique.size,
+      // Human-only view. `botsKnown` is false until the pool has heartbeated
+      // once — the console must not present "0 bot seats" as a real reading.
+      botsKnown: botAddresses.size > 0,
+      uniqueHumans: uniqueHumans.size,
+      humanSeats,
+      botSeats,
+      gamesWithHumans,
+      humanOnlyGames,
+      avgHumansPerGame: summaries.length > 0
+        ? Number((humanSeats / summaries.length).toFixed(2))
+        : 0,
       totalVolumeWei: volume.toString(),
       avgPotWei: summaries.length > 0 ? (volume / BigInt(summaries.length)).toString() : '0',
       // Fee approximation: 1.5% is charged on played-out pots at payout.

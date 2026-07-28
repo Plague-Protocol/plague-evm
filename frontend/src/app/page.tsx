@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 import { SiteFooter } from '@/components/ui/site-footer'
 import { HeroStats } from '@/components/ui/home-stats'
+import { NextWindowBanner } from '@/components/ui/next-window-banner'
 
 const features = [
   {
@@ -41,7 +42,7 @@ const mechanics = [
   {
     icon: '🔒',
     title: 'Secret Roles',
-    desc: "Your role is locked behind cryptography. Nobody — not other players, not even us — can see who's infected until reveal.",
+    desc: "Your role is locked behind a cryptographic commitment. Other players can never see who's infected — and every reveal is verified on-chain, so nobody can lie about it.",
   },
   {
     icon: '📊',
@@ -106,20 +107,26 @@ export default function HomePage() {
               everyone. Stake USDm, survive the rounds, take the pot.
             </p>
 
+            {/* Next scheduled play window, if the admin has announced one */}
+            <NextWindowBanner className="w-full max-w-xl" />
+
+            {/* Demo leads: a first-timer should FEEL one round (free, no wallet,
+                <10s to playing) before being asked to stake — reviewer
+                consensus, and the demo is the only CTA with zero friction. */}
             <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
-              <Link
-                href="/lobby"
-                className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
-                style={{ backgroundColor: '#6b8e23', color: '#060b06' }}
-              >
-                Play Now
-              </Link>
               <Link
                 href="/demo"
                 className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                style={{ backgroundColor: '#6b8e23', color: '#060b06', boxShadow: '0 0 24px rgba(107,142,35,0.4)' }}
+              >
+                ▶ Play Free Demo
+              </Link>
+              <Link
+                href="/lobby"
+                className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
                 style={{ backgroundColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px rgba(107,142,35,0.25)' }}
               >
-                Try Free Demo
+                Play for Stakes
               </Link>
               <Link
                 href="/how-to-play"

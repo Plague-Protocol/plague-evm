@@ -63,6 +63,16 @@ type BountyForm = {
 
 const EMPTY_BOUNTY: BountyForm = { active: false, title: '', body: '', prize: '', endsAt: '' }
 
+type ScheduleForm = {
+  active: boolean
+  title: string
+  startsAt: string      // datetime-local value; converted to ISO on save
+  note: string
+  durationMins: number
+}
+
+const EMPTY_SCHEDULE: ScheduleForm = { active: false, title: 'Zombie Hour', startsAt: '', note: '', durationMins: 60 }
+
 type Analytics = {
   totalGames: number
   uniquePlayers: number
@@ -71,6 +81,15 @@ type Analytics = {
   feesEarnedWei: string
   outcomes: { clean_win: number; infected_win: number; max_rounds_draw: number }
   months: { id: string; name: string; games: number; volumeWei: string }[]
+  // Human-vs-bot split; absent on an older backend, and all-zero-but-present
+  // until the bot pool has heartbeated its addresses at least once.
+  botsKnown?: boolean
+  uniqueHumans?: number
+  humanSeats?: number
+  botSeats?: number
+  gamesWithHumans?: number
+  humanOnlyGames?: number
+  avgHumansPerGame?: number
 }
 
 function short(addr: string): string {
@@ -109,6 +128,8 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [bountyForm, setBountyForm] = useState<BountyForm>(EMPTY_BOUNTY)
   const [savingBounty, setSavingBounty] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState<ScheduleForm>(EMPTY_SCHEDULE)
+  const [savingSchedule, setSavingSchedule] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [withdrawing, setWithdrawing] = useState(false)
@@ -167,12 +188,24 @@ export default function AdminPage() {
     } catch { setAnalytics(null) }
   }, [])
 
-  // Load bounty content once on mount — NOT in the 30s refresh loop, which
-  // would clobber the form while the admin is typing.
+  // Load bounty + schedule content once on mount — NOT in the 30s refresh
+  // loop, which would clobber the forms while the admin is typing.
   useEffect(() => {
     fetch(`${BACKEND_URL}/api/config/bounty`, { signal: AbortSignal.timeout(5000) })
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (j?.value) setBountyForm({ ...EMPTY_BOUNTY, ...j.value }) })
+      .catch(() => { /* editor starts blank */ })
+    fetch(`${BACKEND_URL}/api/config/schedule`, { signal: AbortSignal.timeout(5000) })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (!j?.value) return
+        // ISO (UTC) → datetime-local value in the admin's own timezone.
+        const local = j.value.startsAt
+          ? new Date(new Date(j.value.startsAt).getTime() - new Date().getTimezoneOffset() * 60_000)
+              .toISOString().slice(0, 16)
+          : ''
+        setScheduleForm({ ...EMPTY_SCHEDULE, ...j.value, startsAt: local })
+      })
       .catch(() => { /* editor starts blank */ })
   }, [])
 
@@ -240,6 +273,44 @@ export default function AdminPage() {
       setSavingBounty(false)
     }
   }, [address, bountyForm])
+
+  const handleSaveSchedule = useCallback(async () => {
+    const client = getContractClient()
+    if (!client || !address) return
+    if (scheduleForm.active && (!scheduleForm.title.trim() || !scheduleForm.startsAt)) {
+      toast.error('An active window needs a title and a start time.')
+      return
+    }
+    setSavingSchedule(true)
+    try {
+      const value = {
+        active:       scheduleForm.active,
+        title:        scheduleForm.title.trim(),
+        // datetime-local is in the admin's timezone; store as unambiguous ISO UTC.
+        startsAt:     scheduleForm.startsAt ? new Date(scheduleForm.startsAt).toISOString() : '',
+        note:         scheduleForm.note.trim(),
+        durationMins: scheduleForm.durationMins,
+      }
+      const valueJson = JSON.stringify(value)
+      const timestamp = Date.now()
+      // Must match configMessage() in backend/src/routes/config.ts.
+      const signature = await client.signMessage(address, `plague-config:schedule:${timestamp}:${valueJson}`)
+      const r = await fetch(`${BACKEND_URL}/api/config/schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, timestamp, signature, valueJson }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error(j?.message ?? j?.error ?? `Save failed (${r.status})`)
+      }
+      toast.success(value.active ? 'Window announced — countdown is live on the landing page and lobby.' : 'Window saved (hidden).')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed.')
+    } finally {
+      setSavingSchedule(false)
+    }
+  }, [address, scheduleForm])
 
   const gated = !isConnected || (info !== null && !isAdmin)
 
@@ -359,6 +430,39 @@ export default function AdminPage() {
                         <span><span style={{ color: '#e63329' }}>●</span> Infected wins {analytics.outcomes.infected_win}</span>
                         <span><span style={{ color: '#f5c518' }}>●</span> Draws {analytics.outcomes.max_rounds_draw}</span>
                       </div>
+
+                      {/* Human traction. Total games counts bot self-play, so it
+                          flatters the numbers — these are the ones to watch. */}
+                      <div className="mt-5 border-t pt-4" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
+                          Human Traction {analytics.botsKnown === false && <span style={{ color: '#4a5e44' }}>· bot pool offline, split unavailable</span>}
+                        </p>
+                        {analytics.botsKnown ? (
+                          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            {[
+                              { label: 'Unique humans', value: String(analytics.uniqueHumans ?? 0), hint: 'distinct non-bot wallets' },
+                              { label: 'Games w/ humans', value: `${analytics.gamesWithHumans ?? 0} / ${analytics.totalGames}`, hint: 'rest is bot self-play' },
+                              { label: 'Human-only games', value: String(analytics.humanOnlyGames ?? 0), hint: 'no bot seats at all' },
+                              { label: 'Avg humans / game', value: (analytics.avgHumansPerGame ?? 0).toFixed(2), hint: 'the number to grow' },
+                            ].map(s => (
+                              <div key={s.label} className="rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(245,197,24,0.18)', backgroundColor: '#0e180d' }} title={s.hint}>
+                                <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</p>
+                                <p className="mt-1.5 font-heading text-xl leading-none" style={{ color: '#f5c518' }}>{s.value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-2 font-mono text-[11px]" style={{ color: '#4a5e44' }}>
+                            The bot pool reports its wallet addresses on heartbeat. Once it has
+                            checked in, human seats can be separated from bot seats here.
+                          </p>
+                        )}
+                        {analytics.botsKnown && (
+                          <p className="mt-3 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                            {analytics.humanSeats ?? 0} human seats vs {analytics.botSeats ?? 0} bot seats across all recorded games.
+                          </p>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
@@ -463,6 +567,73 @@ export default function AdminPage() {
                   </button>
                   <p className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>
                     Publishing asks your wallet for a signature — the backend only accepts edits signed by the contract admin.
+                  </p>
+                </div>
+              </div>
+
+              {/* Scheduled play window ("Zombie Hour") editor */}
+              <div className="mt-8 rounded-xl border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(245,197,24,0.25)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
+                    Next Play Window (countdown on landing + lobby)
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2 font-mono text-xs" style={{ color: scheduleForm.active ? '#f5c518' : '#4a5e44' }}>
+                    <input
+                      type="checkbox"
+                      checked={scheduleForm.active}
+                      onChange={e => setScheduleForm(f => ({ ...f, active: e.target.checked }))}
+                      className="h-4 w-4 accent-[#f5c518]"
+                    />
+                    {scheduleForm.active ? 'ANNOUNCED' : 'Hidden'}
+                  </label>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <input
+                    value={scheduleForm.title}
+                    onChange={e => setScheduleForm(f => ({ ...f, title: e.target.value }))}
+                    maxLength={80}
+                    placeholder="Title — e.g. Zombie Hour"
+                    className="rounded-lg border bg-transparent px-3 py-2 font-heading text-sm outline-none"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#d4c9b2' }}
+                  />
+                  <input
+                    type="datetime-local"
+                    value={scheduleForm.startsAt}
+                    onChange={e => setScheduleForm(f => ({ ...f, startsAt: e.target.value }))}
+                    className="rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#d4c9b2', colorScheme: 'dark' }}
+                  />
+                  <input
+                    value={scheduleForm.note}
+                    onChange={e => setScheduleForm(f => ({ ...f, note: e.target.value }))}
+                    maxLength={200}
+                    placeholder="Note chip (optional) — e.g. Seeded pot · bring a friend"
+                    className="rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#8fa882' }}
+                  />
+                  <input
+                    type="number"
+                    min={5}
+                    max={1440}
+                    value={scheduleForm.durationMins}
+                    onChange={e => setScheduleForm(f => ({ ...f, durationMins: Math.max(5, Math.min(1440, Number(e.target.value) || 60)) }))}
+                    placeholder="Window length (minutes)"
+                    title="How long the banner shows LIVE after start"
+                    className="rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none"
+                    style={{ borderColor: 'rgba(107,142,35,0.25)', color: '#8fa882' }}
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => void handleSaveSchedule()}
+                    disabled={savingSchedule}
+                    className="rounded border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                    style={{ borderColor: '#f5c518', color: '#f5c518', backgroundColor: 'rgba(245,197,24,0.08)' }}
+                  >
+                    {savingSchedule ? 'Signing…' : 'Sign & Announce'}
+                  </button>
+                  <p className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                    Time is entered in your local timezone. The banner hides itself automatically once the window ends.
                   </p>
                 </div>
               </div>

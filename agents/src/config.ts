@@ -82,6 +82,31 @@ export const BOT_MAX_STAKE_WEI = BigInt(process.env.BOT_MAX_STAKE_WEI ?? '100000
 // the worst-case cap up-front. Default 1.5 CELO for headroom.
 export const MIN_GAME_CELO_WEI = BigInt(process.env.MIN_GAME_CELO_WEI ?? '1500000000000000000')
 
+// ── Bot USDm loss budget (circuit breaker) ────────────────────────────────────
+// Bots stake REAL USDm and can lose it to humans. That is a user-acquisition
+// subsidy, not a self-funding mechanic: without a ceiling, a skilled (or
+// colluding) human pool can farm the bot treasury indefinitely. So the runner
+// snapshots the pool's combined USDm at startup and after each game, and once
+// the drawdown from the day's opening balance exceeds this budget it stops
+// entering STAKED games until the 24h window rolls.
+//
+// Self-play is exempt: bots only pay each other, so the pool is net-flat minus
+// the platform fee. Only human rooms can actually drain the treasury.
+//
+// Default 0.05 USDm/day — deliberately tiny, matching the 0.0001 stake default.
+// Raise it deliberately when a real acquisition budget exists.
+export const BOT_DAILY_LOSS_BUDGET_WEI = BigInt(
+  process.env.BOT_DAILY_LOSS_BUDGET_WEI ?? '50000000000000000',
+)
+
+// Max bot seats in a single HUMAN room. Bots exist to make a thin lobby
+// playable, not to be the opponent — an all-bot table lets one human farm the
+// treasury and feels hollow enough that they don't come back. 0 disables the
+// cap. Self-play rooms are unaffected (they are all bots by definition).
+export const BOT_MAX_SEATS_PER_HUMAN_ROOM = Number(
+  process.env.BOT_MAX_SEATS_PER_HUMAN_ROOM ?? 2,
+)
+
 // How long all bots must sit idle (no human demand) before they start a
 // self-play game to keep on-chain activity up. Default 5 minutes.
 export const SELF_PLAY_IDLE_MS = Number(process.env.SELF_PLAY_IDLE_MS ?? 300_000)

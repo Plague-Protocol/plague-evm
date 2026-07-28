@@ -12,6 +12,7 @@ import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { BotControls } from '@/components/lobby/bot-controls'
 import { LowGasNotice } from '@/components/lobby/low-gas-notice'
+import { NextWindowBanner } from '@/components/ui/next-window-banner'
 import { DisplayNameEditor } from '@/components/ui/display-name-editor'
 import { usePlayerName } from '@/providers/player-name-provider'
 import { primeArenaSounds } from '@/components/game/ArenaDoors'
@@ -1052,6 +1053,8 @@ export default function LobbyPage() {
       {/* Header */}
       <header className="px-4 sm:px-6 py-8 sm:py-16">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-6 text-center">
+          {/* Next scheduled play window, if the admin has announced one */}
+          <NextWindowBanner className="w-full max-w-xl" />
           <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
             Game Lobby
           </span>

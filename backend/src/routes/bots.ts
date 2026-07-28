@@ -26,7 +26,19 @@ interface RunnerState {
   available: number
   total: number
   maxStakeWei: string
+  addresses?: string[]
   updatedAt: number
+}
+
+/** Lowercased bot addresses last reported by the pool. Survives the runner
+ *  going briefly offline (unlike runnerOnline()) because analytics asks about
+ *  historical games, not current availability. */
+let knownBotAddresses = new Set<string>()
+
+/** Bot wallet addresses, for callers that need to exclude them from
+ *  human-facing metrics. Empty until the pool has heartbeated once. */
+export function getKnownBotAddresses(): ReadonlySet<string> {
+  return knownBotAddresses
 }
 
 interface BotJoinRequest {
@@ -140,6 +152,10 @@ const StateSchema = z.object({
   available:   z.number().int().min(0),
   total:       z.number().int().min(0),
   maxStakeWei: z.string().regex(/^\d+$/),
+  // Optional so an older runner keeps heartbeating fine. Reported by the pool
+  // (which owns the keys) rather than duplicated into backend env — it lets
+  // analytics separate real humans from bot seats.
+  addresses:   z.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/)).max(64).optional(),
 })
 
 /**
@@ -151,6 +167,9 @@ botRouter.post('/state', (req, res) => {
   const parsed = StateSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
   runnerState = { ...parsed.data, updatedAt: Date.now() }
+  if (parsed.data.addresses?.length) {
+    knownBotAddresses = new Set(parsed.data.addresses.map(a => a.toLowerCase()))
+  }
   res.json({ ok: true })
 })
 

@@ -49,22 +49,51 @@ function useCountUp(target: number | null): number | null {
 
 // ── Hero stat strip (3 columns) ──────────────────────────────────────────────
 
+/** Last-known stats survive reloads so a slow/failed fetch shows yesterday's
+ *  real numbers instead of placeholders. A dash on a real-money game's landing
+ *  page reads as "nobody plays here" — reviewer feedback, 2026-07. */
+const STATS_CACHE_KEY = 'plague:home-stats'
+
+function readCachedStats(): SiteStats | null {
+  try {
+    const raw = localStorage.getItem(STATS_CACHE_KEY)
+    return raw ? JSON.parse(raw) as SiteStats : null
+  } catch { return null }
+}
+
+/** Pulsing placeholder shown only when we have no number at all (first ever
+ *  visit while the fetch is in flight). Reads as "loading", not "zero". */
+function StatSkeleton() {
+  return (
+    <span
+      className="inline-block h-[1em] w-14 animate-pulse rounded"
+      style={{ backgroundColor: 'rgba(107,142,35,0.25)' }}
+      aria-label="loading"
+    />
+  )
+}
+
 export function HeroStats() {
   const [stats, setStats] = useState<SiteStats | null>(null)
 
   useEffect(() => {
-    fetch(`${BACKEND_URL}/api/leaderboard/stats`)
+    setStats(readCachedStats()) // instant paint with last-known real numbers
+    fetch(`${BACKEND_URL}/api/leaderboard/stats`, { signal: AbortSignal.timeout(8000) })
       .then(r => r.ok ? r.json() : null)
-      .then((data: SiteStats | null) => { if (data) setStats(data) })
-      .catch(() => {/* keep static fallback */})
+      .then((data: SiteStats | null) => {
+        if (!data) return
+        setStats(data)
+        try { localStorage.setItem(STATS_CACHE_KEY, JSON.stringify(data)) } catch { /* private mode */ }
+      })
+      .catch(() => {/* cached value (if any) stays up */})
   }, [])
 
   const gamesCount   = useCountUp(stats ? stats.totalGames : null)
   const zombiesCount = useCountUp(stats ? stats.zombiesCaught : null)
 
   const items = [
-    { icon: '🧟', value: gamesCount !== null ? formatCount(gamesCount) : '—', label: 'Matches Played' },
-    { icon: '🩸', value: zombiesCount !== null ? formatCount(zombiesCount) : '—', label: 'Zombies Caught' },
+    { icon: '🧟', value: gamesCount !== null ? formatCount(gamesCount) : null, label: 'Matches Played' },
+    { icon: '🩸', value: zombiesCount !== null ? formatCount(zombiesCount) : null, label: 'Zombies Caught' },
     { icon: '🟢', value: '99.9%', label: 'Chain Uptime' },
   ]
 
@@ -78,7 +107,7 @@ export function HeroStats() {
         >
           <span className="text-3xl sm:text-5xl">{stat.icon}</span>
           <span className="font-heading text-3xl sm:text-5xl font-bold leading-none" style={{ color: '#d4c9b2' }}>
-            {stat.value}
+            {stat.value ?? <StatSkeleton />}
           </span>
           <span className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7fa06c' }}>
             {stat.label}

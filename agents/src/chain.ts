@@ -43,7 +43,23 @@ export const PLAGUE_ABI = parseAbi([
 const ERC20_ABI = parseAbi([
   'function allowance(address owner, address spender) external view returns (uint256)',
   'function approve(address spender, uint256 value) external returns (bool)',
+  'function balanceOf(address owner) external view returns (uint256)',
 ])
+
+/** Combined USDm balance across the given addresses (bot treasury total). */
+export async function totalUsdmBalance(addresses: readonly `0x${string}`[]): Promise<bigint> {
+  const balances = await Promise.all(
+    addresses.map(addr =>
+      publicClient.readContract({
+        address: USDM_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [addr],
+      }),
+    ),
+  )
+  return balances.reduce((sum, b) => sum + b, 0n)
+}
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 

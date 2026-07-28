@@ -14,7 +14,7 @@ export const configRouter = Router()
  * the key, a timestamp (replay window below) and the exact payload.
  */
 
-const EDITABLE_KEYS = ['bounty'] as const
+const EDITABLE_KEYS = ['bounty', 'schedule'] as const
 type EditableKey = typeof EDITABLE_KEYS[number]
 
 /** How stale a signed edit may be before it's rejected. */
@@ -29,6 +29,16 @@ const ValueSchemas: Record<EditableKey, z.ZodTypeAny> = {
     body:   z.string().trim().max(400),
     prize:  z.string().trim().max(60).optional(),
     endsAt: z.string().trim().max(40).optional(),
+  }),
+  // Next scheduled play window ("Zombie Hour") — drives the countdown banner
+  // on the landing + lobby pages. Cold-start play: concentrate players into a
+  // known time slot instead of an always-on-but-empty queue.
+  schedule: z.object({
+    active:       z.boolean(),
+    title:        z.string().trim().max(80),       // e.g. "Zombie Hour"
+    startsAt:     z.string().trim().max(40),       // ISO 8601, with timezone
+    note:         z.string().trim().max(200).optional(), // e.g. "Seeded pot — 20 USDm"
+    durationMins: z.number().int().min(5).max(1440).optional(), // window length; banner shows LIVE during it
   }),
 }
 

@@ -33,6 +33,8 @@ import {
   SELF_PLAY_MAX_GAMES_PER_DAY,
   SELF_PLAY_DISABLED,
   BOT_RUNNER_SECRET,
+  BOT_DAILY_LOSS_BUDGET_WEI,
+  BOT_MAX_SEATS_PER_HUMAN_ROOM,
 } from './config.js'
 import {
   ensureApproval,
@@ -44,6 +46,7 @@ import {
   getRoom,
   getRoomStatuses,
   hasRoomCapacity,
+  totalUsdmBalance,
 } from './chain.js'
 import { pickChatLine } from './chat.js'
 import type { BotWallet } from './config.js'
@@ -119,7 +122,14 @@ async function postState(available: number, total: number): Promise<void> {
     await fetch(`${BACKEND_URL}/api/bots/state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-bot-secret': BOT_RUNNER_SECRET },
-      body: JSON.stringify({ available, total, maxStakeWei: BOT_MAX_STAKE_WEI.toString() }),
+      // Addresses let the backend separate bot seats from real humans in
+      // analytics without duplicating the bot keys into its own env.
+      body: JSON.stringify({
+        available,
+        total,
+        maxStakeWei: BOT_MAX_STAKE_WEI.toString(),
+        addresses: bots.map(b => b.address),
+      }),
     })
   } catch {
     // Backend unreachable — bots keep running, availability just won't show.
@@ -484,15 +494,92 @@ function underDailyCap(): boolean {
 }
 const recordSelfPlay = (): void => { selfPlayStarts.push(Date.now()) }
 
+// ── USDm loss budget (circuit breaker) ────────────────────────────────────────
+// Bots staking real USDm against humans is an acquisition subsidy with no
+// natural floor — without a ceiling a skilled or colluding human pool can farm
+// the treasury indefinitely. Track the pool's combined USDm against the day's
+// opening balance and stop entering HUMAN rooms once the drawdown exceeds the
+// budget. Self-play is exempt: bots only pay each other, so the pool is
+// net-flat there minus the platform fee.
+//
+// Reads on-chain balances rather than tallying wins/losses: the balance is the
+// ground truth, and it also catches drains this process never saw (a game that
+// finished after a restart, a manual transfer).
+const LOSS_WINDOW_MS = 24 * 60 * 60 * 1000
+let dayOpeningUsdm: bigint | null = null   // combined balance at window start
+let dayWindowStartedAt = 0
+let lastUsdmBalance: bigint | null = null  // most recent reading, for logging
+let breakerTripped = false
+
+async function refreshLossBudget(): Promise<void> {
+  const total = await totalUsdmBalance(bots.map(b => b.address)).catch(() => null)
+  if (total === null) return // RPC blip — keep the previous verdict
+  lastUsdmBalance = total
+
+  const now = Date.now()
+  if (dayOpeningUsdm === null || now - dayWindowStartedAt >= LOSS_WINDOW_MS) {
+    // New 24h window. A top-up mid-window also raises the opening mark, so
+    // funding the bots resets their allowance to lose — which is the intent.
+    dayOpeningUsdm = total
+    dayWindowStartedAt = now
+    if (breakerTripped) console.log('[budget] 24h window rolled — bots may enter staked human rooms again')
+    breakerTripped = false
+    return
+  }
+
+  // A rise above the opening mark means someone funded the pool; re-mark so
+  // the budget is measured from the new, higher balance.
+  if (total > dayOpeningUsdm) {
+    dayOpeningUsdm = total
+    if (breakerTripped) console.log('[budget] pool topped up — circuit breaker released')
+    breakerTripped = false
+    return
+  }
+
+  const drawdown = dayOpeningUsdm - total
+  const tripped = BOT_DAILY_LOSS_BUDGET_WEI > 0n && drawdown >= BOT_DAILY_LOSS_BUDGET_WEI
+  if (tripped && !breakerTripped) {
+    console.warn(
+      `[budget] daily USDm loss budget exhausted — lost ${drawdown} of ${BOT_DAILY_LOSS_BUDGET_WEI} wei ` +
+      'since window start. Bots will NOT join staked human rooms until the window rolls or the pool is topped up.',
+    )
+  }
+  breakerTripped = tripped
+}
+
+/** May bots stake into a human room right now? */
+const lossBudgetAvailable = (): boolean => !breakerTripped
+
 async function poolTick(): Promise<void> {
+  // 0. Refresh the USDm loss budget before deciding anything (cheap: one
+  //    balanceOf per bot, and it gates every staked human room below).
+  await refreshLossBudget()
+
   // 1. Human demand first.
   const requests = await fetchRequests()
   for (const req of requests) {
+    // Circuit breaker: bots stop feeding staked human rooms once the day's
+    // loss budget is gone. Requests are dropped rather than queued — the
+    // human gets a truthful "no bots available" instead of a silent wait.
+    if (!lossBudgetAvailable()) {
+      console.warn(`[pool] loss budget exhausted — declining bot request for room ${req.roomId}`)
+      continue
+    }
     const free = freeIndices()
     if (free.length === 0) break
     const funded = await affordableIndices(free, { fresh: true })
     if (funded.length === 0) break
-    const take = funded.slice(0, Math.min(req.count, funded.length))
+    // Cap bot seats per human room: an all-bot table is farmable and feels
+    // hollow. The lobby already limits by free seats; this is the pool's own
+    // ceiling regardless of what was asked for.
+    const seatCap = BOT_MAX_SEATS_PER_HUMAN_ROOM > 0
+      ? Math.min(req.count, BOT_MAX_SEATS_PER_HUMAN_ROOM)
+      : req.count
+    if (seatCap < req.count) {
+      console.log(`[pool] room ${req.roomId}: capping ${req.count} requested bot(s) to ${seatCap}`)
+    }
+    const take = funded.slice(0, Math.min(seatCap, funded.length))
+    if (take.length === 0) continue
     reserve(take)
     void joinHumanRoom(BigInt(req.roomId), take)
       .catch(err => console.warn(`[pool] human room ${req.roomId} failed: ${err.message}`))
@@ -557,8 +644,10 @@ async function poolTick(): Promise<void> {
   // 3. Heartbeat availability — count only bots funded enough to FINISH a
   //    game, so the lobby never offers "add bots" the pool would stall on.
   //    (Balance reads are cached, so this doesn't hit the RPC every tick.)
+  // Report ZERO availability while the loss breaker is tripped, so the lobby
+  // stops offering "add bots" instead of accepting a request we'd decline.
   const fundedFree = await affordableIndices(freeIndices())
-  await postState(fundedFree.length, bots.length)
+  await postState(lossBudgetAvailable() ? fundedFree.length : 0, bots.length)
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -598,6 +687,12 @@ async function main(): Promise<void> {
   console.log('\nBot wallets:')
   for (const b of bots) console.log(`  Bot ${b.index + 1}: ${b.address}`)
   console.log(`\nMax human-room stake: ${BOT_MAX_STAKE_WEI} wei`)
+  console.log(
+    `Bot loss budget: ${BOT_DAILY_LOSS_BUDGET_WEI > 0n
+      ? `${BOT_DAILY_LOSS_BUDGET_WEI} wei USDm / 24h (staked human rooms only)`
+      : 'UNCAPPED'}` +
+    `, max ${BOT_MAX_SEATS_PER_HUMAN_ROOM || '∞'} bot seat(s) per human room`,
+  )
   console.log(
     `Self-play cadence: ${SELF_PLAY_DISABLED
       ? 'DISABLED'
