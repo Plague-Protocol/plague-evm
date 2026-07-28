@@ -519,22 +519,37 @@ export default function DemoPage() {
       feed: [...prev.feed, `Round ${n} — infection phase. ${n === 1 ? 'Patient Zero is about to emerge…' : 'The plague is choosing its next host…'}`].slice(-60),
     }))
     startCountdown(INFECTION_SECS, () => {
-      // Resolve infection, then open discussion.
+      // Target is picked from the CURRENT state rather than inside the updater
+      // so the post-infection parity check below can run before we commit to
+      // opening discussion. stateRef is fresh here — this fires INFECTION_SECS
+      // after the phase change that scheduled it.
+      const s0 = stateRef.current
+      const aliveClean = s0.players.filter(p => !p.eliminated && p.status === 'clean')
+      let targetId: string | null = null
+      if (n === 1) {
+        // First infection is random — that player IS Patient Zero.
+        targetId = aliveClean.length > 0 ? pick(aliveClean).id : null
+      } else {
+        const wanted = s0.pzNextTarget
+        const valid = wanted && aliveClean.some(p => p.id === wanted)
+        targetId = valid ? wanted : (aliveClean.length > 0 ? pick(aliveClean).id : null)
+      }
+
+      // Endgame parity, evaluated AFTER the infection lands — mirrors
+      // PlagueGame.assignInfection (L613-622). Without this the demo only
+      // checked parity after elimination, so an infection that pushed the
+      // infected into the majority went unnoticed until the NEXT reveal: the
+      // game visibly played on a full round past the point it was decided.
+      // As in the contract, the very first infection merely starts the
+      // outbreak and can never end the game.
+      const aliveAfter = s0.players.filter(p => !p.eliminated)
+      const infectedAfter = aliveAfter.filter(p => p.status === 'infected' || p.id === targetId).length
+      const decided = n > 1 && infectedAfter > aliveAfter.length - infectedAfter
+
       setState(prev => {
         const feed = [...prev.feed]
         let players = prev.players
         let chain = prev.infectionChain
-
-        const aliveClean = players.filter(p => !p.eliminated && p.status === 'clean')
-        let targetId: string | null = null
-        if (n === 1) {
-          // First infection is random — that player IS Patient Zero.
-          targetId = pick(aliveClean).id
-        } else {
-          const wanted = prev.pzNextTarget
-          const valid = wanted && aliveClean.some(p => p.id === wanted)
-          targetId = valid ? wanted : (aliveClean.length > 0 ? pick(aliveClean).id : null)
-        }
 
         if (targetId) {
           players = players.map(p =>
@@ -553,9 +568,21 @@ export default function DemoPage() {
           feed.push('The plague found no new host this round.')
         }
 
+        if (decided) {
+          feed.push('The infected now outnumber the living. There is no vote left to win.')
+          return { ...prev, players, infectionChain: chain, pzNextTarget: null, feed: feed.slice(-60) }
+        }
+
         feed.push('Discussion is open. Clean players can activate a Shield to prove innocence.')
         return { ...prev, phase: 'discussion', players, infectionChain: chain, pzNextTarget: null, feed: feed.slice(-60) }
       })
+
+      // Decided by the infection itself — end here instead of playing out a
+      // discussion and vote whose outcome cannot matter.
+      if (decided) {
+        finishGame('infected_win')
+        return
+      }
 
       startCountdown(DISCUSSION_SECS, () => goVotingRef.current())
       scheduleBotChatter('discussion', DISCUSSION_SECS)
@@ -578,7 +605,7 @@ export default function DemoPage() {
         })
       }
     })
-  }, [clearTimers, startCountdown, schedule, scheduleBotChatter])
+  }, [clearTimers, startCountdown, schedule, scheduleBotChatter, finishGame])
 
   // Keep the forward-declaration refs pointing at the latest callbacks.
   useEffect(() => {
