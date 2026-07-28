@@ -134,6 +134,16 @@ services:
       SELF_PLAY_MIN_MS: ${SELF_PLAY_MIN_MS:-28800000}
       SELF_PLAY_MAX_MS: ${SELF_PLAY_MAX_MS:-43200000}
       SELF_PLAY_MAX_GAMES_PER_DAY: ${SELF_PLAY_MAX_GAMES_PER_DAY:-3}
+      # Daily USDm the pool may LOSE to humans before it stops joining staked
+      # rooms (self-play exempt — bots only pay each other there). Topping the
+      # bot wallets up re-marks the opening balance and releases the breaker.
+      # This is the guard that actually bounds money at risk. 0.05 USDm = 5e16.
+      BOT_DAILY_LOSS_BUDGET_WEI: ${BOT_DAILY_LOSS_BUDGET_WEI:-50000000000000000}
+      # Max bot seats per HUMAN room. 0 = uncapped, which is right while there
+      # is little human traffic: capping mainly constrains our own testers, who
+      # need full rooms to feel the game. Raise it (2-3) once real humans are
+      # filling lobbies and an all-bot table becomes the thing worth preventing.
+      BOT_MAX_SEATS_PER_HUMAN_ROOM: ${BOT_MAX_SEATS_PER_HUMAN_ROOM:-0}
       # Fund at least 3 wallets, contiguous from _1 (loader stops at first gap).
       # Unset keys pass through empty and are ignored, so 6..10 are safe to wire.
       BOT_PRIVATE_KEY_1: ${BOT_PRIVATE_KEY_1}
