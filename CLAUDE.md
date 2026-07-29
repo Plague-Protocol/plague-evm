@@ -1,7 +1,7 @@
 # Plague Protocol — Project State & Guide
 
 > Authoritative source of truth for the current state of this project.
-> **Read this before assuming anything about deployment status.** Updated 2026-07-09.
+> **Read this before assuming anything about deployment status.** Updated 2026-07-29.
 
 ---
 
@@ -32,8 +32,28 @@ self-hosted box. Full stack + runbook: [`deploy/`](deploy/) (`docker-compose.yml
 
 - **Public API:** `https://api.zplague.xyz` (health: `/health` → `{"ok":true}`). Frontend sets `NEXT_PUBLIC_BACKEND_URL` to this.
 - **VPS:** `43.131.58.132`, user `ubuntu`, repo at `/opt/plague`; compose runs from `/opt/plague/deploy` (`docker compose up -d`).
-- **Gas:** every wallet (5 bot agents + backend signer `0xb895af9AA23451314601822B403E4e6f7456E950`) pays gas in **native CELO**, NOT USDm fee-currency. USDm = stakes/pot only. If a wallet runs out of CELO its txns fail.
-- **Bots:** 5 ERC-8004 agents self-play every 12h (`SELF_PLAY_IDLE_MS=43200000`); bot proofs persist on the `agentdata` docker volume (setup runs once).
+- **Gas:** every wallet (8 bot agents + backend signer `0xb895af9AA23451314601822B403E4e6f7456E950`) pays gas in **native CELO**, NOT USDm fee-currency. USDm = stakes/pot only. If a wallet runs out of CELO its txns fail.
+- **Bots:** 8 ERC-8004 agents. Self-play fires after a **randomized** idle gap
+  (`SELF_PLAY_MIN_MS`..`SELF_PLAY_MAX_MS`, compose defaults 8–12h), capped at
+  `SELF_PLAY_MAX_GAMES_PER_DAY` (3) per rolling 24h, played by a random subset of
+  the *funded* bots. Bot proofs persist on the `agentdata` docker volume (setup
+  runs once).
+  - ⚠ `SELF_PLAY_IDLE_MS` is **vestigial** — still set in `docker-compose.yml`,
+    but `runner.ts` never reads it. Tuning it does nothing; use MIN/MAX.
+  - ⚠ Restarting the `agents` container **resets the idle clock**
+    (`allIdleSince = Date.now()` at module load), so every deploy pushes the next
+    self-play game out by another full 8–12h. Bots going quiet right after a
+    deploy is expected, not a fault. Confirm with
+    `docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' $(docker compose ps -q agents)`.
+- **Bot loss budget:** `BOT_DAILY_LOSS_BUDGET_WEI` (default 0.05 USDm/24h) stops
+  bots joining *staked human rooms* once the pool's combined USDm drawdown passes
+  it — self-play is exempt, since bots only pay each other. Topping the wallets up
+  re-marks the opening balance and releases the breaker.
+  `BOT_MAX_SEATS_PER_HUMAN_ROOM` (compose default 0 = uncapped) caps bot seats per
+  human room.
+- ⚠ **compose uses an explicit `environment:` map, not `env_file`.** A var added to
+  `deploy/.env` that isn't also named in `docker-compose.yml` is **silently
+  ignored** — no error, the container just uses its code default.
 - Update a service: `cd /opt/plague && git pull && cd deploy && docker compose up -d --build <svc>`.
 
 ### Testnet (Celo Sepolia, chain 11142220)
