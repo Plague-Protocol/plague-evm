@@ -142,7 +142,7 @@ const DEMO_PHASE_COLOR: Record<DemoPhase, string> = {
   discussion: '#6b8e23',
   voting:     '#f5c518',
   reveal:     '#d4c9b2',
-  gameover:   '#4a5e44',
+  gameover:   '#7d9a72',
 }
 
 // ── Random helpers ────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ const REPLY_LINES = [
 
 function playerCardStyle(p: DemoPlayer, selected: boolean): { border: string; backgroundColor: string; color: string } {
   if (p.eliminated && p.revealedStatus === 'infected') return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.12)', color: '#8a4a44' }
-  if (p.eliminated) return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
+  if (p.eliminated) return { border: '2px solid #7d9a72', backgroundColor: 'rgba(74,94,68,0.12)', color: '#7d9a72' }
   if (selected) return { border: '2px solid #f5c518', backgroundColor: 'rgba(245,197,24,0.1)', color: '#f5c518' }
   if (p.isYou) return { border: '2px solid #6b8e23', backgroundColor: 'rgba(107,142,35,0.12)', color: '#6b8e23' }
   return { border: '2px solid rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.05)', color: '#8fa882' }
@@ -753,11 +753,11 @@ export default function DemoPage() {
       <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#6b8e23' }}>Live Feed</p>
       <ul className="space-y-2 font-mono text-xs overflow-y-auto" style={{ color: '#8fa882', maxHeight: '16rem', scrollbarWidth: 'thin' }}>
         {feed.length === 0 ? (
-          <li style={{ color: '#4a5e44' }}>No events yet.</li>
+          <li style={{ color: '#7d9a72' }}>No events yet.</li>
         ) : (
           [...feed].reverse().map((msg, i) => (
             <li key={`${msg}-${i}`} className="flex gap-2">
-              <span style={{ color: '#4a5e44' }}>→</span> {msg}
+              <span style={{ color: '#7d9a72' }}>→</span> {msg}
             </li>
           ))
         )}
@@ -782,7 +782,7 @@ export default function DemoPage() {
             <Link
               href="/lobby"
               className="flex-1 rounded-lg py-3 text-center font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
-              style={{ backgroundColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0 #6b8e23' }}
+              style={{ backgroundColor: '#cc1414', color: '#ffffff', boxShadow: '4px 4px 0 #6b8e23' }}
             >
               Sign In & Play →
             </Link>
@@ -794,7 +794,7 @@ export default function DemoPage() {
               Back to Home
             </Link>
           </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>
             Demo limit is per device · stored in browser
           </p>
         </div>
@@ -822,7 +822,7 @@ export default function DemoPage() {
           </div>
 
           <div className="w-full rounded-lg border p-5 space-y-3" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.25)' }}>
-            <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>What you&apos;ll experience</p>
+            <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>What you&apos;ll experience</p>
             {[
               'A random player becomes Patient Zero — it could be you',
               'Chat with the room: accuse, defend, bluff',
@@ -841,12 +841,12 @@ export default function DemoPage() {
           <button
             onClick={startDemo}
             className="w-full rounded-lg py-4 font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-90 active:scale-95"
-            style={{ backgroundColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0 #6b8e23' }}
+            style={{ backgroundColor: '#cc1414', color: '#ffffff', boxShadow: '4px 4px 0 #6b8e23' }}
           >
             Start Demo →
           </button>
 
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>
             {remaining} free demo{remaining === 1 ? '' : 's'} remaining · no sign-in needed
           </p>
 
@@ -918,7 +918,7 @@ export default function DemoPage() {
           <div className="mx-auto w-full max-w-6xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Demo Room</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#7d9a72' }}>Demo Room</p>
                 <p className="font-heading text-2xl leading-none" style={{ color: '#e63329' }}>The Cursed Village</p>
               </div>
               {phase !== 'gameover' && (
@@ -937,26 +937,26 @@ export default function DemoPage() {
 
             <div className="mt-4 flex flex-wrap gap-4">
               <div className="text-center">
-                <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Round</p>
+                <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Round</p>
                 <p className="font-heading text-3xl leading-none" style={{ color: '#d4c9b2' }}>{round}</p>
               </div>
               <div className="text-center">
-                <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Alive</p>
+                <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Alive</p>
                 <p className="font-heading text-3xl leading-none" style={{ color: '#d4c9b2' }}>{alivePlayers.length}/{TOTAL_PLAYERS}</p>
               </div>
               <div className="text-center">
-                <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
+                <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Pot</p>
                 <p className="font-heading text-3xl leading-none" style={{ color: '#f5c518' }}>{POT_TOTAL} USDm</p>
               </div>
               <div className="text-center">
-                <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Infected</p>
+                <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Infected</p>
                 <p className="font-heading text-3xl leading-none" style={{ color: '#e63329' }}>
                   {phase === 'gameover' ? infectedAlive : '?'}
                 </p>
               </div>
               {countdown > 0 && (
                 <div className="text-center">
-                  <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Time Left</p>
+                  <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Time Left</p>
                   <p className="font-mono text-3xl tabular-nums leading-none" style={{ color: '#6b8e23' }}>{String(Math.floor(countdown / 60)).padStart(2, '0')}:{String(countdown % 60).padStart(2, '0')}</p>
                 </div>
               )}
@@ -1052,7 +1052,7 @@ export default function DemoPage() {
                         : 'Patient Zero is silently spreading the plague to a new host…'}
                     </p>
                     {countdown > 0 && (
-                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Resolving in {countdown}s…</p>
+                      <p className="mt-2 font-mono text-xs" style={{ color: '#7d9a72' }}>Resolving in {countdown}s…</p>
                     )}
                   </div>
                 )}
@@ -1104,7 +1104,7 @@ export default function DemoPage() {
 
                 {phase === 'voting' && you.eliminated && (
                   <div className="rounded-lg border p-5" style={{ borderColor: 'rgba(74,94,68,0.5)', backgroundColor: 'rgba(74,94,68,0.1)' }}>
-                    <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>⊘ You have been eliminated — spectating while the room votes.</p>
+                    <p className="font-mono text-xs" style={{ color: '#7d9a72' }}>⊘ You have been eliminated — spectating while the room votes.</p>
                   </div>
                 )}
 
@@ -1143,12 +1143,12 @@ export default function DemoPage() {
                     style={{ maxHeight: '16rem', scrollbarWidth: 'thin' }}
                   >
                     {chat.length === 0 ? (
-                      <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
+                      <p className="font-mono text-[11px]" style={{ color: '#7d9a72' }}>No messages yet…</p>
                     ) : (
                       chat.map((m, i) => (
                         <div key={`${m.senderId}-${i}`} className="font-mono text-[11px] leading-snug break-words">
                           <span style={{ color: m.senderId === YOU_ID ? '#6b8e23' : '#f5c518' }}>{m.name}</span>
-                          <span style={{ color: '#4a5e44' }}>: </span>
+                          <span style={{ color: '#7d9a72' }}>: </span>
                           <span style={{ color: '#d4c9b2' }}>{m.text}</span>
                         </div>
                       ))
@@ -1250,7 +1250,7 @@ function StartingPanel({ shieldSet, onCommit }: { shieldSet: boolean; onCommit: 
         >
           Set Shield Password
         </button>
-        <p className="mt-2 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+        <p className="mt-2 font-mono text-[10px]" style={{ color: '#7d9a72' }}>
           The game can&apos;t start until every player has set one.
         </p>
       </div>
@@ -1274,8 +1274,8 @@ function DiscussionPanel({
   if (you.eliminated) {
     return (
       <div className="rounded-lg border p-5" style={{ borderColor: 'rgba(74,94,68,0.5)', backgroundColor: 'rgba(74,94,68,0.1)' }}>
-        <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>⊘ Eliminated</p>
-        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>
+        <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>⊘ Eliminated</p>
+        <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>
           You&apos;re out of the game. Watch the survivors argue it out — the round advances automatically.
         </p>
       </div>
@@ -1379,7 +1379,7 @@ function RevealPanel({
           ))}
         </div>
       )}
-      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
         {countdown > 0 ? `Next round in ${countdown}s…` : 'Resolving…'}
       </p>
     </div>
@@ -1392,7 +1392,7 @@ function YourRoleCard({ you }: { you: DemoPlayer }) {
   let desc = 'Survive, find the carriers, and vote them out before the infected reach parity.'
   if (you.eliminated) {
     label = 'Eliminated'
-    color = '#4a5e44'
+    color = '#7d9a72'
     desc = 'You are out. Spectate the rest of the outbreak.'
   } else if (you.isPatientZero) {
     label = 'Patient Zero ☣'
@@ -1405,7 +1405,7 @@ function YourRoleCard({ you }: { you: DemoPlayer }) {
   }
   return (
     <div className="rounded-lg border p-5" style={{ backgroundColor: 'rgba(107,142,35,0.04)', borderColor: 'rgba(107,142,35,0.2)' }}>
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] mb-2" style={{ color: '#4a5e44' }}>Your Role</p>
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] mb-2" style={{ color: '#7d9a72' }}>Your Role</p>
       <p className="font-mono text-sm" style={{ color }}>{label}</p>
       <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{desc}</p>
     </div>
@@ -1455,10 +1455,10 @@ function GameOverPanel({
         {winners.length > 0 && (
           <p className="mt-3 font-mono text-sm" style={{ color: '#f5c518' }}>
             {youWon ? '★ You survived and won' : 'Winners'}: {winners.join(', ')} — {potPerWinner.toFixed(2)} USDm each
-            <span style={{ color: '#4a5e44' }}> (pot {POT_TOTAL} USDm − 1.5% platform fee)</span>
+            <span style={{ color: '#7d9a72' }}> (pot {POT_TOTAL} USDm − 1.5% platform fee)</span>
           </p>
         )}
-        <p className="mt-3 font-mono text-xs" style={{ color: '#4a5e44' }}>
+        <p className="mt-3 font-mono text-xs" style={{ color: '#7d9a72' }}>
           In real games all of this runs on Celo: stakes locked in the contract, Shields verified as ZK proofs on-chain, payouts automatic.
         </p>
       </div>
@@ -1467,7 +1467,7 @@ function GameOverPanel({
         <Link
           href="/lobby"
           className="flex-1 rounded-lg py-4 text-center font-mono text-sm font-bold uppercase tracking-widest transition-all hover:opacity-90 active:scale-95"
-          style={{ backgroundColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0 #6b8e23' }}
+          style={{ backgroundColor: '#cc1414', color: '#ffffff', boxShadow: '4px 4px 0 #6b8e23' }}
         >
           Play for Real →
         </Link>

@@ -118,7 +118,7 @@ interface GridPlayer {
 
 function playerStyle(status: string): { border: string; backgroundColor: string; color: string } {
   if (status === 'infected')   return { border: '2px solid #e63329', backgroundColor: 'rgba(230,51,41,0.15)', color: '#ff6b6b' }
-  if (status === 'eliminated') return { border: '2px solid #4a5e44', backgroundColor: 'rgba(74,94,68,0.12)', color: '#4a5e44' }
+  if (status === 'eliminated') return { border: '2px solid #7d9a72', backgroundColor: 'rgba(74,94,68,0.12)', color: '#7d9a72' }
   return { border: '2px solid #6b8e23', backgroundColor: 'rgba(107,142,35,0.08)', color: '#6b8e23' }
 }
 

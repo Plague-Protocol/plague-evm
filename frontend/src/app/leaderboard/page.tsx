@@ -117,7 +117,7 @@ const ROW_GRID_CLASS =
   'grid-cols-[2rem_minmax(0,1fr)_3.5rem] sm:grid-cols-[2.5rem_minmax(0,1fr)_5rem_4rem_4.5rem] gap-2 sm:gap-4 px-3 sm:px-5'
 
 function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }) {
-  const rankColor = RANK_COLORS[rank - 1] ?? '#4a5e44'
+  const rankColor = RANK_COLORS[rank - 1] ?? '#7d9a72'
   const isTop3 = rank <= 3
   const streak = player.currentStreak ?? 0
   const best = player.bestStreak ?? 0
@@ -157,7 +157,7 @@ function PlayerRow({ player, rank }: { player: LeaderboardPlayer; rank: number }
             </span>
           )}
           {player.lastPlayedAt && (
-            <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] sm:inline" style={{ color: '#4a5e44' }}>
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] sm:inline" style={{ color: '#7d9a72' }}>
               {activeAgo(player.lastPlayedAt)}
             </span>
           )}
@@ -236,27 +236,27 @@ function ChampionCard({ champion, monthName, boardSize, loading }: {
                 </p>
                 <div className="mt-4 flex justify-center gap-5">
                   <div>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Points</p>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>Points</p>
                     <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#f5c518' }}>{pointsOf(champion).toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Wins</p>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>Wins</p>
                     <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>{champion.wins}</p>
                   </div>
                   <div>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>Shields</p>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>Shields</p>
                     <p className="mt-1 font-heading text-2xl leading-none" style={{ color: '#e63329' }}>{champion.proofs}</p>
                   </div>
                 </div>
               </>
             ) : (
-              <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+              <p className="mt-4 font-mono text-xs" style={{ color: '#7d9a72' }}>
                 {loading ? 'Loading…' : 'The throne is empty — top this month’s board to claim it.'}
               </p>
             )}
             <p
               className="mt-4 border-t pt-3 font-mono text-[9px] uppercase tracking-[0.22em]"
-              style={{ color: '#4a5e44', borderColor: 'rgba(245,197,24,0.15)' }}
+              style={{ color: '#7d9a72', borderColor: 'rgba(245,197,24,0.15)' }}
             >
               Zombie Plague · No. 1 of {boardSize || '—'}
             </p>
@@ -443,7 +443,7 @@ export default function LeaderboardPage() {
                     style={{
                       borderColor: isActive ? '#6b8e23' : 'rgba(107,142,35,0.25)',
                       backgroundColor: isActive ? 'rgba(107,142,35,0.15)' : 'transparent',
-                      color: isActive ? '#6b8e23' : '#4a5e44',
+                      color: isActive ? '#6b8e23' : '#7d9a72',
                     }}
                   >
                     {tab.label}
@@ -465,7 +465,7 @@ export default function LeaderboardPage() {
                       style={{
                         borderColor: isActive ? 'rgba(245,197,24,0.5)' : 'rgba(107,142,35,0.2)',
                         backgroundColor: isActive ? 'rgba(245,197,24,0.1)' : 'transparent',
-                        color: isActive ? '#f5c518' : '#4a5e44',
+                        color: isActive ? '#f5c518' : '#7d9a72',
                       }}
                     >
                       {m.name}
@@ -476,7 +476,7 @@ export default function LeaderboardPage() {
             )}
 
             {/* Active board window */}
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
               {activeTab === 'monthly'
                 ? activeMonth
                   ? `${activeMonth.name} — ${activeMonth.current ? 'resets on the 1st (UTC)' : 'archived month'}`
@@ -517,8 +517,8 @@ export default function LeaderboardPage() {
                     backgroundColor: '#0e180d',
                   }}
                 >
-                  <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>#</span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Operative</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>#</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>Operative</span>
                   <span className="text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Points</span>
                   <span className="hidden text-center font-mono text-[10px] uppercase tracking-[0.2em] sm:block" style={{ color: '#6b8e23' }}>Wins</span>
                   <span className="hidden text-center font-mono text-[10px] uppercase tracking-[0.2em] sm:block" style={{ color: '#e63329' }}>Shields</span>
@@ -527,7 +527,7 @@ export default function LeaderboardPage() {
                 {/* Rows */}
                 <div className="space-y-2">
                   {loading && (
-                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#4a5e44' }}>
+                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#7d9a72' }}>
                       Loading rankings…
                     </div>
                   )}
@@ -537,7 +537,7 @@ export default function LeaderboardPage() {
                     </div>
                   )}
                   {!loading && !error && sorted.length === 0 && (
-                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#4a5e44' }}>
+                    <div className="rounded-xl border p-6 font-mono text-sm" style={{ borderColor: 'rgba(107,142,35,0.15)', color: '#7d9a72' }}>
                       {activeTab === 'monthly'
                         ? `No games finished in ${monthName} yet — the first survivor tops this board.`
                         : activeSeason && !activeSeason.current
@@ -561,7 +561,7 @@ export default function LeaderboardPage() {
                     >
                       ← Prev
                     </button>
-                    <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+                    <span className="font-mono text-xs" style={{ color: '#7d9a72' }}>
                       Page {page} / {totalPages}<span className="hidden sm:inline"> &nbsp;·&nbsp; {sorted.length} operatives</span>
                     </span>
                     <button
@@ -677,10 +677,10 @@ export default function LeaderboardPage() {
                       </div>
                     ))}
                   </div>
-                  <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
+                  <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#7d9a72' }}>
                     Shields are on-chain innocence proofs — each one costs the room&apos;s proof fee.
                   </p>
-                  <p className="mt-2 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
+                  <p className="mt-2 font-mono text-[10px] leading-relaxed" style={{ color: '#7d9a72' }}>
                     🔥 Win streaks are tracked from your game history. They don&apos;t score
                     points yet — they&apos;re being recorded now so they can count toward
                     bounty payouts later.
@@ -692,7 +692,7 @@ export default function LeaderboardPage() {
                   className="rise-in rounded-xl border p-5"
                   style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)', animationDelay: '240ms' }}
                 >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>All-Time Stats</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>All-Time Stats</p>
                   <div className="mt-4 space-y-2">
                     {[
                       { label: 'Total games',   value: loading ? '…' : String(data?.totalGames ?? 0), color: '#6b8e23' },
@@ -704,7 +704,7 @@ export default function LeaderboardPage() {
                         className="flex items-center justify-between rounded-lg border px-4 py-3"
                         style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}
                       >
-                        <span className="font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</span>
+                        <span className="font-mono text-xs uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>{s.label}</span>
                         <span className="font-heading text-2xl leading-none" style={{ color: s.color }}>{s.value}</span>
                       </div>
                     ))}

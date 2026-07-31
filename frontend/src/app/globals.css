@@ -16,7 +16,7 @@
 
   --text-primary: #d4c9b2;
   --text-secondary: #8fa882;
-  --text-muted: #4a5e44;
+  --text-muted: #7d9a72;
 
   --accent-bio: #6b8e23;
   --accent-toxic: #39ff14;
@@ -469,6 +469,33 @@ select {
 @keyframes splash-exit {
   from { opacity: 1; transform: scale(1); }
   to   { opacity: 0; transform: scale(1.04); }
+}
+
+/* ── Server-rendered intro veil ───────────────────────────────────────────────
+   Paints in the first frame, before any JavaScript runs, so LCP is not gated on
+   hydration. Removed by Providers once React has mounted. Styles live here (not
+   inline) so the pre-paint flag in layout.tsx can suppress it with one rule. */
+#intro-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000;
+  /* No opacity transition: an opacity below 1 makes the mark LCP-ineligible. */
+}
+
+#intro-veil img {
+  width: clamp(7rem, 30vw, 14rem);
+  height: auto;
+  filter: drop-shadow(0 0 24px rgba(230, 51, 41, 0.8));
+}
+
+/* Returning visitor in the same session — set by the inline script in <head>
+   before first paint, so the veil never flashes for them. */
+html[data-intro-seen] #intro-veil {
+  display: none;
 }
 
 /* Pulse for the splash LCP mark. Deliberately transform-only — animating its

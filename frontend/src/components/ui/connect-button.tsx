@@ -83,7 +83,7 @@ export function ConnectButton() {
         >
           {/* Full address */}
           <div className="px-3 py-2">
-            <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#4a5e44' }}>Signed In</p>
+            <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#7d9a72' }}>Signed In</p>
             <p className="mt-1 font-mono text-xs break-all" style={{ color: '#8fa882' }}>{address}</p>
           </div>
 

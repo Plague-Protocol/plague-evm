@@ -41,7 +41,7 @@ const PHASE_COLOR: Record<RoundPhase, string> = {
   discussion: '#6b8e23',
   voting:     '#f5c518',
   reveal:     '#d4c9b2',
-  ended:      '#4a5e44',
+  ended:      '#7d9a72',
 }
 
 function formatCountdown(ms: number): string {
@@ -354,7 +354,7 @@ function GamePageInner() { // NOSONAR
   const votingUrgent = phase === 'voting' && canVote && msLeft > 0 && msLeft <= 15_000
   let playersPanelBody: React.ReactNode
   if (isLoading) {
-    playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Loading players…</p>
+    playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#7d9a72' }}>Loading players…</p>
   } else if (room?.players?.length) {
     playersPanelBody = (
       <PlayersGrid
@@ -367,7 +367,7 @@ function GamePageInner() { // NOSONAR
       />
     )
   } else {
-    playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#4a5e44' }}>Waiting for players…</p>
+    playersPanelBody = <p className="text-center font-mono text-xs" style={{ color: '#7d9a72' }}>Waiting for players…</p>
   }
 
   // Mobile tab visibility helper — on desktop everything shows
@@ -963,7 +963,7 @@ function GamePageInner() { // NOSONAR
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Room name — prominent display */}
             <div className="flex flex-col gap-1">
-              <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Room</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#7d9a72' }}>Room</p>
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className="font-heading text-lg sm:text-2xl leading-none"
@@ -982,7 +982,7 @@ function GamePageInner() { // NOSONAR
                 )}
               </div>
               {room?.name && (
-                <span className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>{quarantineCode(BigInt(roomId))}</span>
+                <span className="font-mono text-[10px]" style={{ color: '#7d9a72' }}>{quarantineCode(BigInt(roomId))}</span>
               )}
               {roomNameEditing && (
                 <form
@@ -1035,7 +1035,7 @@ function GamePageInner() { // NOSONAR
                     type="button"
                     onClick={() => { setRoomNameEditing(false); setPendingRoomName('') }}
                     className="rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:brightness-125 active:scale-95"
-                    style={{ borderColor: '#4a5e44', color: '#4a5e44' }}
+                    style={{ borderColor: '#7d9a72', color: '#7d9a72' }}
                   >
                     Cancel
                   </button>
@@ -1059,7 +1059,7 @@ function GamePageInner() { // NOSONAR
                 className="flex flex-col items-center rounded-xl border px-5 py-3 sm:px-10 sm:py-4"
                 style={{ borderColor: 'rgba(107,142,35,0.45)', backgroundColor: 'rgba(107,142,35,0.06)' }}
               >
-                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>Time Left</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#7d9a72' }}>Time Left</p>
                 <p className="mt-1 font-mono text-3xl sm:text-6xl font-bold leading-none tabular-nums" style={{ color: '#6b8e23', textShadow: '0 0 20px rgba(107,142,35,0.5)' }}>
                   {formatCountdown(headerCountdownMs)}
                 </p>
@@ -1098,7 +1098,7 @@ function GamePageInner() { // NOSONAR
           <div className="mt-3 space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <span className={`inline-block h-2 w-2 rounded-full ${socketOn ? 'bg-green-400' : 'bg-yellow-400'}`} />
-              <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+              <span className="font-mono text-xs" style={{ color: '#7d9a72' }}>
                 {socketOn ? 'Live · backend connected' : 'On-chain read-only'}
               </span>
               <button
@@ -1168,7 +1168,7 @@ function GamePageInner() { // NOSONAR
                 className="rise-in rounded-lg border p-4 text-center"
                 style={{ backgroundColor: '#0a100a', borderColor: `${stat.accent}33` }}
               >
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>{stat.label}</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>{stat.label}</p>
                 <p className="mt-2 font-heading text-xl sm:text-3xl leading-none" style={{ color: stat.accent }}>{stat.value}</p>
               </div>
             ))}
@@ -1217,7 +1217,7 @@ function GamePageInner() { // NOSONAR
                     {starting ? 'Starting…' : 'Start Game'}
                   </button>
                   {totalPlayers < (room?.minPlayers ?? 3) && (
-                    <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
+                    <p className="mt-2 font-mono text-xs" style={{ color: '#7d9a72' }}>Need at least {room?.minPlayers ?? 3} players to start.</p>
                   )}
                 </div>
               )}
@@ -1256,11 +1256,11 @@ function GamePageInner() { // NOSONAR
                       })}
                     </div>
                   )}
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Current Phase</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>Current Phase</p>
                   <p className="mt-2 font-heading text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>{PHASE_LABEL[phase]}</p>
                   <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{phaseCardDescription}</p>
                   {localPlayer?.isEliminated && (
-                    <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>⊘ You have been eliminated — spectator only.</p>
+                    <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>⊘ You have been eliminated — spectator only.</p>
                   )}
                   {!localPlayer?.isEliminated && localPlayer?.status === 'infected' && (
                     <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#e63329' }}>
@@ -1300,8 +1300,8 @@ function GamePageInner() { // NOSONAR
                   </div>
                   {localPlayer?.isEliminated && (
                     <div className="mt-5 rounded-lg border p-5" style={{ borderColor: 'rgba(74,94,68,0.5)', backgroundColor: 'rgba(74,94,68,0.1)' }}>
-                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>⊘ YOU HAVE BEEN ELIMINATED</p>
-                      <p className="mt-2 font-mono text-xs" style={{ color: '#4a5e44' }}>You can observe but can no longer vote or submit proofs.</p>
+                      <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>⊘ YOU HAVE BEEN ELIMINATED</p>
+                      <p className="mt-2 font-mono text-xs" style={{ color: '#7d9a72' }}>You can observe but can no longer vote or submit proofs.</p>
                     </div>
                   )}
                   {!localPlayer?.isEliminated && localPlayer?.status === 'infected' && (
@@ -1325,7 +1325,7 @@ function GamePageInner() { // NOSONAR
                     </div>
                   )}
                   {localPlayer && (
-                    <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#7d9a72' }}>
                       You: {localPlayer.displayName}{localPlayer.role !== 'unknown' ? ` · ${localPlayer.role}` : ''}
                     </p>
                   )}
@@ -1375,7 +1375,7 @@ function GamePageInner() { // NOSONAR
                       ) : (
                         <>
                           <p className="mt-3 font-mono text-sm" style={{ color: '#8fa882' }}>Pot per winner: {potPerWinnerDisplay} USDm</p>
-                          <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                          <p className="mt-1 font-mono text-xs" style={{ color: '#7d9a72' }}>
                             Winners: {winnerNames.join(', ') || '—'}
                           </p>
                         </>
@@ -1395,10 +1395,10 @@ function GamePageInner() { // NOSONAR
                   >
                     {synchronizedFeed.length > 0 ? synchronizedFeed.map((msg, i) => (
                       <li key={`${msg}-${i}`} className="flex gap-2">
-                        <span style={{ color: '#4a5e44' }}>→</span> {msg}
+                        <span style={{ color: '#7d9a72' }}>→</span> {msg}
                       </li>
                     )) : (
-                      <li style={{ color: '#4a5e44' }}>No recent events yet.</li>
+                      <li style={{ color: '#7d9a72' }}>No recent events yet.</li>
                     )}
                   </ul>
                 </div>
@@ -1413,7 +1413,7 @@ function GamePageInner() { // NOSONAR
               {showOnTab('board') && (
                 <div className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
                   <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
-                  <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#4a5e44' }}>{votePanelLabel}</p>
+                  <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7d9a72' }}>{votePanelLabel}</p>
 
                   {phase === 'voting' && hasVoted && (
                     <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.06)' }}>
@@ -1515,14 +1515,14 @@ function GamePageInner() { // NOSONAR
                     }}
                   >
                     {chatMessages.length === 0 ? (
-                      <p className="font-mono text-[11px]" style={{ color: '#4a5e44' }}>No messages yet…</p>
+                      <p className="font-mono text-[11px]" style={{ color: '#7d9a72' }}>No messages yet…</p>
                     ) : (
                       chatMessages.map((m, i) => (
                         <div key={`${m.timestamp}-${m.sender}-${i}`} className="font-mono text-[11px] leading-snug break-words">
                           <span style={{ color: m.sender.toLowerCase() === address?.toLowerCase() ? '#6b8e23' : '#f5c518' }}>
                             {m.displayName}
                           </span>
-                          <span style={{ color: '#4a5e44' }}>: </span>
+                          <span style={{ color: '#7d9a72' }}>: </span>
                           <span style={{ color: '#d4c9b2' }}>{m.message}</span>
                         </div>
                       ))
@@ -1586,7 +1586,7 @@ function GamePageInner() { // NOSONAR
             textShadow: '0 0 8px rgba(107,142,35,0.5)',
           }}
         >
-          <span className="text-[9px] font-normal uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+          <span className="text-[9px] font-normal uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
             {PHASE_LABEL[phase]}
           </span>
           <span>{formatCountdown(headerCountdownMs)}</span>
@@ -1612,7 +1612,7 @@ export default function GamePage() {
   return (
     <Suspense fallback={
       <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#060b06' }}>
-        <p className="font-mono text-sm" style={{ color: '#4a5e44' }}>Loading game…</p>
+        <p className="font-mono text-sm" style={{ color: '#7d9a72' }}>Loading game…</p>
       </main>
     }>
       <GamePageInner />

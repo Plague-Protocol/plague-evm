@@ -96,11 +96,11 @@ export function BotControls({
         </span>
 
         {!avail.online ? (
-          <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+          <span className="font-mono text-xs" style={{ color: '#7d9a72' }}>
             Bot pool is offline.
           </span>
         ) : stakeTooHigh ? (
-          <span className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+          <span className="font-mono text-xs" style={{ color: '#7d9a72' }}>
             Stake too high for bots (max {formatToken(capWei)} {TOKEN}). Lower the stake to fill with bots.
           </span>
         ) : (

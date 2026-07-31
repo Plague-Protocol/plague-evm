@@ -47,7 +47,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
           />
           <div>
             <p className="font-display text-base sm:text-xl leading-none" style={{ color: '#d4c9b2' }}>Zombie Plague</p>
-            <p className="hidden sm:block font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#4a5e44' }}>
+            <p className="hidden sm:block font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: '#7d9a72' }}>
               social deduction on celo
             </p>
           </div>
@@ -65,7 +65,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
                 style={
                   isActive
                     ? { backgroundColor: 'rgba(107,142,35,0.1)', color: '#6b8e23', border: '1px solid rgba(107,142,35,0.35)' }
-                    : { backgroundColor: 'transparent', color: '#4a5e44', border: '1px solid transparent' }
+                    : { backgroundColor: 'transparent', color: '#7d9a72', border: '1px solid transparent' }
                 }
               >
                 {item.label}

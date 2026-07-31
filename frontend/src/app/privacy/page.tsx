@@ -67,7 +67,7 @@ export default function PrivacyPage() {
           we will delete your display name and off-chain game history. On-chain
           records cannot be deleted by anyone.
         </p>
-        <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+        <p className="font-mono text-xs" style={{ color: '#7d9a72' }}>
           Last updated: July 24, 2026
         </p>
       </InfoSection>

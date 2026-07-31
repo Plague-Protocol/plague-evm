@@ -211,7 +211,7 @@ export default function HowToPlayPage() {
           <h1 className="mt-4 sm:mt-6 font-display text-3xl font-bold leading-none sm:text-6xl lg:text-8xl" style={{ color: '#d4c9b2' }}>
             HOW TO PLAY
           </h1>
-          <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mx-auto mt-4 sm:mt-6 max-w-2xl font-mono text-sm sm:text-base leading-relaxed" style={{ color: '#7d9a72' }}>
             Stake your USDm, find Patient Zero before they turn everyone, and walk away with the
             pot. Activate your Shield if you&apos;re being framed — but you only get one free, so
             spend it wisely.
@@ -259,7 +259,7 @@ export default function HowToPlayPage() {
               Play for Real
             </Link>
           </div>
-          <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] sm:hidden" style={{ color: '#4a5e44' }}>
+          <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] sm:hidden" style={{ color: '#7d9a72' }}>
             Tap any section below for the full rules ↓
           </p>
         </section>
@@ -284,7 +284,7 @@ export default function HowToPlayPage() {
                   className="mt-4 rounded-lg border px-3 py-2"
                   style={{ borderColor: `${role.color}33`, backgroundColor: `${role.color}0d` }}
                 >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>Win Condition</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>Win Condition</p>
                   <p className="mt-1 font-mono text-xs" style={{ color: role.color }}>{role.winCondition}</p>
                 </div>
               </div>
@@ -294,7 +294,7 @@ export default function HowToPlayPage() {
 
         {/* ── Room Lifecycle ───────────────────────────────────────────────── */}
         <CollapsibleSection number="01" title="Room Lifecycle">
-          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Every game goes through four distinct statuses before it ends.
           </p>
           <div className="mt-8 flex flex-col gap-0">
@@ -319,7 +319,7 @@ export default function HowToPlayPage() {
               },
               {
                 status: 'Ended',
-                color: '#4a5e44',
+                color: '#7d9a72',
                 desc: 'The game is over. The smart contract has determined the winner faction and distributed the pot automatically. No admin action needed.',
                 actions: ['Pot distributed automatically to winners', 'Platform takes 1.5% fee from pot', 'Results finalized on-chain'],
               },
@@ -348,7 +348,7 @@ export default function HowToPlayPage() {
                   <p className="mt-2 font-mono text-sm leading-relaxed" style={{ color: '#8fa882' }}>{item.desc}</p>
                   <ul className="mt-3 space-y-1">
                     {item.actions.map((a) => (
-                      <li key={a} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                      <li key={a} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#7d9a72' }}>
                         <span style={{ color: item.color }}>→</span>
                         {a}
                       </li>
@@ -362,7 +362,7 @@ export default function HowToPlayPage() {
 
         {/* ── Round Structure ──────────────────────────────────────────────── */}
         <CollapsibleSection number="02" title="Round Structure">
-          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Each round cycles through four phases. Understanding phase timing is critical to using proofs strategically.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -382,10 +382,10 @@ export default function HowToPlayPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#4a5e44' }}>{phase.number}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>{phase.number}</span>
                   <h3 className="font-heading text-xl font-bold" style={{ color: phase.color }}>{phase.name}</h3>
                 </div>
-                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>{phase.desc}</p>
+                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>{phase.desc}</p>
               </div>
             ))}
           </div>
@@ -393,7 +393,7 @@ export default function HowToPlayPage() {
 
         {/* ── Patient Zero Succession ──────────────────────────────────────── */}
         <CollapsibleSection number="03" title="Patient Zero Succession">
-          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             The infection has a chain of command. Eliminating Patient Zero doesn&apos;t stop the plague — it just promotes the next infected player.
           </p>
           <div
@@ -418,7 +418,7 @@ export default function HowToPlayPage() {
               style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.08)' }}
             >
               <p className="font-mono text-xs uppercase tracking-[0.15em]" style={{ color: '#6b8e23' }}>On-Chain Verifiable</p>
-              <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+              <p className="mt-1 font-mono text-xs" style={{ color: '#7d9a72' }}>
                 The current Patient Zero address is stored publicly in the contract (<code className="font-mono" style={{ color: '#8fa882' }}>currentPatientZero[roomId]</code>). Any player can verify who holds the role at any time.
               </p>
             </div>
@@ -427,7 +427,7 @@ export default function HowToPlayPage() {
 
         {/* ── Voting & Resolution ──────────────────────────────────────────── */}
         <CollapsibleSection number="04" title="Vote Resolution Rules">
-          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             The smart contract applies deterministic rules to resolve every vote. There is no ambiguity or moderator discretion.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -454,7 +454,7 @@ export default function HowToPlayPage() {
                 >
                   {rule.outcome}
                 </div>
-                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>{rule.desc}</p>
+                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>{rule.desc}</p>
               </div>
             ))}
           </div>
@@ -463,7 +463,7 @@ export default function HowToPlayPage() {
             style={{ borderColor: 'rgba(245,197,24,0.3)', backgroundColor: 'rgba(245,197,24,0.06)' }}
           >
             <p className="font-mono text-xs font-bold" style={{ color: '#f5c518' }}>Absent Vote Rule</p>
-            <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+            <p className="mt-1 font-mono text-xs" style={{ color: '#7d9a72' }}>
               Any player who does not cast a vote during the Voting phase automatically has a self-vote recorded against them. Silence equals guilt — abstaining is actively dangerous regardless of who else is leading. There is no safe way to skip your vote.
             </p>
           </div>
@@ -471,7 +471,7 @@ export default function HowToPlayPage() {
 
         {/* ── Innocence Proofs ─────────────────────────────────────────────── */}
         <CollapsibleSection number="05" title="Shields">
-          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Shields are your insurance policy. Use them wisely — they are limited.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -483,7 +483,7 @@ export default function HowToPlayPage() {
               >
                 <div className="text-2xl">{rule.icon}</div>
                 <h3 className="mt-3 font-mono text-sm font-bold" style={{ color: '#8fa882' }}>{rule.title}</h3>
-                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>{rule.desc}</p>
+                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>{rule.desc}</p>
               </div>
             ))}
           </div>
@@ -492,7 +492,7 @@ export default function HowToPlayPage() {
             style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(6,11,6,0.6)' }}
           >
             <p className="font-mono text-xs font-bold uppercase tracking-[0.15em]" style={{ color: '#6b8e23' }}>Under the Hood (for the curious)</p>
-            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>
+            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>
               The Shield circuit (built in Noir) proves your role is <code style={{ color: '#84cc16' }}>CLEAN</code> without revealing your role or your secret to anyone.
               Your commitment <code style={{ color: '#8fa882' }}>Poseidon(role, secret)</code> was registered on-chain at game start.
               The nullifier <code style={{ color: '#8fa882' }}>Poseidon(secret, roomId, round)</code> stops the same Shield from being replayed across rounds.
@@ -503,7 +503,7 @@ export default function HowToPlayPage() {
 
         {/* ── Endgame & Payouts ────────────────────────────────────────────── */}
         <CollapsibleSection number="06" title="Endgame & Payouts">
-          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#4a5e44' }}>
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Win conditions are checked automatically by the contract after every Reveal phase. Payouts are instant and trustless.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -521,14 +521,14 @@ export default function HowToPlayPage() {
                   className="mt-3 rounded border px-3 py-2"
                   style={{ borderColor: `${e.color}30`, backgroundColor: `${e.color}0d` }}
                 >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Condition</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>Condition</p>
                   <p className="mt-1 font-mono text-xs" style={{ color: '#d4c9b2' }}>{e.condition}</p>
                 </div>
                 <div
                   className="mt-2 rounded border px-3 py-2"
                   style={{ borderColor: 'rgba(132,204,22,0.25)', backgroundColor: 'rgba(132,204,22,0.07)' }}
                 >
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Payout</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>Payout</p>
                   <p className="mt-1 font-mono text-xs" style={{ color: '#84cc16' }}>{e.payout}</p>
                 </div>
               </div>
@@ -539,7 +539,7 @@ export default function HowToPlayPage() {
             style={{ borderColor: 'rgba(245,197,24,0.3)', backgroundColor: 'rgba(245,197,24,0.06)' }}
           >
             <p className="font-mono text-xs font-bold" style={{ color: '#f5c518' }}>Platform Fee</p>
-            <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+            <p className="mt-1 font-mono text-xs" style={{ color: '#7d9a72' }}>
               A 1.5% platform fee is deducted from the pot at game end before distribution to winners. Proof fees (paid for proofs after your first free one) are collected separately and do not come from the pot.
             </p>
           </div>
@@ -580,7 +580,7 @@ export default function HowToPlayPage() {
                 <h3 className="font-heading text-xl font-bold" style={{ color: section.color }}>{section.title}</h3>
                 <ul className="mt-4 space-y-2">
                   {section.tips.map((tip) => (
-                    <li key={`${section.side}-${tip}`} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                    <li key={`${section.side}-${tip}`} className="flex items-start gap-2 font-mono text-xs" style={{ color: '#7d9a72' }}>
                       <span className="mt-0.5 flex-shrink-0" style={{ color: section.color }}>→</span>
                       {tip}
                     </li>
@@ -598,7 +598,7 @@ export default function HowToPlayPage() {
             style={{ borderColor: 'rgba(204,20,20,0.35)', backgroundColor: 'rgba(6,11,6,0.7)' }}
           >
             <h2 className="font-heading text-2xl sm:text-4xl font-bold" style={{ color: '#d4c9b2' }}>Ready to Play?</h2>
-            <p className="mt-3 font-mono text-sm" style={{ color: '#4a5e44' }}>
+            <p className="mt-3 font-mono text-sm" style={{ color: '#7d9a72' }}>
               Sign in, join a room in the lobby, and stake your USDm.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -617,7 +617,7 @@ export default function HowToPlayPage() {
                 Back to Home
               </Link>
             </div>
-            <p className="mt-6 font-mono text-xs" style={{ color: '#4a5e44' }}>
+            <p className="mt-6 font-mono text-xs" style={{ color: '#7d9a72' }}>
               More questions?{' '}
               <Link href="/support" className="underline underline-offset-4" style={{ color: '#6b8e23' }}>
                 FAQ &amp; Support

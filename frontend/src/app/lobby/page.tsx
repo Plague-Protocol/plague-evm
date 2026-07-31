@@ -116,7 +116,7 @@ const statusColor: Record<string, string> = {
   waiting:  '#1a7a4a',
   starting: '#6b8e23',
   active:   '#f5c518',
-  ended:    '#4a5e44',
+  ended:    '#7d9a72',
 }
 
 const statusLabel: Record<string, string> = {
@@ -495,7 +495,7 @@ function getJoinButtonState(
   if (isJoining) return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: 'Joining\u2026', disabled }
 
   if (isMyRoom && isExpired) {
-    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Expired', disabled }
+    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#7d9a72', label: 'Expired', disabled }
   }
   if (isMyRoom && room.status !== 'ended') {
     // Your own room is ALWAYS enterable \u2014 even when full, which disables
@@ -504,13 +504,13 @@ function getJoinButtonState(
     return { bg: 'rgba(107,142,35,0.12)', border: '#84cc16', color: '#84cc16', label: 'Enter the Dark', disabled: isJoining }
   }
   if (lockedOut || (isExpired && room.status === 'waiting')) {
-    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: lockedOut ? 'Locked' : 'Expired', disabled }
+    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#7d9a72', label: lockedOut ? 'Locked' : 'Expired', disabled }
   }
   if (room.status === 'waiting') {
     return { bg: '#e63329', border: '#e63329', color: '#d4c9b2', label: statusLabel[room.status], disabled }
   }
   if (room.status === 'starting') {
-    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#4a5e44', label: 'Starting\u2026', disabled: true }
+    return { bg: 'transparent', border: 'rgba(143,168,130,0.25)', color: '#7d9a72', label: 'Starting\u2026', disabled: true }
   }
   return { bg: 'transparent', border: 'rgba(107,142,35,0.5)', color: '#6b8e23', label: statusLabel[room.status], disabled }
 }
@@ -583,7 +583,7 @@ function RoomCard({
           </span>
         )}
         {isExpired && room.status === 'waiting' && (
-          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(143,168,130,0.08)', color: '#4a5e44', border: '1px solid rgba(143,168,130,0.2)' }}>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest" style={{ backgroundColor: 'rgba(143,168,130,0.08)', color: '#7d9a72', border: '1px solid rgba(143,168,130,0.2)' }}>
             Expired
           </span>
         )}
@@ -599,7 +599,7 @@ function RoomCard({
         )}
       </div>
 
-      <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}{room.name ? ` · #${room.id.toString()}` : ''}</p>
+      <p className="mt-1 font-mono text-xs" style={{ color: '#7d9a72' }}>Host: {room.host.slice(0, 8)}…{room.host.slice(-4)}{room.name ? ` · #${room.id.toString()}` : ''}</p>
 
       {/* Stats + action row — stats left, CTA right on desktop; wraps to a
           full-width CTA bar on narrow screens. Stats keep their natural width
@@ -608,7 +608,7 @@ function RoomCard({
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3 md:flex-nowrap md:items-center">
         <div className="flex flex-wrap gap-4">
           <div className="text-center">
-            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Players</p>
+            <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Players</p>
             {/* Keyed remount pulses gold when the count changes while mounted */}
             <motion.p
               key={room.players}
@@ -619,23 +619,23 @@ function RoomCard({
             >{room.players}/{room.maxPlayers}</motion.p>
           </div>
           <div className="text-center">
-            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Stake</p>
+            <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Stake</p>
             <p className="font-heading text-lg leading-none whitespace-nowrap" style={{ color: '#84cc16' }}>{stakeCUSD} {STABLE_TOKEN}</p>
           </div>
           <div className="text-center">
-            <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Proof Fee</p>
+            <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Proof Fee</p>
             <p className="font-heading text-lg leading-none whitespace-nowrap" style={{ color: '#8fa882' }}>{feeCUSD} {STABLE_TOKEN}</p>
           </div>
           {room.status === 'active' && (
             <div className="text-center">
-              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Pot</p>
+              <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Pot</p>
               <p className="font-heading text-lg leading-none whitespace-nowrap" style={{ color: '#f5c518' }}>{potCUSD} {STABLE_TOKEN}</p>
             </div>
           )}
           {room.status === 'waiting' && room.expiresAt > 0 && (
             <div className="text-center">
-              <p className="font-mono text-[10px] uppercase" style={{ color: '#4a5e44' }}>Expires</p>
-              <p className="font-mono text-lg leading-none tabular-nums" style={{ color: isExpired ? '#4a5e44' : countdownColor(secsLeft) }}>
+              <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Expires</p>
+              <p className="font-mono text-lg leading-none tabular-nums" style={{ color: isExpired ? '#7d9a72' : countdownColor(secsLeft) }}>
                 {isExpired ? '00:00' : formatCountdown(secsLeft)}
               </p>
             </div>
@@ -657,7 +657,7 @@ function RoomCard({
               >
                 {isEnding ? 'Ending\u2026' : 'End & Refund'}
               </button>
-              <p className="font-mono text-[9px] uppercase tracking-[0.1em]" style={{ color: '#4a5e44' }}>
+              <p className="font-mono text-[9px] uppercase tracking-[0.1em]" style={{ color: '#7d9a72' }}>
                 Refunds everyone \u2014 host not required
               </p>
             </div>
@@ -1133,7 +1133,7 @@ export default function LobbyPage() {
                     {roomLabel(myActiveRoom)}
                   </span>
                   {' — '}
-                  <span className="uppercase tracking-widest" style={{ color: '#4a5e44' }}>
+                  <span className="uppercase tracking-widest" style={{ color: '#7d9a72' }}>
                     {myActiveRoom.status}
                   </span>
                 </span>
@@ -1202,8 +1202,8 @@ export default function LobbyPage() {
                 </h2>
                 <div className="mt-6 space-y-4">
                   <div>
-                    <label htmlFor="roomName" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
-                      Room Name <span style={{ color: '#4a5e44' }}>(optional)</span>
+                    <label htmlFor="roomName" className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
+                      Room Name <span style={{ color: '#7d9a72' }}>(optional)</span>
                     </label>
                     <input
                       id="roomName"
@@ -1218,8 +1218,8 @@ export default function LobbyPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="maxPlayers" className="block whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.04em]" style={{ color: '#4a5e44' }}>
-                        Max Players <span style={{ color: '#2e4a2e' }}>(4–20)</span>
+                      <label htmlFor="maxPlayers" className="block whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.04em]" style={{ color: '#7d9a72' }}>
+                        Max Players <span style={{ color: '#7d9a72' }}>(4–20)</span>
                       </label>
                       <input
                         id="maxPlayers"
@@ -1233,8 +1233,8 @@ export default function LobbyPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="stakeInput" className="block whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.04em]" style={{ color: '#4a5e44' }}>
-                        Stake <span style={{ color: '#2e4a2e' }}>(&gt; 0)</span>
+                      <label htmlFor="stakeInput" className="block whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.04em]" style={{ color: '#7d9a72' }}>
+                        Stake <span style={{ color: '#7d9a72' }}>(&gt; 0)</span>
                       </label>
                       <input
                         id="stakeInput"
@@ -1249,7 +1249,7 @@ export default function LobbyPage() {
                       />
                     </div>
                   </div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
                     Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN} per extra Shield
                     {' '}(1% of stake, min {formatToken(MIN_PROOF_FEE_WEI)}). First Shield is free.
                   </p>
@@ -1264,7 +1264,7 @@ export default function LobbyPage() {
                     onClick={handleCreateRoom}
                     disabled={creating || !!myActiveRoom}
                     className="w-full rounded-lg border py-3 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
-                    style={{ backgroundColor: '#cc1414', borderColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px #6b8e23' }}
+                    style={{ backgroundColor: '#cc1414', borderColor: '#cc1414', color: '#ffffff', boxShadow: '4px 4px 0px #6b8e23' }}
                   >
                     {createBtnLabel}
                   </button>
@@ -1281,7 +1281,7 @@ export default function LobbyPage() {
                       className="rounded-lg border p-3 text-center"
                       style={{ borderColor: 'rgba(107,142,35,0.2)', backgroundColor: '#0e180d' }}
                     >
-                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
                         {s.label}
                       </p>
                       <p className="mt-2 font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
@@ -1315,12 +1315,12 @@ export default function LobbyPage() {
                     <div className="space-y-1">
                       {!editingNickname ? (
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</span>
+                          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>Display Name</span>
                           <button
                             aria-label="Edit display name"
                             onClick={() => setEditingNickname(true)}
                             className="rounded p-0.5 transition-opacity hover:opacity-70"
-                            style={{ color: '#4a5e44', lineHeight: 1 }}
+                            style={{ color: '#7d9a72', lineHeight: 1 }}
                           >
                             {/* pencil icon */}
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1331,7 +1331,7 @@ export default function LobbyPage() {
                         </div>
                       ) : (
                         <>
-                          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Display Name</span>
+                          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>Display Name</span>
                           <DisplayNameEditor
                             onDone={() => setEditingNickname(false)}
                             onCancel={savedNickname ? () => setEditingNickname(false) : undefined}
@@ -1341,8 +1341,8 @@ export default function LobbyPage() {
                     </div>
 
                     <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}>
-                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>{STABLE_TOKEN} Balance</p>
-                      <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#4a5e44' }}>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>{STABLE_TOKEN} Balance</p>
+                      <p className="mt-1 font-mono text-base" style={{ color: cusdBalance ? '#84cc16' : '#7d9a72' }}>
                         {cusdBalance ? `${cusdBalance} ${STABLE_TOKEN}` : '…'}
                       </p>
                     </div>
@@ -1364,7 +1364,7 @@ export default function LobbyPage() {
                     {/* Testnet faucet */}
                     {showFaucet && isTestnet && (
                       <div className="space-y-2">
-                        <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Test Faucet</p>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>Test Faucet</p>
                         <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(245,197,24,0.25)', backgroundColor: 'rgba(245,197,24,0.06)' }}>
                           <p className="font-mono text-[11px]" style={{ color: '#f5c518' }}>
                             Step 1: Add CELO for the network fee, then claim USDm here.
@@ -1392,7 +1392,7 @@ export default function LobbyPage() {
                         </div>
                         {cooldownSecs > 0 ? (
                           <div className="flex items-center justify-between rounded border px-3 py-2" style={{ borderColor: 'rgba(143,168,130,0.2)', backgroundColor: '#0e180d' }}>
-                            <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>Next claim in</p>
+                            <p className="font-mono text-xs" style={{ color: '#7d9a72' }}>Next claim in</p>
                             <p className="font-mono text-sm tabular-nums" style={{ color: '#8fa882' }}>{formatCountdown(cooldownSecs)}</p>
                           </div>
                         ) : (
@@ -1420,7 +1420,7 @@ export default function LobbyPage() {
                     <button
                       onClick={() => router.push('/demo')}
                       className="w-full rounded-lg py-2 font-mono text-xs uppercase tracking-wider transition-all hover:opacity-80"
-                      style={{ color: '#4a5e44' }}
+                      style={{ color: '#7d9a72' }}
                     >
                       or try the free demo — no sign-in →
                     </button>
@@ -1477,13 +1477,13 @@ export default function LobbyPage() {
               )}
 
               {loadingRooms && rooms.length === 0 && (
-                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
+                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#7d9a72' }}>
                   Loading rooms from chain…
                 </p>
               )}
 
               {!loadingRooms && rooms.filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null)).length === 0 && !roomsError && (
-                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#4a5e44' }}>
+                <p className="mt-6 text-center font-mono text-xs" style={{ color: '#7d9a72' }}>
                   No open rooms yet — create one and add bots to play instantly.
                 </p>
               )}

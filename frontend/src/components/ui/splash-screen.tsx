@@ -369,7 +369,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             fontFamily:      'var(--font-mono)',
             fontSize:        '0.65rem',
             letterSpacing:   '0.14em',
-            color:           splashMuted ? '#4a5e44' : '#6b8e23',
+            color:           splashMuted ? '#7d9a72' : '#6b8e23',
             backdropFilter:  'blur(8px)',
           }}
         >
@@ -628,7 +628,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             fontFamily:    'var(--font-mono)',
             fontSize:      '0.62rem',
             letterSpacing: '0.14em',
-            color:         '#4a5e44',
+            color:         '#7d9a72',
             margin:        0,
           }}>
             {/* CLICK TO BEGIN · AUDIO ENABLED */}
@@ -758,7 +758,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             fontFamily:    'var(--font-mono)',
             fontSize:      '0.65rem',
             letterSpacing: '0.15em',
-            color:         '#4a5e44',
+            color:         '#7d9a72',
             margin:        0,
             opacity:       done ? 0.7 : 0,
             transition:    'opacity 0.8s 0.3s',

@@ -58,7 +58,7 @@ export function SiteFooter() {
           {/* Lore blurb */}
           <div className="max-w-sm">
             <p className="font-display text-xl leading-none" style={{ color: '#d4c9b2' }}>Zombie Plague</p>
-            <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#4a5e44' }}>
+            <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>
               One of you is Patient Zero. Stakes on-chain, roles sealed by
               zero-knowledge proofs, no take-backs. Trust no one — verify
               everything.
@@ -106,10 +106,10 @@ export function SiteFooter() {
           className="mt-10 flex flex-col gap-2 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"
           style={{ borderColor: 'rgba(107,142,35,0.1)' }}
         >
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>
             © {new Date().getFullYear()} Zombie Plague — survive the vote.
           </p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>
             Non-custodial · Stakes settle on Celo mainnet
           </p>
         </div>

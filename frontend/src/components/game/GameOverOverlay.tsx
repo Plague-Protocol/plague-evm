@@ -137,7 +137,7 @@ export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDis
               className="rounded-lg border px-8 py-4"
               style={{ borderColor: `${meta.color}55`, backgroundColor: `${meta.color}11` }}
             >
-              <p className="font-mono text-[10px] uppercase tracking-[0.24em]" style={{ color: '#4a5e44' }}>Pot per winner</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.24em]" style={{ color: '#7d9a72' }}>Pot per winner</p>
               <p className="mt-1 font-heading text-4xl font-bold tabular-nums leading-none" style={{ color: '#f5c518', textShadow: '0 0 18px rgba(245,197,24,0.4)' }}>
                 {potText} <span className="text-xl">USDm</span>
               </p>
@@ -161,7 +161,7 @@ export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDis
             animate={{ opacity: 1 }}
             transition={{ delay: 1.7, duration: 0.5 }}
             className="mt-2 font-mono text-[10px] uppercase tracking-[0.26em]"
-            style={{ color: '#4a5e44' }}
+            style={{ color: '#7d9a72' }}
           >
             Tap anywhere to continue
           </motion.p>

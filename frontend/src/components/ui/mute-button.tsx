@@ -13,7 +13,7 @@ export function MuteButton() {
       style={{
         backgroundColor: 'rgba(107,142,35,0.08)',
         border: '1px solid rgba(107,142,35,0.2)',
-        color: muted ? '#4a5e44' : '#6b8e23',
+        color: muted ? '#7d9a72' : '#6b8e23',
       }}
     >
       {muted ? (

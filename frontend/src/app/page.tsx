@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import ReactDOM from 'react-dom'
 import { SiteNav } from '@/components/ui/site-nav'
 import { SiteFooter } from '@/components/ui/site-footer'
 import { HeroStats } from '@/components/ui/home-stats'
@@ -52,6 +53,12 @@ const mechanics = [
 ]
 
 export default function HomePage() {
+  // The hero's background image is the largest element on the page, so it is
+  // what Chrome picks for LCP. As a CSS background it is only discovered after
+  // the stylesheet parses, which Lighthouse flags as "LCP request discovery".
+  // Preloading hands it to the scanner with the initial HTML instead.
+  ReactDOM.preload('/images/bg-home.webp', { as: 'image', fetchPriority: 'high' })
+
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2' }}>
       {/* Nav */}
@@ -80,7 +87,7 @@ export default function HomePage() {
           <div className="rise-in flex flex-col items-center gap-8">
             <span
               className="rounded-full border px-3 py-1 sm:px-4 sm:py-1.5 font-mono text-[10px] sm:text-xs uppercase tracking-[0.22em]"
-              style={{ borderColor: 'rgba(204,20,20,0.5)', backgroundColor: 'rgba(204,20,20,0.1)', color: '#cc1414' }}
+              style={{ borderColor: 'rgba(204,20,20,0.5)', backgroundColor: 'rgba(204,20,20,0.1)', color: '#ff6b5e' }}
             >
               Zombie Plague · Social Deduction · Real Stakes
             </span>
@@ -124,7 +131,7 @@ export default function HomePage() {
               <Link
                 href="/lobby"
                 className="rounded-lg px-5 py-3 sm:px-8 sm:py-4 font-mono text-sm sm:text-base font-bold uppercase tracking-wider transition-all hover:opacity-90"
-                style={{ backgroundColor: '#cc1414', color: '#d4c9b2', boxShadow: '4px 4px 0px rgba(107,142,35,0.25)' }}
+                style={{ backgroundColor: '#cc1414', color: '#ffffff', boxShadow: '4px 4px 0px rgba(107,142,35,0.25)' }}
               >
                 Play for Stakes
               </Link>
@@ -136,7 +143,7 @@ export default function HomePage() {
                 How to Play
               </Link>
             </div>
-            <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+            <p className="font-mono text-xs" style={{ color: '#7d9a72' }}>
               No wallet, no sign-in — the demo runs instantly in your browser.
             </p>
           </div>

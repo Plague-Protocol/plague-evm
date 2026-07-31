@@ -88,6 +88,21 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${displayFont.variable} ${horrorFont.variable} ${bodyFont.variable} ${monoFont.variable} ${monoMobileFont.variable}`}>
+      <head>
+        {/* The veil's mark is the first meaningful paint on every route, so let
+            the preload scanner find it before CSS is even parsed. */}
+        <link rel="preload" as="image" href="/images/splash-mark.webp" fetchPriority="high" />
+        {/* Runs before first paint. A returning visitor within the same session
+            has already seen the intro, so the veil must never flash for them —
+            this is the standard pre-paint flag pattern, and it has to be inline
+            and blocking to beat the renderer. */}
+        <script
+          id="intro-veil-flag"
+          dangerouslySetInnerHTML={{
+            __html: `try{if(sessionStorage.getItem('plague_intro_seen')){document.documentElement.dataset.introSeen='1'}}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="antialiased">
         <Script id="sw-register" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {
@@ -96,6 +111,34 @@ export default function RootLayout({
             });
           }
         `}</Script>
+
+        {/*
+          Server-rendered intro veil. This exists for one reason: Largest
+          Contentful Paint.
+
+          The client SplashScreen can only mount after hydration. Previously the
+          page content was held at opacity 0 until then, so on a mid-range phone
+          NOTHING contentful painted for ~3s — FCP and LCP were the same number,
+          both equal to hydration time, and mobile Performance sat at 78.
+
+          This markup ships in the HTML itself, so it paints in the first frame:
+          it gives an immediate LCP candidate (a bounded <img>, not a
+          full-viewport background, which Chrome would exclude), and it opaquely
+          covers the content underneath so that content no longer needs an
+          opacity gate. Providers removes this node once React is mounted and
+          the real splash has taken over.
+        */}
+        <div id="intro-veil" aria-hidden="true">
+          <img
+            src="/images/splash-mark.webp"
+            alt=""
+            width={224}
+            height={224}
+            fetchPriority="high"
+            decoding="sync"
+          />
+        </div>
+
         <Providers>{children}</Providers>
       </body>
     </html>

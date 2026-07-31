@@ -327,7 +327,7 @@ export default function AdminPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="font-heading text-3xl font-bold" style={{ color: '#d4c9b2' }}>Ops Console</h1>
-              <p className="mt-1 font-mono text-xs" style={{ color: '#4a5e44' }}>
+              <p className="mt-1 font-mono text-xs" style={{ color: '#7d9a72' }}>
                 Internal — contract, backend and bot-pool state at a glance. Refreshes every 60s while visible.
               </p>
             </div>
@@ -363,14 +363,14 @@ export default function AdminPage() {
                   <p className="font-heading text-2xl leading-none" style={{ color: backendOk ? '#1a7a4a' : '#e63329' }}>
                     {backendOk === null ? '…' : backendOk ? 'Healthy' : 'DOWN'}
                   </p>
-                  <p className="mt-2 break-all font-mono text-[10px]" style={{ color: '#4a5e44' }}>{BACKEND_URL}</p>
+                  <p className="mt-2 break-all font-mono text-[10px]" style={{ color: '#7d9a72' }}>{BACKEND_URL}</p>
                 </Card>
 
                 <Card title="Bot Pool">
                   <p className="font-heading text-2xl leading-none" style={{ color: bots?.online ? '#1a7a4a' : '#e63329' }}>
                     {bots === null ? 'unreachable' : bots.online ? `${bots.available} / ${bots.total} ready` : 'offline'}
                   </p>
-                  <p className="mt-2 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                  <p className="mt-2 font-mono text-[10px]" style={{ color: '#7d9a72' }}>
                     Availability after pending requests
                   </p>
                 </Card>
@@ -388,7 +388,7 @@ export default function AdminPage() {
                     {withdrawing ? 'Sweeping…' : 'Withdraw to receiver'}
                   </button>
                   {info && (
-                    <p className="mt-2 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                    <p className="mt-2 font-mono text-[10px]" style={{ color: '#7d9a72' }}>
                       → {short(info.platformReceiver)}
                     </p>
                   )}
@@ -398,7 +398,7 @@ export default function AdminPage() {
                   <p className="font-heading text-2xl leading-none" style={{ color: '#6b8e23' }}>
                     {info ? `${info.activeRoomCount.toString()} / ${info.maxActiveRooms.toString()} active` : '…'}
                   </p>
-                  <p className="mt-2 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                  <p className="mt-2 font-mono text-[10px]" style={{ color: '#7d9a72' }}>
                     Backend signer {info ? short(info.backendSigner) : '…'}
                   </p>
                 </Card>
@@ -420,7 +420,7 @@ export default function AdminPage() {
                           { label: 'Avg pot', value: `${formatToken(analytics.avgPotWei)} USDm` },
                         ].map(s => (
                           <div key={s.label} className="rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(107,142,35,0.15)', backgroundColor: '#0e180d' }}>
-                            <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</p>
+                            <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>{s.label}</p>
                             <p className="mt-1.5 font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>{s.value}</p>
                           </div>
                         ))}
@@ -435,7 +435,7 @@ export default function AdminPage() {
                           flatters the numbers — these are the ones to watch. */}
                       <div className="mt-5 border-t pt-4" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
                         <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
-                          Human Traction {analytics.botsKnown === false && <span style={{ color: '#4a5e44' }}>· bot pool offline, split unavailable</span>}
+                          Human Traction {analytics.botsKnown === false && <span style={{ color: '#7d9a72' }}>· bot pool offline, split unavailable</span>}
                         </p>
                         {analytics.botsKnown ? (
                           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -446,26 +446,26 @@ export default function AdminPage() {
                               { label: 'Avg humans / game', value: (analytics.avgHumansPerGame ?? 0).toFixed(2), hint: 'the number to grow' },
                             ].map(s => (
                               <div key={s.label} className="rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(245,197,24,0.18)', backgroundColor: '#0e180d' }} title={s.hint}>
-                                <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#4a5e44' }}>{s.label}</p>
+                                <p className="font-mono text-[9px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>{s.label}</p>
                                 <p className="mt-1.5 font-heading text-xl leading-none" style={{ color: '#f5c518' }}>{s.value}</p>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p className="mt-2 font-mono text-[11px]" style={{ color: '#4a5e44' }}>
+                          <p className="mt-2 font-mono text-[11px]" style={{ color: '#7d9a72' }}>
                             The bot pool reports its wallet addresses on heartbeat. Once it has
                             checked in, human seats can be separated from bot seats here.
                           </p>
                         )}
                         {analytics.botsKnown && (
-                          <p className="mt-3 font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                          <p className="mt-3 font-mono text-[10px]" style={{ color: '#7d9a72' }}>
                             {analytics.humanSeats ?? 0} human seats vs {analytics.botSeats ?? 0} bot seats across all recorded games.
                           </p>
                         )}
                       </div>
                     </>
                   ) : (
-                    <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#7d9a72' }}>
                       {loading ? 'Loading…' : 'Analytics unavailable (backend endpoint not deployed yet?).'}
                     </p>
                   )}
@@ -484,10 +484,10 @@ export default function AdminPage() {
                         return (
                           <div key={m.id}>
                             <div className="flex items-baseline justify-between font-mono text-[11px]">
-                              <span style={{ color: '#4a5e44' }}>{m.name}</span>
+                              <span style={{ color: '#7d9a72' }}>{m.name}</span>
                               <span style={{ color: '#d4c9b2' }}>
                                 {m.games} game{m.games === 1 ? '' : 's'}
-                                <span style={{ color: '#4a5e44' }}> · {formatToken(m.volumeWei)} USDm</span>
+                                <span style={{ color: '#7d9a72' }}> · {formatToken(m.volumeWei)} USDm</span>
                               </span>
                             </div>
                             <div className="mt-1 h-2 rounded-full" style={{ backgroundColor: 'rgba(107,142,35,0.1)' }}>
@@ -498,7 +498,7 @@ export default function AdminPage() {
                       })}
                     </div>
                   ) : (
-                    <p className="mt-4 font-mono text-xs" style={{ color: '#4a5e44' }}>
+                    <p className="mt-4 font-mono text-xs" style={{ color: '#7d9a72' }}>
                       {loading ? 'Loading…' : 'No monthly data yet.'}
                     </p>
                   )}
@@ -511,7 +511,7 @@ export default function AdminPage() {
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#cc1414' }}>
                     Bounty Card (shown on the leaderboard)
                   </p>
-                  <label className="flex cursor-pointer items-center gap-2 font-mono text-xs" style={{ color: bountyForm.active ? '#f5c518' : '#4a5e44' }}>
+                  <label className="flex cursor-pointer items-center gap-2 font-mono text-xs" style={{ color: bountyForm.active ? '#f5c518' : '#7d9a72' }}>
                     <input
                       type="checkbox"
                       checked={bountyForm.active}
@@ -565,7 +565,7 @@ export default function AdminPage() {
                   >
                     {savingBounty ? 'Signing…' : 'Sign & Publish'}
                   </button>
-                  <p className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                  <p className="font-mono text-[10px]" style={{ color: '#7d9a72' }}>
                     Publishing asks your wallet for a signature — the backend only accepts edits signed by the contract admin.
                   </p>
                 </div>
@@ -577,7 +577,7 @@ export default function AdminPage() {
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>
                     Next Play Window (countdown on landing + lobby)
                   </p>
-                  <label className="flex cursor-pointer items-center gap-2 font-mono text-xs" style={{ color: scheduleForm.active ? '#f5c518' : '#4a5e44' }}>
+                  <label className="flex cursor-pointer items-center gap-2 font-mono text-xs" style={{ color: scheduleForm.active ? '#f5c518' : '#7d9a72' }}>
                     <input
                       type="checkbox"
                       checked={scheduleForm.active}
@@ -632,7 +632,7 @@ export default function AdminPage() {
                   >
                     {savingSchedule ? 'Signing…' : 'Sign & Announce'}
                   </button>
-                  <p className="font-mono text-[10px]" style={{ color: '#4a5e44' }}>
+                  <p className="font-mono text-[10px]" style={{ color: '#7d9a72' }}>
                     Time is entered in your local timezone. The banner hides itself automatically once the window ends.
                   </p>
                 </div>
@@ -646,7 +646,7 @@ export default function AdminPage() {
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full min-w-[560px] text-left font-mono text-xs">
                     <thead>
-                      <tr style={{ color: '#4a5e44' }}>
+                      <tr style={{ color: '#7d9a72' }}>
                         <th className="py-2 pr-4">Room</th>
                         <th className="py-2 pr-4">Status</th>
                         <th className="py-2 pr-4">Phase</th>
@@ -660,7 +660,7 @@ export default function AdminPage() {
                       {rooms.map(r => (
                         <tr key={r.id.toString()} className="border-t" style={{ borderColor: 'rgba(107,142,35,0.1)' }}>
                           <td className="py-2 pr-4">#{r.id.toString()}</td>
-                          <td className="py-2 pr-4" style={{ color: r.status === 2 ? '#f5c518' : r.status === 3 ? '#4a5e44' : '#1a7a4a' }}>
+                          <td className="py-2 pr-4" style={{ color: r.status === 2 ? '#f5c518' : r.status === 3 ? '#7d9a72' : '#1a7a4a' }}>
                             {STATUS_NAMES[r.status] ?? r.status}
                           </td>
                           <td className="py-2 pr-4">{r.status === 2 ? (PHASE_NAMES[r.phase] ?? r.phase) : '—'}</td>
@@ -671,12 +671,12 @@ export default function AdminPage() {
                         </tr>
                       ))}
                       {!loading && rooms.length === 0 && (
-                        <tr><td colSpan={7} className="py-4" style={{ color: '#4a5e44' }}>No rooms found.</td></tr>
+                        <tr><td colSpan={7} className="py-4" style={{ color: '#7d9a72' }}>No rooms found.</td></tr>
                       )}
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#4a5e44' }}>
+                <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#7d9a72' }}>
                   ⚠ STUCK? = Active room whose phase hasn&apos;t advanced in 15+ minutes — see
                   docs/TROUBLESHOOTING.md (stuck game phases) before touching anything.
                 </p>

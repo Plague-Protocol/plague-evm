@@ -99,7 +99,7 @@ export function DisplayNameEditor({ onDone, onCancel, autoFocus = true }: Displa
         <p
           className="mt-1 font-mono text-[10px]"
           style={{
-            color: checking ? '#4a5e44' : available === true ? '#6b8e23' : available === false ? '#e63329' : '#4a5e44',
+            color: checking ? '#7d9a72' : available === true ? '#6b8e23' : available === false ? '#e63329' : '#7d9a72',
           }}
         >
           {checking ? 'Checking…' : available === true ? '✓ Available' : available === false ? '✗ Already taken' : ''}

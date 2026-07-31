@@ -109,7 +109,7 @@ export default function TermsPage() {
           be reflected on this page. Continuing to play after a change means you
           accept it.
         </p>
-        <p className="font-mono text-xs" style={{ color: '#4a5e44' }}>
+        <p className="font-mono text-xs" style={{ color: '#7d9a72' }}>
           Last updated: July 24, 2026
         </p>
       </InfoSection>
