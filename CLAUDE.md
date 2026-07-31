@@ -80,6 +80,24 @@ The real mainnet deploy (`0xe157…2710`) was done via an ad-hoc `forge create`-
 - `agents/` — self-play AI agents (identity, registration, runner) that play on-chain.
 - `zk/circuits/` — Noir circuits: `role_commitment`, `innocence_proof`, `infection_proof`.
 
+## Grant / BD submission doc (local-only — read it, never commit it)
+
+`docs/CELO_STARTUPBANK_SUBMISSION.md` is the working submission package for the
+**Celo StartupBank** programme (Ambassador → MiniPay BD + Celo Core DevRel).
+It holds the filled-in checklist, verified mainnet tx hashes for every
+user-facing method, PageSpeed history, MiniPay compliance status, and the
+outstanding TODO list.
+
+- **It is in `.gitignore` on purpose.** It contains an unvarnished readiness
+  assessment — known gaps, the bot-vs-human traction caveat, unverified MiniPay
+  claims — that should not be public in an open repo. Do **not** `git add -f` it,
+  and do not let a broad `git add .` sweep it in (the ignore rule prevents this).
+- **Do keep it current.** When frontend work changes anything it tracks
+  (PageSpeed scores, MiniPay compliance, contract/tx evidence, support channels),
+  update the doc in the same pass — just leave it out of the commit.
+- Scores are recorded per pass, so previous numbers stay visible as a baseline.
+  Append a new pass rather than overwriting history.
+
 ## Incident runbook
 
 Live-ops playbook (stuck game phases, benched bots / gas floor, gas-drain

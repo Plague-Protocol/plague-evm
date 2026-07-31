@@ -56,3 +56,8 @@ docs/GAME_PLAYTHROUGH.md
 docs/CELO_PORT_HANDOFF.md
 .github/ISSUE_TEMPLATE/strict-ci.yml
 
+
+# Grant/BD submission working doc — deliberately untracked.
+# Contains an unpublished readiness assessment (gaps, traction caveats, TODOs)
+# that should not be public in an open repo. Keep it local; see CLAUDE.md.
+docs/CELO_STARTUPBANK_SUBMISSION.md

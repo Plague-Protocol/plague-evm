@@ -200,14 +200,18 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     return () => { document.body.style.overflow = '' }
   }, [visible])
 
-  // ── Defer the gate clip until the browser is idle ────────────────────────────
+  // ── Defer the gate clip until everything critical has loaded ─────────────────
+  // Keyed off the window `load` event rather than requestIdleCallback: idle can
+  // fire while the network is still saturated, which put ~1 MB of video in front
+  // of the image the page's LCP depends on. `load` is self-tuning — it fires
+  // almost immediately on a fast connection and genuinely waits on a slow one.
   useEffect(() => {
     if (!visible) return
-    const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
-      .requestIdleCallback
-    if (ric) { const h = ric(() => setVideoReady(true), { timeout: 2500 }); return () => { void h } }
-    const t = setTimeout(() => setVideoReady(true), 1500)
-    return () => clearTimeout(t)
+    let timer: ReturnType<typeof setTimeout>
+    const arm = () => { timer = setTimeout(() => setVideoReady(true), 600) }
+    if (document.readyState === 'complete') { arm(); return () => clearTimeout(timer) }
+    globalThis.addEventListener('load', arm, { once: true })
+    return () => { globalThis.removeEventListener('load', arm); clearTimeout(timer) }
   }, [visible])
 
   // ── Background crossfade — independent 4.5 s timer ───────────────────────────
@@ -419,7 +423,15 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           Only the current frame and the next one are mounted: rendering all
           four up front made the browser fetch every background image during
           initial load, for art the viewer would not see for another 4.5-13.5s.
-          The +1 lookahead keeps the next frame decoded before its crossfade. */}
+          The +1 lookahead keeps the next frame decoded before its crossfade.
+
+          Gated on the story phase. These sit BEHIND the gate's poster/video, so
+          during the gate they are invisible — yet mounting them there still cost
+          ~385 KB (bg-horror 148 KB + bg-zombie-portrait 237 KB) of contention on
+          the initial load. On Slow 4G that starved the hero image the page's LCP
+          depends on: a preloaded 31 KB file was not finishing until 7.7s, and
+          mobile Performance on `/` dropped to 71. */}
+      {phase === 'story' && (
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
         {BG_FRAMES.filter((_, i) => i <= bgIndex + 1).map((src, i) => (
           <div key={src} style={{
@@ -435,6 +447,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           }} />
         ))}
       </div>
+      )}
 
       {/* Poster frame — holds the gate's look while the clip is deferred. */}
       {phase === 'gate' && !videoReady && (
