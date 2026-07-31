@@ -4,6 +4,33 @@ const nextConfig = {
   experimental: {
     typedRoutes: true,
   },
+
+  // Lighthouse flags "Missing source maps for large first-party JavaScript"
+  // under Best Practices. The repo is public, so there is nothing to hide by
+  // shipping maps, and they make production stack traces debuggable.
+  productionBrowserSourceMaps: true,
+
+  async headers() {
+    return [{
+      source: '/:path*',
+      headers: [
+        // Lighthouse "Use a strong HSTS policy".
+        { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+        { key: 'X-Content-Type-Options',    value: 'nosniff' },
+        { key: 'Referrer-Policy',           value: 'strict-origin-when-cross-origin' },
+        // Deliberately ABSENT, do not "complete the set" without device testing:
+        //  • X-Frame-Options / CSP frame-ancestors — MiniPay renders dapps in an
+        //    in-app webview and its own guidance talks about redirecting *the
+        //    iframe*. Frame-blocking risks making the app unopenable in the one
+        //    client this submission targets.
+        //  • Cross-Origin-Opener-Policy — severs window.opener, which breaks
+        //    WalletConnect and other popup-based wallet flows.
+        //  • Trusted Types — thirdweb and the Aztec WASM loader both inject
+        //    script/HTML that would violate it.
+        // Each is worth revisiting individually, with a real device to test on.
+      ],
+    }]
+  },
   env: {
     NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL,
     NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK,

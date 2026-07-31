@@ -44,6 +44,11 @@ const ALT_STABLES: Record<number, ReadonlyArray<{ symbol: string; address: `0x${
 // deeplink that pre-fills a swap, so this is the closest handoff available.
 const MINIPAY_POCKETS_URL = 'https://link.minipay.xyz/balance'
 
+// MiniPay's deposit screen. Their gateway rules require that a transaction
+// failing for lack of funds sends the user here rather than surfacing a generic
+// error — and that we call it "deposit", never "on-ramp" or "buy crypto".
+const MINIPAY_ADD_CASH_URL = 'https://link.minipay.xyz/add_cash?tokens=USDm,USDC,USDT'
+
 // Below this native-CELO balance a non-MiniPay wallet likely can't finish a game:
 // the ZK role-commitment alone costs ~0.42 CELO in gas, and a wallet that can
 // afford joinRoom but not the commit deadlocks the room. Used only to surface a
@@ -221,6 +226,7 @@ async function assertSufficientCUSD(
 
 interface CreateRoomActionArgs {
   isConnected: boolean
+  isMiniPay: boolean
   address: `0x${string}` | null
   chainId: number | null
   connect: () => Promise<void>
@@ -234,6 +240,7 @@ interface CreateRoomActionArgs {
 async function runCreateRoomAction(args: CreateRoomActionArgs) {
   const {
     isConnected,
+    isMiniPay,
     address,
     chainId,
     connect,
@@ -297,7 +304,7 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     // audio (the create flow's wallet+tx wait outlives the autoplay window).
     toast.success(`${trimmedName || quarantineCode(newId)} is sealed and waiting — hit "Enter the Dark" on your room to step in.`)
   } catch (err) {
-    toast.error(getFriendlyError(err))
+    reportTxError(err, isMiniPay)
   } finally {
     setCreating(false)
   }
@@ -306,6 +313,7 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
 interface JoinRoomActionArgs {
   room: RoomRow
   isConnected: boolean
+  isMiniPay: boolean
   address: `0x${string}` | null
   chainId: number | null
   connect: () => Promise<void>
@@ -318,6 +326,7 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
   const {
     room,
     isConnected,
+    isMiniPay,
     address,
     chainId,
     connect,
@@ -375,7 +384,7 @@ async function runJoinRoomAction(args: JoinRoomActionArgs) {
     await loadRooms()
     toast.success(`You're staked into ${roomLabel(room)} — hit "Enter the Dark" to step in.`)
   } catch (err) {
-    toast.error(getFriendlyError(err))
+    reportTxError(err, isMiniPay)
   } finally {
     setJoiningId(null)
   }
@@ -421,11 +430,21 @@ const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
   'stakeAmount must be > 0':  'Stake amount must be greater than zero.',
 }
 
-function getFriendlyError(err: unknown): string {
+// `isMiniPay` is required, not optional. MiniPay's gateway rules forbid naming
+// CELO or "gas" anywhere in the UI (it abstracts fees away and hides CELO
+// entirely), so an error string that leaks either one is a review failure. This
+// used to be a plain formatter with no wallet awareness, which meant MiniPay
+// users hitting a revert were told to "Add CELO to your wallet" — advice that is
+// both jargon and impossible to act on inside MiniPay.
+function getFriendlyError(err: unknown, isMiniPay: boolean): string {
   const msg = err instanceof Error ? err.message : String(err)
   if (/user (rejected|denied)/i.test(msg)) return 'Transaction cancelled.'
   if (/Insufficient (cUSD|USDm) balance/i.test(msg)) return msg   // our own pre-check — pass through verbatim
-  if (/insufficient funds/i.test(msg)) return 'Insufficient CELO to pay gas. Add CELO to your wallet first.'
+  if (/insufficient funds/i.test(msg)) {
+    return isMiniPay
+      ? `Not enough funds to cover the stake and network fee. Opening deposit…`
+      : `Not enough CELO to cover the network fee. Top up your wallet, or use MiniPay to pay fees from your ${STABLE_TOKEN} balance.`
+  }
   // Named custom errors decoded by viem (error names appear as-is in the message)
   for (const [name, friendly] of Object.entries(CONTRACT_ERROR_MESSAGES)) {
     if (msg.includes(name)) return friendly
@@ -438,6 +457,26 @@ function getFriendlyError(err: unknown): string {
     return 'Transaction reverted by the contract.'
   }
   return 'Transaction failed. Please try again.'
+}
+
+/** Does this failure mean "the wallet is short of money" rather than anything else? */
+function isLowFundsError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /insufficient funds/i.test(msg) || /Insufficient (cUSD|USDm) balance/i.test(msg)
+}
+
+/**
+ * Reports a failed transaction. Under MiniPay a low-funds failure must hand the
+ * user off to the deposit screen rather than dead-ending on a toast — that is an
+ * explicit MiniPay gateway requirement, and a generic error is a review failure.
+ * The toast still fires first so the reason is visible before the screen changes.
+ */
+function reportTxError(err: unknown, isMiniPay: boolean): void {
+  toast.error(getFriendlyError(err, isMiniPay))
+  if (isMiniPay && isLowFundsError(err)) {
+    // Delay so the toast is readable before MiniPay swaps the view out.
+    setTimeout(() => { globalThis.location.href = MINIPAY_ADD_CASH_URL }, 1200)
+  }
 }
 
 function getJoinButtonState(
@@ -788,7 +827,7 @@ export default function LobbyPage() {
       toast.success(claimSuccessMessage(true))
       await loadFaucetInfo()
     } catch (err) {
-      toast.error(getFriendlyError(err))
+      reportTxError(err, isMiniPay)
     } finally {
       setClaiming(false)
     }
@@ -934,7 +973,7 @@ export default function LobbyPage() {
     // Echoes the banner's figures verbatim — this is a reminder of what they
     // already read, not a new number introduced at the point of blocking.
     toast.error(
-      `Not enough CELO for gas. This wallet holds ${formatToken(celoBal)} CELO; a full game costs about ${formatToken(MIN_GAS_CELO_WEI)} CELO. Top up, or use MiniPay to pay fees in ${STABLE_TOKEN} instead.`,
+      `Not enough CELO to cover the network fee. This wallet holds ${formatToken(celoBal)} CELO; a full game costs about ${formatToken(MIN_GAS_CELO_WEI)} CELO. Top up, or use MiniPay to pay fees from your ${STABLE_TOKEN} balance instead.`,
     )
     return true
   }, [isMiniPay, address, chainId])
@@ -951,6 +990,7 @@ export default function LobbyPage() {
     if (await blockedByLowGas()) return
     await runCreateRoomAction({
       isConnected,
+      isMiniPay,
       address,
       chainId,
       connect,
@@ -960,7 +1000,7 @@ export default function LobbyPage() {
       setCreating,
       loadRooms,
     })
-  }, [isConnected, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, myActiveRoom, blockedByLowGas])
+  }, [isConnected, isMiniPay, address, chainId, connect, maxPlayers, stakeInput, roomNameInput, loadRooms, myActiveRoom, blockedByLowGas])
 
   const handleJoin = useCallback(async (room: RoomRow) => {
     primeArenaSounds() // unlock entrance audio while the click gesture is valid
@@ -982,6 +1022,7 @@ export default function LobbyPage() {
     await runJoinRoomAction({
       room,
       isConnected,
+      isMiniPay,
       address,
       chainId,
       connect,
@@ -989,7 +1030,7 @@ export default function LobbyPage() {
       pushToGame,
       loadRooms,
     })
-  }, [isConnected, address, chainId, connect, pushToGame, loadRooms, myActiveRoom, blockedByLowGas])
+  }, [isConnected, isMiniPay, address, chainId, connect, pushToGame, loadRooms, myActiveRoom, blockedByLowGas])
 
   // ── End Room (any participant expires a timed-out waiting room; refunds all) ──
   const handleEndRoom = useCallback(async (room: RoomRow) => {
@@ -1012,11 +1053,11 @@ export default function LobbyPage() {
           return
         }
       } catch { /* chain read failed — report the original error instead */ }
-      toast.error(getFriendlyError(err))
+      reportTxError(err, isMiniPay)
     } finally {
       setEndingRoomId(null)
     }
-  }, [address, loadRooms])
+  }, [address, isMiniPay, loadRooms])
 
   // ── Periodic room refresh (10 s) to catch state changes from other players ─
   // Skipped entirely while the tab is hidden (each tick is a chain read
@@ -1326,7 +1367,7 @@ export default function LobbyPage() {
                         <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#4a5e44' }}>Test Faucet</p>
                         <div className="rounded border px-3 py-2" style={{ borderColor: 'rgba(245,197,24,0.25)', backgroundColor: 'rgba(245,197,24,0.06)' }}>
                           <p className="font-mono text-[11px]" style={{ color: '#f5c518' }}>
-                            Step 1: Get CELO gas first, then claim USDm here.
+                            Step 1: Add CELO for the network fee, then claim USDm here.
                           </p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <a

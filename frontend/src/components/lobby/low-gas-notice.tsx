@@ -63,7 +63,7 @@ export function LowGasNotice({
             This wallet holds <span style={gold}>{formatToken(celoBalanceWei)} CELO</span>.{' '}
           </>
         )}
-        A full game costs about <span style={gold}>{formatToken(requiredWei)} CELO</span> in gas
+        A full game costs about <span style={gold}>{formatToken(requiredWei)} CELO</span> in network fees
         fees, mostly the one-time proof submitted when the game starts.
         {hasStable === false && <> You’ll also need {stableToken} to stake.</>} Top up this wallet,
         or use <span style={gold}>MiniPay</span> to pay fees in {stableToken} instead.

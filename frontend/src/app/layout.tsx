@@ -41,23 +41,30 @@ const monoMobileFont = Share_Tech_Mono({
   variable: '--font-mono-mobile',
 })
 
-// maximum-scale=1 stops iOS Safari from auto-zooming the viewport when a form
-// field (including third-party ones like the Thirdweb sign-in modal) is focused.
-// iOS 10+ still permits manual pinch-zoom, so accessibility is preserved.
+// Do NOT reintroduce `maximumScale: 1` / user-scalable=no. Lighthouse flags it
+// as an accessibility failure (it blocks pinch-zoom for low-vision users), and
+// it cost points on every audited route. It was there to stop iOS Safari
+// auto-zooming on input focus — the correct fix for that is a >=16px font-size
+// on form fields, which `globals.css` now enforces.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
 }
 
 export const metadata: Metadata = {
+  // Without this, Next resolves Open Graph image URLs against localhost:3000 and
+  // warns on every build — social/link previews then point at a dead host.
+  metadataBase: new URL('https://zplague.xyz'),
   title: 'Zombie Plague — On-Chain Social Deduction',
   description:
     'A decentralised social deduction game powered by ZK proofs and Celo EVM smart contracts.',
   manifest: '/manifest.json',
+  // z-plague-icon.png is a 1024px, 1.8 MB PNG. Pointing the favicon and the
+  // apple-touch icon at it made every page load drag ~1.8 MB down purely for
+  // tab furniture. These resized variants are 2.4 KB / 58 KB.
   icons: {
-    icon: '/z-plague-icon.png',
-    apple: '/z-plague-icon.png',
+    icon: '/favicon-32.png',
+    apple: '/apple-touch-icon.png',
   },
   openGraph: {
     title: 'Zombie Plague',

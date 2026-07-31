@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Route } from 'next'
+import { SUPPORT_TELEGRAM_URL, SUPPORT_TELEGRAM_READY, SUPPORT_EMAIL } from '@/lib/support'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? ''
 const IS_TESTNET = process.env.NEXT_PUBLIC_NETWORK === 'testnet'
@@ -25,6 +26,12 @@ const columns: { heading: string; links: FooterLink[] }[] = [
     heading: 'Command Post',
     links: [
       { href: '/support', label: 'FAQ & Support' },
+      // Live channel, required for a MiniPay listing. Hidden until the group
+      // exists — a dead link reads worse to a reviewer than no link at all.
+      ...(SUPPORT_TELEGRAM_READY
+        ? [{ href: SUPPORT_TELEGRAM_URL, label: 'Live Support', external: true as const }]
+        : []),
+      { href: `mailto:${SUPPORT_EMAIL}`, label: 'Email Us', external: true as const },
       { href: '/terms',   label: 'Terms of Play' },
       { href: '/privacy', label: 'Privacy' },
     ],

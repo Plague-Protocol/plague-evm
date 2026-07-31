@@ -2,6 +2,12 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { InfoPage } from '@/components/ui/info-page'
+import {
+  SUPPORT_TELEGRAM_URL,
+  SUPPORT_TELEGRAM_READY,
+  SUPPORT_EMAIL,
+  SUPPORT_SLA_HOURS,
+} from '@/lib/support'
 
 export const metadata: Metadata = {
   title: 'FAQ & Support — Zombie Plague',
@@ -94,7 +100,7 @@ const FAQS: Faq[] = [
   {
     question: 'My transaction failed',
     answer:
-      'The two usual causes: your USDm balance is lower than the room’s stake plus proof fee, or (outside MiniPay) your wallet has no CELO for gas — a few cents’ worth is plenty. MiniPay users don’t need to think about gas; MiniPay handles fees from your stable balance.',
+      'The two usual causes: your USDm balance is lower than the room’s stake plus proof fee, or (outside MiniPay) your wallet has no CELO to cover the network fee — a few cents’ worth is plenty. MiniPay users never need to think about this; MiniPay pays the network fee from your stablecoin balance automatically.',
   },
   {
     question: 'Where did part of the pot go?',
@@ -176,14 +182,28 @@ export default function SupportPage() {
           Radio us
         </h2>
         <div className="mt-3 space-y-3 font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
+          {SUPPORT_TELEGRAM_READY && (
+            <p>
+              Fastest route is our{' '}
+              <a href={SUPPORT_TELEGRAM_URL} target="_blank" rel="noreferrer" style={link}>
+                Telegram support group
+              </a>
+              {' '}— a human is usually there.
+            </p>
+          )}
           <p>
             Still stuck? Email{' '}
-            <a href="mailto:support@zplague.xyz" style={link}>
-              support@zplague.xyz
+            <a href={`mailto:${SUPPORT_EMAIL}`} style={link}>
+              {SUPPORT_EMAIL}
             </a>{' '}
             with your wallet address and the room number. Include a transaction
             hash if you have one — it&apos;s the fastest way for us to trace
             what happened.
+          </p>
+          <p style={{ color: '#6b8e23' }}>
+            <strong>Our commitment:</strong> anything that breaks the game or puts
+            funds at risk gets a fix or a clear workaround within{' '}
+            {SUPPORT_SLA_HOURS} hours of us hearing about it.
           </p>
         </div>
       </section>

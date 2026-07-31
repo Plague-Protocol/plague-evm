@@ -6,6 +6,7 @@ const AMBIENT_TRACK = '/sounds/ambient-lobby.mp3'
 const SCREAM_TRACK  = '/sounds/infected-win.mp3'
 
 const GATE_VIDEO   = '/videos/zombie-clip-1.mp4'
+const GATE_POSTER  = '/images/gate-poster.webp'
 const FINALE_VIDEO = '/videos/zombie-clip-2.mp4'
 
 const BG_FRAMES = [
@@ -146,6 +147,12 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   const [titleSlam,    setTitleSlam]    = useState(false)
   const [splashMuted,  setSplashMuted]  = useState(false)
   const [bgIndex,      setBgIndex]      = useState(0)
+  // The gate clip is ~1 MB of decorative loop. `autoPlay` makes the browser
+  // fetch it during initial load no matter what `preload` says, so it competed
+  // with everything that actually matters on a phone. Mount it only once the
+  // page has settled; GATE_POSTER holds the frame until then, so there is no
+  // visible gap. See the payload notes in docs/CELO_STARTUPBANK_SUBMISSION.md.
+  const [videoReady,   setVideoReady]   = useState(false)
   // gate = logo screen requiring a click; story = typewriter + audio running
   const [phase,        setPhase]        = useState<'gate' | 'story'>('gate')
 
@@ -191,6 +198,16 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   useEffect(() => {
     document.body.style.overflow = visible ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
+  }, [visible])
+
+  // ── Defer the gate clip until the browser is idle ────────────────────────────
+  useEffect(() => {
+    if (!visible) return
+    const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
+      .requestIdleCallback
+    if (ric) { const h = ric(() => setVideoReady(true), { timeout: 2500 }); return () => { void h } }
+    const t = setTimeout(() => setVideoReady(true), 1500)
+    return () => clearTimeout(t)
   }, [visible])
 
   // ── Background crossfade — independent 4.5 s timer ───────────────────────────
@@ -398,9 +415,13 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
         <span style={{ fontSize: '0.75rem', lineHeight: 1 }}>››</span>
       </button>
 
-      {/* Background layers — stacked, crossfade via opacity transition */}
+      {/* Background layers — stacked, crossfade via opacity transition.
+          Only the current frame and the next one are mounted: rendering all
+          four up front made the browser fetch every background image during
+          initial load, for art the viewer would not see for another 4.5-13.5s.
+          The +1 lookahead keeps the next frame decoded before its crossfade. */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-        {BG_FRAMES.map((src, i) => (
+        {BG_FRAMES.filter((_, i) => i <= bgIndex + 1).map((src, i) => (
           <div key={src} style={{
             position:           'absolute',
             inset:              0,
@@ -415,14 +436,33 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
         ))}
       </div>
 
+      {/* Poster frame — holds the gate's look while the clip is deferred. */}
+      {phase === 'gate' && !videoReady && (
+        <div
+          aria-hidden="true"
+          style={{
+            position:           'absolute',
+            inset:              0,
+            zIndex:             0,
+            backgroundImage:    `url(${GATE_POSTER})`,
+            backgroundSize:     'cover',
+            backgroundPosition: 'center',
+            filter:             'saturate(0.7) contrast(1.1) brightness(0.5)',
+            opacity:            0.85,
+          }}
+        />
+      )}
+
       {/* Zombie video — pre-splash gate */}
-      {phase === 'gate' && (
+      {phase === 'gate' && videoReady && (
         <video
           src={GATE_VIDEO}
+          poster={GATE_POSTER}
           autoPlay
           muted
           loop
           playsInline
+          preload="metadata"
           aria-hidden="true"
           style={{
             position:      'absolute',
@@ -522,12 +562,27 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
           padding:       '1rem',
           textAlign:     'center',
         }}>
-          <div style={{
-            fontSize:   'clamp(2.5rem, 10vw, 4rem)',
-            lineHeight: 1,
-            animation:  'splash-pulse 3s ease-in-out infinite',
-            filter:     'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
-          }}>☣</div>
+          {/* LCP anchor. Every other visual on this screen is `inset: 0`, and
+              Chrome excludes full-viewport images from Largest Contentful Paint
+              as backgrounds — so before this existed the gate offered no LCP
+              candidate at all and Lighthouse returned NO_LCP, which voids the
+              entire Performance score. This img is deliberately bounded (not
+              full-bleed) and its animation touches transform only: an ancestor
+              or self opacity of 0 would make it ineligible again. */}
+          <img
+            src="/images/splash-mark.webp"
+            alt=""
+            width={224}
+            height={224}
+            fetchPriority="high"
+            decoding="sync"
+            style={{
+              width:     'clamp(7rem, 30vw, 14rem)',
+              height:    'auto',
+              animation: 'splash-mark-pulse 3s ease-in-out infinite',
+              filter:    'drop-shadow(0 0 24px rgba(230,51,41,0.8))',
+            }}
+          />
 
           <h1 style={{
             fontFamily:    'var(--font-display)',

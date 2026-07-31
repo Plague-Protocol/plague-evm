@@ -26,6 +26,11 @@ declare global {
   interface Window {
     ethereum?: {
       isMiniPay?: boolean
+      // Celo-native providers that can sign CIP-64 (type 123) transactions.
+      // Read by `supportsFeeCurrency()` in lib/contract.ts — see the allowlist
+      // note there before adding to this set.
+      isValora?: boolean
+      isOpera?: boolean
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
       on: (event: string, handler: (...args: unknown[]) => void) => void
       removeListener: (event: string, handler: (...args: unknown[]) => void) => void

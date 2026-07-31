@@ -18,6 +18,42 @@ function isMiniPay(): boolean {
   return !!globalThis.window?.ethereum?.isMiniPay
 }
 
+// ── CIP-64 fee abstraction ────────────────────────────────────────────────────
+// Celo mainnet fee-currency adapters. USDm is the 18-decimal Mento dollar the
+// game already settles in; the USDC/USDT entries are the 6-decimal gas adapters,
+// kept here for reference since MiniPay may charge in either.
+export const FEE_CURRENCY_USDM = '0x765DE816845861e75A25fCA122bb6898B8B1282a' as const
+export const FEE_CURRENCY_USDC_ADAPTER = '0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B' as const
+export const FEE_CURRENCY_USDT_ADAPTER = '0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72' as const
+
+/**
+ * Whether this provider can sign a CIP-64 (type 123) transaction.
+ *
+ * MUST stay a positive allowlist. Passing `feeCurrency` makes viem serialise a
+ * Celo-specific transaction type that MetaMask and other generic EVM wallets
+ * cannot sign — so a wallet we merely *fail to recognise* has to fall through to
+ * the native-CELO path. Guessing optimistically here would break signing against
+ * a live contract holding real stakes.
+ *
+ * Note MiniPay is listed but does not actually honour the value: per its docs it
+ * "may ignore feeCurrency and choose the token the user has the most of". We set
+ * it anyway so the intent is explicit in code rather than implied.
+ */
+function supportsFeeCurrency(): boolean {
+  const eth = globalThis.window?.ethereum
+  if (!eth) return false
+  return !!(eth.isMiniPay || eth.isValora || eth.isOpera)
+}
+
+/**
+ * The CIP-64 fee currency for a write, or undefined to pay in native CELO.
+ * Mainnet only — these adapter addresses do not exist on Celo Sepolia.
+ */
+function feeCurrencyFor(chainId: number): `0x${string}` | undefined {
+  if (chainId !== 42220) return undefined
+  return supportsFeeCurrency() ? FEE_CURRENCY_USDM : undefined
+}
+
 // ── Attribution (Celo Builders hackathon) ──────────────────────────────────────
 // Celo Builders "Agentic Payments & DeFAI" hackathon attribution tag, appended to
 // every user write tx's calldata via viem's `dataSuffix` so the tx is credited on
@@ -277,6 +313,7 @@ export class PlagueContractClient {
       args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
       gas,
     })
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
@@ -324,6 +361,7 @@ export class PlagueContractClient {
       args:         [roomId],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
       gas,
     })
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
@@ -376,6 +414,7 @@ export class PlagueContractClient {
       args:         [this.address, maxUint256],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
     // Poll until our RPC node reflects the updated allowance.
@@ -401,6 +440,7 @@ export class PlagueContractClient {
       args:         [roomId],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
   }
@@ -423,6 +463,7 @@ export class PlagueContractClient {
       args:         [roomId, commitment, zkProof],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
   }
@@ -436,6 +477,7 @@ export class PlagueContractClient {
       args:         [roomId, target],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
   }
@@ -459,6 +501,7 @@ export class PlagueContractClient {
       args:         [roomId, commitment, nullifier, zkProof],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
   }
@@ -475,6 +518,7 @@ export class PlagueContractClient {
       args:         [roomId],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
   }
@@ -606,6 +650,7 @@ export class PlagueContractClient {
       functionName: 'withdrawPlatformFees',
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
   }
@@ -698,6 +743,7 @@ export class FaucetClient {
       functionName: 'claim',
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
+      feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
   }

@@ -703,7 +703,7 @@ function GamePageInner() { // NOSONAR
         if (collidesWith) {
           const proceed = window.confirm(
             `Heads up: another player has already set the same Shield Password (${collidesWith.displayName}).\n\n` +
-            `The contract will reject your submission. Pick a different password — or press OK to try anyway (the tx will revert and you'll pay gas).`
+            `The contract will reject your submission. Pick a different password — or press OK to try anyway (the transaction will revert and you'll still pay the network fee).`
           )
           if (!proceed) {
             setCommitError('Choose a different Shield Password.')

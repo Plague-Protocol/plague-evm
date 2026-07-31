@@ -471,6 +471,13 @@ select {
   to   { opacity: 0; transform: scale(1.04); }
 }
 
+/* Pulse for the splash LCP mark. Deliberately transform-only — animating its
+   opacity below 1 can drop it out of Largest Contentful Paint consideration. */
+@keyframes splash-mark-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+
 @keyframes splash-pulse {
   0%, 100% {
     transform: scale(1);
