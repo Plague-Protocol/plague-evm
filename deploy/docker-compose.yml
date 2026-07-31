@@ -159,6 +159,28 @@ services:
     volumes:
       - agentdata:/app/agents/data   # persist bot-proofs.json so setup runs only once
 
+  # Telegram triage bot for @zplague_xyz. Answers FAQs instantly and pages a
+  # human on P0/P1 (money missing, stuck game) — the escalation that actually
+  # backs the 24-hour critical-issue SLA published on /support.
+  #
+  # Long-polling, so there is no inbound port and nothing for Caddy to route.
+  # Isolated on purpose: if this container dies, the game is unaffected.
+  support-bot:
+    build:
+      context: ../support-bot        # self-contained; no workspace deps
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      # Numeric Telegram user IDs (comma-separated) paged for P0/P1.
+      # Each operator must /start the bot once or Telegram blocks the DM.
+      SUPPORT_ALERT_USER_IDS: ${SUPPORT_ALERT_USER_IDS}
+      DATABASE_URL: postgres://plague:${POSTGRES_PASSWORD}@postgres:5432/plague
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
