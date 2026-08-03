@@ -714,6 +714,7 @@ export default function LobbyPage() {
   const { name: savedNickname } = usePlayerName()
   const [editingNickname, setEditingNickname] = useState(false)
   const lobbyRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastLobbyReloadRef   = useRef(0)
 
   // ── Join state ─────────────────────────────────────────────────────────────
   const [joiningId, setJoiningId] = useState<bigint | null>(null)
@@ -905,12 +906,33 @@ export default function LobbyPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
     const socket = io(backendUrl, { transports: ['websocket'] })
 
+    // Leading-edge throttle, not a debounce.
+    //
+    // `rooms_refresh_requested` is a broadcast: with 8 bot agents and several
+    // live rooms the backend emits it more or less continuously. The old 300 ms
+    // debounce did coalesce, but its floor was still ~3 reloads/second, and each
+    // reload is a 60-call Multicall3 sweep. Measured on production: 65 full
+    // sweeps in 30 s — 3,967 contract reads. The batching was never the problem;
+    // the trigger rate was.
+    //
+    // A lobby list does not need sub-second freshness, and the 10 s interval
+    // below already guarantees a floor. So: react immediately to the first event
+    // (a room really did appear), then admit at most one sweep per window,
+    // with a trailing run so the last event in a burst is never dropped.
+    const MIN_RELOAD_GAP_MS = 5_000
     const scheduleLobbyReload = () => {
       if (lobbyRefreshTimerRef.current) return
+      const since = Date.now() - lastLobbyReloadRef.current
+      if (since >= MIN_RELOAD_GAP_MS) {
+        lastLobbyReloadRef.current = Date.now()
+        void loadRooms()
+        return
+      }
       lobbyRefreshTimerRef.current = setTimeout(() => {
         lobbyRefreshTimerRef.current = null
+        lastLobbyReloadRef.current = Date.now()
         void loadRooms()
-      }, 300)
+      }, MIN_RELOAD_GAP_MS - since)
     }
 
     socket.on('rooms_refresh_requested', scheduleLobbyReload)
