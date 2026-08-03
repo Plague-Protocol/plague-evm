@@ -25,8 +25,17 @@ requires a real support channel to keep a store listing.
    group, which is easy to get wrong silently. Admin has no such timing trap.
 
    It must be a **group**, not a channel — a channel is broadcast-only, so
-   there are no member messages to triage. `@zplague_xyz` is the channel and is
-   the wrong target.
+   there are no member messages to triage. `@zplague_xyz` was originally the
+   channel and the handle has since been moved to the supergroup, which is the
+   correct target and is what `frontend/src/lib/support.ts` links to.
+
+   Verify with `getChatMember` rather than by eye — the bot should come back
+   `"status": "administrator"` with every `can_*` false. Then post a plain
+   message (no slash, no @-mention) from a **non-anonymous** account and confirm
+   `getUpdates` shows it with a real `from.username`. Anonymous admins arrive as
+   `@GroupAnonymousBot` (id 1087968824) with `sender_chat` set, so they all
+   collapse to one unusable identity and cannot be DMed back — a test sent that
+   way proves nothing about ordinary users.
 5. **Fill in `deploy/.env`:**
    ```
    TELEGRAM_BOT_TOKEN=123456:ABC-your-token
