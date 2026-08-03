@@ -44,6 +44,31 @@ const PHASE_COLOR: Record<RoundPhase, string> = {
   ended:      '#7d9a72',
 }
 
+// A room only has a round (and therefore a phase) once it is `active`. Before
+// that `currentRound` is undefined and `phase` falls back to `ended` — which
+// rendered "ENDED" and "Game ended." on the phase card of a game that had not
+// started yet, reading to players as if they had walked in on a dead room.
+// These three resolve the pre-game statuses to their own label/colour instead.
+function getPhaseLabel(phase: RoundPhase, roomStatus?: string): string {
+  if (roomStatus === 'waiting')  return 'LOBBY'
+  if (roomStatus === 'starting') return 'SETUP'
+  return PHASE_LABEL[phase]
+}
+
+function getPhaseColor(phase: RoundPhase, roomStatus?: string): string {
+  if (roomStatus === 'waiting')  return '#7d9a72'
+  if (roomStatus === 'starting') return '#f5c518'
+  return PHASE_COLOR[phase]
+}
+
+/** Header badge text. Reads as a sentence, so it can't render "LOBBY phase". */
+function getPhaseBadgeText(phase: RoundPhase, roomStatus?: string): string {
+  if (roomStatus === 'waiting')  return 'Waiting for players'
+  if (roomStatus === 'starting') return 'Setup — commit window'
+  if (roomStatus === 'ended' || phase === 'ended') return 'Game ended'
+  return `${PHASE_LABEL[phase]} phase`
+}
+
 function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(total / 60)
@@ -65,7 +90,9 @@ function getHeaderTitle(isLoading: boolean, round: number, roomStatus?: string):
   return 'STARTING'
 }
 
-function getPhaseCardBackground(phase: RoundPhase): string {
+function getPhaseCardBackground(phase: RoundPhase, roomStatus?: string): string {
+  if (roomStatus === 'starting') return 'rgba(245,197,24,0.1)'
+  if (roomStatus === 'waiting') return 'rgba(143,168,130,0.1)'
   if (phase === 'infection') return 'rgba(230,51,41,0.1)'
   if (phase === 'discussion') return 'rgba(107,142,35,0.1)'
   if (phase === 'voting') return 'rgba(245,197,24,0.1)'
@@ -85,9 +112,12 @@ function getPhaseDescription(
   if (phase === 'discussion') return 'Infection has spread. Activate your Shield now before voting opens.'
   if (phase === 'voting') return hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Vote to eliminate the suspected carrier before more are infected.'
   if (phase === 'reveal') return 'Votes tallied — elimination is being resolved on-chain.'
+  // Status is checked ahead of `result` here: a room can carry an aborted
+  // result while sitting in `waiting`, and "Game over" is the wrong first
+  // thing to say to someone who just walked into a room that hasn't started.
+  if (roomStatus === 'waiting') return 'Waiting for players to join. The game has not started yet.'
+  if (roomStatus === 'starting') return 'Set your Shield Password to continue — the game begins once every player has committed.'
   if (result) return `Game over: ${result.outcome.replaceAll('_', ' ')}`
-  if (roomStatus === 'waiting') return 'Waiting for players to join.'
-  if (roomStatus === 'starting') return 'Waiting for all players to commit their role.'
   return 'Game ended.'
 }
 
@@ -322,9 +352,12 @@ function GamePageInner() { // NOSONAR
     && headerCountdownMs <= 0
   const headerTitle = getHeaderTitle(isLoading, round, room?.status)
   const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status, localPlayer?.status === 'infected')
-  const phaseCardBackground = getPhaseCardBackground(phase)
+  const phaseCardBackground = getPhaseCardBackground(phase, room?.status)
+  const phaseLabel = getPhaseLabel(phase, room?.status)
+  const phaseColor = getPhaseColor(phase, room?.status)
+  const phaseBadgeText = getPhaseBadgeText(phase, room?.status)
   const synchronizedFeed = [
-    `System sync: Round ${round > 0 ? round : '-'} · ${PHASE_LABEL[phase]} · Infected ${infectedCount}/${Math.max(activePlayers.length, 1)}`,
+    `System sync: Round ${round > 0 ? round : '-'} · ${phaseLabel} · Infected ${infectedCount}/${Math.max(activePlayers.length, 1)}`,
     ...feed,
   ].slice(0, 50)
   const hostPlayerCountLabel = `${totalPlayers} player${totalPlayers === 1 ? '' : 's'} in room. Start when ready.`
@@ -852,10 +885,7 @@ function GamePageInner() { // NOSONAR
   }
 
   // ── Set Shield Password card ────────────────────────────────────────────
-  // One instance, two slots: on desktop it heads the left column; on phones
-  // it's hoisted above the game header, because the header (title, countdown,
-  // sync strip, telemetry) pushed this time-limited action below the fold and
-  // players were missing the commit window entirely.
+  // Rendered once, at the top of the telemetry strip (see its slot below).
   const shieldCommitCard = room?.status === 'starting' && showOnTab('game') ? (
     <div className={commitDone ? undefined : 'toxic-pulse rounded-lg'}>
       <div
@@ -935,17 +965,6 @@ function GamePageInner() { // NOSONAR
           <SiteNav currentPath="/game" />
         </div>
       </div>
-
-      {/* Set Shield Password — directly under the nav on EVERY screen size.
-          It's a timed, mandatory action, so it must never be something a
-          player has to go looking for. On desktop the header alone (room row,
-          display title, countdown, sync strip, telemetry) runs 500-600px, so
-          "top of the left column" was still below the fold on a laptop. */}
-      {shieldCommitCard && (
-        <div className="px-4 pt-4 sm:px-6">
-          <div className="mx-auto w-full max-w-6xl">{shieldCommitCard}</div>
-        </div>
-      )}
 
       {/* Game Header + Telemetry — visible on Game tab (mobile) or always (desktop) */}
       {showOnTab('game') && (
@@ -1044,9 +1063,9 @@ function GamePageInner() { // NOSONAR
             </div>
             <span
               className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.2em]"
-              style={{ borderColor: `${PHASE_COLOR[phase]}44`, backgroundColor: `${PHASE_COLOR[phase]}18`, color: PHASE_COLOR[phase] }}
+              style={{ borderColor: `${phaseColor}44`, backgroundColor: `${phaseColor}18`, color: phaseColor }}
             >
-              {PHASE_LABEL[phase]} phase
+              {phaseBadgeText}
             </span>
           </div>
 
@@ -1137,6 +1156,13 @@ function GamePageInner() { // NOSONAR
       {/* Telemetry Strip */}
       <div className="px-6 pt-8">
         <div className="mx-auto w-full max-w-6xl">
+          {/* Set Shield Password — first thing under the header, immediately
+              above POT / INFECTED / SHIELD WINDOW. It is a timed, mandatory
+              action, so it sits at the top of the game body rather than in
+              the left column, where the Area 51 board pushed it below the
+              fold and players missed the commit window entirely. */}
+          {shieldCommitCard && <div className="mb-4">{shieldCommitCard}</div>}
+
           {/* Parity already decided, game not ended yet. PlagueGame evaluates
               `infectedAlive > cleanAlive` only after infection assignment
               (L613), not in finalizeElimination — so a majority reached by
@@ -1226,7 +1252,7 @@ function GamePageInner() { // NOSONAR
               {showOnTab('game') && (
                 <div
                   className="rise-in rounded-lg border p-5"
-                  style={{ backgroundColor: phaseCardBackground, borderColor: `${PHASE_COLOR[phase]}4d` }}
+                  style={{ backgroundColor: phaseCardBackground, borderColor: `${phaseColor}4d` }}
                 >
                   {/* Round phase sequence indicator */}
                   {room?.status === 'active' && (
@@ -1257,7 +1283,7 @@ function GamePageInner() { // NOSONAR
                     </div>
                   )}
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>Current Phase</p>
-                  <p className="mt-2 font-heading text-3xl leading-none" style={{ color: PHASE_COLOR[phase] }}>{PHASE_LABEL[phase]}</p>
+                  <p className="mt-2 font-heading text-3xl leading-none" style={{ color: phaseColor }}>{phaseLabel}</p>
                   <p className="mt-3 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{phaseCardDescription}</p>
                   {localPlayer?.isEliminated && (
                     <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>⊘ You have been eliminated — spectator only.</p>
@@ -1380,6 +1406,26 @@ function GamePageInner() { // NOSONAR
                           </p>
                         </>
                       )}
+                      {/* The only exit used to be a link in the right sidebar,
+                          which on mobile lives behind the Feed tab — so a
+                          player who finished a game on the Game tab had no
+                          visible way out. */}
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <Link
+                          href="/lobby"
+                          className="rounded border px-5 py-2.5 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
+                          style={{ backgroundColor: '#6b8e23', borderColor: '#6b8e23', color: '#060b06' }}
+                        >
+                          Play Again →
+                        </Link>
+                        <Link
+                          href="/leaderboard"
+                          className="rounded border px-5 py-2.5 font-mono text-sm uppercase tracking-wider transition-all hover:opacity-90"
+                          style={{ borderColor: 'rgba(212,201,178,0.4)', color: '#d4c9b2' }}
+                        >
+                          Leaderboard
+                        </Link>
+                      </div>
                     </article>
                   )}
                 </>
@@ -1587,7 +1633,7 @@ function GamePageInner() { // NOSONAR
           }}
         >
           <span className="text-[9px] font-normal uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
-            {PHASE_LABEL[phase]}
+            {phaseLabel}
           </span>
           <span>{formatCountdown(headerCountdownMs)}</span>
         </div>

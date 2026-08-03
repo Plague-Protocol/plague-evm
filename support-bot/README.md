@@ -1,4 +1,4 @@
-# Support bot — @zplague_xyz
+# Support bot
 
 Telegram triage bot. Answers the common questions instantly, and pages a human
 the moment something looks like money going missing. That escalation is what
@@ -14,9 +14,19 @@ requires a real support channel to keep a store listing.
 3. **Send `/start` to your new bot.** Telegram refuses to deliver a DM to anyone
    who has never opened a chat with the bot, so **skipping this silently breaks
    every alert**.
-4. **Add the bot to the @zplague_xyz group as an admin.** Non-admin bots only
-   see messages that directly mention them ("privacy mode"), so it would miss
-   almost everything.
+4. **Add the bot to the support *group* as an admin with every permission
+   switched off.** It only reads messages and sends replies, and neither is an
+   admin power — but a non-admin bot sees only messages that directly @-mention
+   it ("privacy mode"), so it would miss almost everything. Admin status is
+   purely the privacy-mode bypass; grant it nothing else.
+
+   `/setprivacy` → Disable in BotFather achieves the same with less privilege,
+   but it only takes effect after the bot is **removed and re-added** to the
+   group, which is easy to get wrong silently. Admin has no such timing trap.
+
+   It must be a **group**, not a channel — a channel is broadcast-only, so
+   there are no member messages to triage. `@zplague_xyz` is the channel and is
+   the wrong target.
 5. **Fill in `deploy/.env`:**
    ```
    TELEGRAM_BOT_TOKEN=123456:ABC-your-token

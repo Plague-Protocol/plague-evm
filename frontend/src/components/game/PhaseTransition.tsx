@@ -42,8 +42,23 @@ const HOLD_MS = 1_450
 export function PhaseTransition({ phaseKey, label, color, sublabel, glyphKey, enabled = true }: PhaseTransitionProps) {
   const reduced = useReducedMotion()
   const [visible, setVisible] = useState(false)
+  const [ticket, setTicket] = useState(0)
   const [snap, setSnap] = useState({ label, color, sublabel, glyphKey })
   const prevKeyRef = useRef<string | null>(null)
+
+  // `enabled` is read through a ref so it can gate a NEW transition without
+  // being an effect dependency. It used to be one, and that stranded the
+  // overlay on screen at end of game: the last reveal→ended change flips
+  // `enabled` to false while `phaseKey` is unchanged, so the effect re-ran,
+  // cleared the pending hide timer, then bailed at the same-key guard — the
+  // veil never came down. It is pointer-events-none, so the page underneath
+  // still worked, but every player saw a permanently dimmed "ELIMINATION".
+  // Declared before the transition effect on purpose: effects run in order, so
+  // when `enabled` and `phaseKey` change in the same commit (exactly what the
+  // final reveal→ended step does) the ref is already current by the time the
+  // transition effect reads it.
+  const enabledRef = useRef(enabled)
+  useEffect(() => { enabledRef.current = enabled }, [enabled])
 
   useEffect(() => {
     // Skip the first observed key (initial mount / page refresh).
@@ -53,15 +68,28 @@ export function PhaseTransition({ phaseKey, label, color, sublabel, glyphKey, en
     }
     if (prevKeyRef.current === phaseKey) return
     prevKeyRef.current = phaseKey
-    if (!enabled) return
+    if (!enabledRef.current) return
 
     // Snapshot the display props so a mid-animation phase drift can't mutate the card.
     setSnap({ label, color, sublabel, glyphKey })
     setVisible(true)
+    setTicket(t => t + 1) // re-arms the hide timer even if already visible
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phaseKey])
+
+  // Hide timer lives in its own effect so nothing but the show itself can
+  // cancel it.
+  useEffect(() => {
+    if (!visible) return
     const t = setTimeout(() => setVisible(false), HOLD_MS)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phaseKey, enabled])
+  }, [visible, ticket])
+
+  // Belt-and-braces: leaving the active game (result landed, room ended, tab
+  // switch) tears the veil down immediately rather than waiting on a timer.
+  useEffect(() => {
+    if (!enabled) setVisible(false)
+  }, [enabled])
 
   const glyph = snap.glyphKey ? GLYPH[snap.glyphKey] : undefined
 

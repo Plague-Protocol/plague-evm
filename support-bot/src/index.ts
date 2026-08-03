@@ -1,5 +1,10 @@
 /**
- * Zombie Plague support bot — @zplague_xyz
+ * Zombie Plague support bot.
+ *
+ * Its @username is whatever BotFather issued and is deliberately not written
+ * down here — the bot reads it back from `getMe` at boot (see the `onStart`
+ * log at the bottom). `@zplague_xyz` used to appear here and was wrong: that
+ * is the broadcast channel, not the bot and not the support group.
  *
  * Answers the common questions instantly and, more importantly, makes sure a
  * "my stake is gone" message reaches a human within minutes rather than
