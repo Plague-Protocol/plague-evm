@@ -184,6 +184,32 @@ function readTransport(chain: typeof celo | typeof celoSepolia, override?: strin
   )
 }
 
+/**
+ * Calldata budget for a single Multicall3 aggregate3, in bytes.
+ *
+ * viem defaults to 1024, which splits one logical batch across many HTTP
+ * requests: a 60-room lobby sweep is ~6 KB of calldata and became a request
+ * per kilobyte, every refresh. 32 KB comfortably holds the largest sweep in
+ * one round-trip and is well inside what an RPC node will accept.
+ */
+const MULTICALL_BATCH_SIZE = 32_768
+
+/**
+ * Read-only client factory. Single definition so the concrete chain/transport
+ * generics are inferred once — annotating a field as
+ * `ReturnType<typeof createPublicClient>` widens `chain` to the default and
+ * the assignment stops type-checking.
+ */
+function makeReadClient(chain: typeof celo | typeof celoSepolia, rpcUrl?: string) {
+  return createPublicClient({
+    chain,
+    transport: readTransport(chain, rpcUrl),
+    batch:     { multicall: { batchSize: MULTICALL_BATCH_SIZE, wait: 16 } },
+  })
+}
+
+type ReadClient = ReturnType<typeof makeReadClient>
+
 export interface ContractConfig {
   contractAddress: `0x${string}`
   network: 'testnet' | 'mainnet'
@@ -206,11 +232,27 @@ export class PlagueContractClient {
 
   // ── Internals ──────────────────────────────────────────────────────────────
 
+  /**
+   * One client per instance, built once.
+   *
+   * This used to be a plain getter that called `createPublicClient` on EVERY
+   * access — a fresh client, and therefore a fresh empty cache, for every read
+   * the app made. viem dedupes in-flight requests and batches eligible
+   * `readContract` calls into Multicall3, but both of those live on the client,
+   * so recreating it discarded them every time. Measured on `/lobby` mobile:
+   * 379 JSON-RPC calls in the 45s after load (~8/s, sustained), 11.5 MB — 81%
+   * of the page's bytes and 75% of its requests.
+   *
+   * `batch.multicall` additionally folds independent `readContract` calls that
+   * land in the same tick into one aggregate3. batchSize is raised from viem's
+   * 1024-byte default because a 60-room lobby sweep is ~6 KB of calldata and
+   * was being chopped into a fresh HTTP request every 1 KB.
+   */
+  private cachedPublicClient: ReadClient | undefined
+
   private get publicClient() {
-    return createPublicClient({
-      chain:     this.chain,
-      transport: readTransport(this.chain, this.rpcUrl),
-    })
+    this.cachedPublicClient ??= makeReadClient(this.chain, this.rpcUrl)
+    return this.cachedPublicClient
   }
 
   private walletClient(account: `0x${string}`) {
@@ -547,6 +589,7 @@ export class PlagueContractClient {
     if (roomIds.length === 0) return []
     const results = await this.publicClient.multicall({
       allowFailure: true,
+      batchSize:    MULTICALL_BATCH_SIZE,
       contracts: roomIds.map(id => ({
         address:      this.address,
         abi:          PLAGUE_GAME_ABI,
@@ -580,6 +623,7 @@ export class PlagueContractClient {
     if (playerAddresses.length === 0) return []
     return this.publicClient.multicall({
       allowFailure: false,
+      batchSize:    MULTICALL_BATCH_SIZE,
       contracts: playerAddresses.map(addr => ({
         address:      this.address,
         abi:          PLAGUE_GAME_ABI,
@@ -702,8 +746,9 @@ export class FaucetClient {
     this.chain   = CHAINS[config.network]
   }
 
+  /** Shared per-chain client — see the note on PlagueContractClient.publicClient. */
   private get publicClient() {
-    return createPublicClient({ chain: this.chain, transport: readTransport(this.chain) })
+    return sharedReadClient(this.chain)
   }
 
   private walletClient(account: `0x${string}`) {
@@ -776,6 +821,23 @@ export function createFaucetClient(config: FaucetConfig): FaucetClient {
 }
 
 /**
+ * Shared read-only clients for the module-level helpers below, one per chain.
+ *
+ * Same reasoning as PlagueContractClient.publicClient: these helpers are called
+ * on a timer (balance polling), and building a client per call threw away
+ * viem's in-flight dedup and multicall batching every time.
+ */
+const sharedReadClients = new Map<number, ReadClient>()
+
+function sharedReadClient(chain: typeof celo | typeof celoSepolia): ReadClient {
+  const hit = sharedReadClients.get(chain.id)
+  if (hit) return hit
+  const pc = makeReadClient(chain)
+  sharedReadClients.set(chain.id, pc)
+  return pc
+}
+
+/**
  * Read an ERC-20 (cUSD) balance for `account` without needing a full client.
  */
 export async function readCUSDBalance(
@@ -784,7 +846,7 @@ export async function readCUSDBalance(
   network: 'testnet' | 'mainnet',
 ): Promise<bigint> {
   const chain = CHAINS[network]
-  const pc = createPublicClient({ chain, transport: readTransport(chain) })
+  const pc = sharedReadClient(chain)
   return pc.readContract({
     address:      cUSDAddress,
     abi:          ERC20_BALANCE_ABI,
@@ -803,7 +865,7 @@ export async function readNativeBalance(
   network: 'testnet' | 'mainnet',
 ): Promise<bigint> {
   const chain = CHAINS[network]
-  const pc = createPublicClient({ chain, transport: readTransport(chain) })
+  const pc = sharedReadClient(chain)
   return pc.getBalance({ address: account })
 }
 

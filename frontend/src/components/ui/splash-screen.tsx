@@ -128,6 +128,26 @@ function useStoryTypewriter(active: boolean) {
   return { lines, activeLine, done }
 }
 
+// ── Connection-aware gating ───────────────────────────────────────────────────
+/**
+ * True when the ~1 MB gate clip should never be fetched.
+ *
+ * `saveData` is the user explicitly asking for less traffic. `effectiveType`
+ * is Chrome's own estimate from observed RTT/throughput, so it catches a
+ * genuinely slow link even when the radio claims 4G — which is the common case
+ * on the mid-range Android hardware MiniPay runs on. Absent the API (Safari,
+ * Firefox) we assume a good connection and behave as before.
+ */
+function shouldSkipGateClip(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const c = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string }
+  }).connection
+  if (!c) return false
+  if (c.saveData) return true
+  return ['slow-2g', '2g', '3g'].includes(c.effectiveType ?? '')
+}
+
 // ── Particles ─────────────────────────────────────────────────────────────────
 interface Particle { id: number; x: number; size: number; delay: number; duration: number }
 
@@ -207,6 +227,12 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   // almost immediately on a fast connection and genuinely waits on a slow one.
   useEffect(() => {
     if (!visible) return
+    // Skip the clip outright when the connection says not to. It is ~1 MB of
+    // pure decoration and the poster frame underneath is visually almost
+    // identical, so on a metered or slow link it is the single easiest MB to
+    // not spend — and this is exactly the MiniPay audience: mid-range Android
+    // on mobile data. Data Saver is an explicit user request; honour it.
+    if (shouldSkipGateClip()) return
     let timer: ReturnType<typeof setTimeout>
     const arm = () => { timer = setTimeout(() => setVideoReady(true), 600) }
     if (document.readyState === 'complete') { arm(); return () => clearTimeout(timer) }

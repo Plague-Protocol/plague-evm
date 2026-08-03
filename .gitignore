@@ -61,3 +61,10 @@ docs/CELO_PORT_HANDOFF.md
 # Contains an unpublished readiness assessment (gaps, traction caveats, TODOs)
 # that should not be public in an open repo. Keep it local; see CLAUDE.md.
 docs/CELO_STARTUPBANK_SUBMISSION.md
+
+# Store-listing screenshots — build output, not source. ~4.8 MB of PNGs that
+# are regenerated wholesale on every UI change, and binaries never diff, so
+# each pass would pin another full set into history forever. Nothing secret
+# in them (they are shots of the public site) — they are simply reproducible.
+# The capture scripts and README next to them ARE tracked: that is the recipe.
+docs/store-screenshots/

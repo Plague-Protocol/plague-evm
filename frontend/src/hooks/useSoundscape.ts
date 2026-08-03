@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import type { RoundPhase } from '@/types/game'
 
 // ── Track manifest ────────────────────────────────────────────────────────────
@@ -29,12 +29,56 @@ export const GAME_OVER_TRACKS = {
 const FADE_DURATION_MS = 1500
 const BASE_VOLUME = 0.35
 
+// ── Gesture gate ──────────────────────────────────────────────────────────────
+// Constructing `new Audio(src)` starts the download immediately, but browsers
+// refuse to play it until the user has interacted with the page — so on first
+// paint we were fetching ambient-lobby.mp3 (679 KB, the second-largest asset on
+// /lobby) purely to have `play()` rejected and the result discarded. On a Slow
+// 4G phone that is bandwidth taken directly from the LCP image.
+//
+// So no track is constructed until a real gesture has happened. Subscribers are
+// woken once, at which point the scene effect re-runs and starts audio that can
+// actually be heard.
+
+let hasGesture = false
+const gestureWaiters = new Set<() => void>()
+
+function armGestureListener() {
+  if (typeof window === 'undefined' || hasGesture) return
+  const fire = () => {
+    if (hasGesture) return
+    hasGesture = true
+    for (const w of gestureWaiters) w()
+    gestureWaiters.clear()
+  }
+  // `once` on each: whichever lands first wins, the rest are cleaned up below.
+  const events = ['pointerdown', 'keydown', 'touchstart'] as const
+  const handler = () => {
+    fire()
+    for (const e of events) window.removeEventListener(e, handler)
+  }
+  for (const e of events) window.addEventListener(e, handler, { once: true, passive: true })
+}
+
+function useHasGesture(): boolean {
+  const [ready, setReady] = useState(hasGesture)
+  useEffect(() => {
+    if (hasGesture) { setReady(true); return }
+    const wake = () => setReady(true)
+    gestureWaiters.add(wake)
+    armGestureListener()
+    return () => { gestureWaiters.delete(wake) }
+  }, [])
+  return ready
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useSoundscape(
   scene: RoundPhase | 'lobby',
   muted: boolean,
 ) {
+  const gestureReady = useHasGesture()
   const audioRef  = useRef<HTMLAudioElement | null>(null)
   const sceneRef  = useRef<string | null>(null)
   const fadingOut = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -77,6 +121,11 @@ export function useSoundscape(
 
   // ── Switch loop track when scene changes ─────────────────────────────────
   useEffect(() => {
+    // Nothing is fetched until the user has interacted; see the gesture gate.
+    // This effect re-runs when `gestureReady` flips, so the current scene's
+    // track starts at that moment rather than being skipped.
+    if (!gestureReady) return
+
     const trackKey = scene === 'ended' ? null : scene
     const src = trackKey ? LOOP_TRACKS[trackKey] ?? null : null
 
@@ -110,7 +159,7 @@ export function useSoundscape(
       startNew()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene])
+  }, [scene, gestureReady])
 
   // ── Respond to mute toggle ────────────────────────────────────────────────
   useEffect(() => {
