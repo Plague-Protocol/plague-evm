@@ -10,6 +10,8 @@ import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayerCard } from '@/components/game/PlayersGrid'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
+import { checkChatMessage } from '@/lib/chatFilter'
+import { toast } from 'sonner'
 
 // ── Demo limits ──────────────────────────────────────────────────────────────
 
@@ -670,10 +672,18 @@ export default function DemoPage() {
   }, [selectedVote, addVote])
 
   const sendChat = useCallback(() => {
-    const text = chatInput.trim()
-    if (!text) return
+    if (!chatInput.trim()) return
     const s = stateRef.current
     if (getChatBlockedReason(s)) return
+    // Same screen as the real room. The demo never touches the backend, so this
+    // copy is the only thing standing between the box and the transcript, and
+    // it is the page a curious reviewer reaches first since it needs no wallet.
+    const screened = checkChatMessage(chatInput)
+    if (!screened.ok) {
+      toast.error(screened.reason)
+      return
+    }
+    const text = screened.text
     setState(prev => ({ ...prev, chat: [...prev.chat, { senderId: YOU_ID, name: 'You', text }].slice(-200) }))
     setChatInput('')
     // Bots often react to what you say.

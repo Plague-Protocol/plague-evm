@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { useWallet } from '@/providers/wallet-provider'
+import { isSafeDisplayName } from '@/lib/chatFilter'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
 
@@ -99,6 +100,13 @@ export function PlayerNameProvider({ children }: { children: ReactNode }) {
     if (!address) return 'error'
     const trimmed = next.trim()
     if (!trimmed) return 'error'
+    // The route rejects these too, but it answers with a 400 that lands in the
+    // generic catch below and tells the player to "try again" -- which they
+    // would, with the same name. Say what is actually wrong instead.
+    if (!isSafeDisplayName(trimmed)) {
+      toast.error('Display names cannot contain code or markup.')
+      return 'error'
+    }
     setSaving(true)
     try {
       const res = await fetch(`${BACKEND_URL}/api/players/nickname`, {

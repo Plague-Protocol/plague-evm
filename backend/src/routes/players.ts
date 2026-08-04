@@ -3,14 +3,21 @@ import { z } from 'zod'
 import { isAddress } from 'viem'
 import { prisma } from '../db/prisma'
 import { invalidateLeaderboardCache } from '../lib/leaderboardCache'
+import { isSafeDisplayName } from '../lib/chatFilter'
 
 export const playerRouter = Router()
 
 const EvmAddress = z.string().refine(isAddress, { message: 'Invalid EVM address' })
 
+// Same screen as room chat. A nickname is the wider surface of the two: it
+// persists, and it renders on the leaderboard and every player card rather than
+// scrolling out of one room's transcript. Enforced on write only, so any name
+// already in the table keeps working.
 const NicknameSchema = z.object({
   address:  EvmAddress,
-  nickname: z.string().min(1).max(20).trim(),
+  nickname: z.string().min(1).max(20).trim().refine(isSafeDisplayName, {
+    message: 'Display names cannot contain code or markup.',
+  }),
 })
 
 /**
@@ -138,6 +145,11 @@ playerRouter.get('/check-nickname', async (req, res) => {
   const nickname = String(req.query.nickname ?? '').trim()
   if (!nickname || nickname.length > 20) {
     return res.status(400).json({ error: 'Invalid nickname' })
+  }
+  // Report unusable names as unavailable rather than letting the picker show a
+  // green tick on something PUT /nickname will then refuse.
+  if (!isSafeDisplayName(nickname)) {
+    return res.json({ available: false })
   }
   const address = String(req.query.address ?? '').trim() || undefined
   const existing = await prisma.playerNickname.findFirst({

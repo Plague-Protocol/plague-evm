@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io'
 import { logger } from '../lib/logger'
+import { checkChatMessage } from '../lib/chatFilter'
 import type { GameEvent } from '../types/game'
 import { chainAdapter } from '../services/chainAdapter'
 import { listExpiredWaitingRooms, setRoomStatus, upsertGameSummary } from '../repositories/rooms'
@@ -970,9 +971,10 @@ export function setupSocketHandlers(io: Server) {
     /**
      * In-game chat — broadcast a message to all players in the room.
      *
-     * Messages are stripped to a safe length (256 chars) and only relayed
-     * when the sender appears to be in the room.  No message history is
-     * persisted; this is ephemeral session chat only.
+     * Messages are normalised and screened by `checkChatMessage` (length cap,
+     * whitespace flattening, code rejection) and only relayed when the sender
+     * appears to be in the room. The screening has to happen here rather than
+     * in the input box because a client can emit this event directly.
      */
     socket.on('chat_message', async ({
       roomId,
@@ -986,8 +988,12 @@ export function setupSocketHandlers(io: Server) {
       displayName?: string
     }) => {
       if (!roomId || !message || !playerAddress) return
-      const safe = String(message).slice(0, 256).trim()
-      if (!safe) return
+      const screened = checkChatMessage(message)
+      if (!screened.ok) {
+        socket.emit('chat_error', { roomId, message: screened.reason })
+        return
+      }
+      const safe = screened.text
 
       // Resolved server-side below (nickname → "Player N" by join order →
       // short address) so chat names always match the player cards and a

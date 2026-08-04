@@ -12,6 +12,7 @@ import { useSound } from '@/providers/sound-provider'
 import { createContractClient } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
 import { quarantineCode } from '@/lib/roomLabel'
+import { checkChatMessage } from '@/lib/chatFilter'
 import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
@@ -558,9 +559,17 @@ function GamePageInner() { // NOSONAR
 
   const handleSendChat = useCallback(() => {
     if (!chatInput.trim() || !socket || !address || !roomId || !canChat) return
+    // Screened here for an instant answer; the server screens again on receipt
+    // and is the copy that actually decides. The input is left intact on
+    // rejection so the sender can edit rather than retype.
+    const screened = checkChatMessage(chatInput)
+    if (!screened.ok) {
+      toast.error(screened.reason)
+      return
+    }
     const displayName = room?.players?.find(p => p.walletAddress.toLowerCase() === address.toLowerCase())?.displayName
       ?? `${address.slice(0, 6)}…${address.slice(-4)}`
-    socket.emit('chat_message', { roomId, message: chatInput.trim(), playerAddress: address, displayName })
+    socket.emit('chat_message', { roomId, message: screened.text, playerAddress: address, displayName })
     setChatInput('')
   }, [chatInput, socket, address, roomId, room, canChat])
 
