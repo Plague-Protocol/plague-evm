@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
 import { formatToken } from '@/lib/format'
+import { useChangePulse } from '@/hooks/useChangePulse'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000'
 const TOKEN = 'USDm'
@@ -32,12 +32,8 @@ export function BotControls({
   const [count, setCount] = useState(1)
   const [adding, setAdding] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const reduced = useReducedMotion()
-  // Pulse the free-bot counter when it changes while mounted.
-  // Render-time state adjustment — the React-endorsed "previous value" pattern.
-  const [prevAvail, setPrevAvail] = useState<number | null>(null)
-  const availJustChanged = prevAvail !== null && avail !== null && prevAvail !== avail.available
-  if ((avail?.available ?? null) !== prevAvail) setPrevAvail(avail?.available ?? null)
+  // Flash the free-bot counter when the pool changes under the host.
+  const availJustChanged = useChangePulse(avail?.available)
 
   const load = useCallback(async () => {
     try {
@@ -105,15 +101,15 @@ export function BotControls({
           </span>
         ) : (
           <>
-            <motion.span
-              key={avail.available}
-              initial={availJustChanged && !reduced ? { scale: 1.35, color: '#f5c518' } : false}
-              animate={{ scale: 1, color: '#d4c9b2' }}
-              transition={{ type: 'spring', stiffness: 300, damping: 16 }}
-              className="inline-block font-mono text-xs"
+            {/* CSS pulse rather than framer-motion: this component renders
+                inside every lobby room card, so importing the animation
+                library here would put it back on the lobby's critical path. */}
+            <span
+              className={`inline-block font-mono text-xs${availJustChanged ? ' count-pulse' : ''}`}
+              style={{ color: '#d4c9b2' }}
             >
               {avail.available}/{avail.total} free
-            </motion.span>
+            </span>
             <select
               value={effectiveCount}
               onChange={e => setCount(Number(e.target.value))}

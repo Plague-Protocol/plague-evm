@@ -10,15 +10,15 @@ import { useSound } from '@/providers/sound-provider'
 import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBalance } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
+import { useChangePulse } from '@/hooks/useChangePulse'
 import { BotControls } from '@/components/lobby/bot-controls'
 import { LowGasNotice } from '@/components/lobby/low-gas-notice'
 import { NextWindowBanner } from '@/components/ui/next-window-banner'
 import { DisplayNameEditor } from '@/components/ui/display-name-editor'
 import { usePlayerName } from '@/providers/player-name-provider'
-import { primeArenaSounds } from '@/components/game/ArenaDoors'
+import { primeArenaSounds } from '@/lib/arena-sounds'
 import { useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
 // ── USDm contract addresses ───────────────────────────────────────────────────
 const CUSD_ADDRESSES: Record<number, `0x${string}`> = {
@@ -520,12 +520,8 @@ function RoomCard({
   joiningId, endingRoomId,
   onJoin, onEnd,
 }: Readonly<RoomCardProps>) {
-  const reduced = useReducedMotion()
-  // Pulse the player count when it changes while mounted (someone joined/left).
-  // Render-time state adjustment — the React-endorsed "previous value" pattern.
-  const [prevPlayers, setPrevPlayers] = useState(room.players)
-  const playersJustChanged = prevPlayers !== room.players
-  if (playersJustChanged) setPrevPlayers(room.players)
+  // Flash the player count when someone joins or leaves while you are looking.
+  const playersJustChanged = useChangePulse(room.players)
   const secsLeft    = room.status === 'waiting'
     ? Math.max(0, Math.floor((room.expiresAt - now) / 1000))
     : 0
@@ -557,19 +553,14 @@ function RoomCard({
   else if (isExpiring) cardBorderColor = 'rgba(245,197,24,0.35)'
 
   return (
-    <motion.li
-      layout={!reduced}
-      initial={reduced ? false : { opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-      whileHover={reduced ? undefined : { scale: 1.01 }}
-      transition={{
-        layout: { type: 'spring', stiffness: 350, damping: 32 },
-        default: { duration: 0.4, ease: 'easeOut', delay: Math.min(index * 0.06, 0.35) },
-        exit: { duration: 0.25, ease: 'easeIn', delay: 0 },
-      }}
-      className="rounded-lg border p-5"
-      style={{ backgroundColor: '#0e180d', borderColor: cardBorderColor }}
+    <li
+      className="room-card-in rounded-lg border p-5"
+      style={{
+        backgroundColor: '#0e180d',
+        borderColor: cardBorderColor,
+        // Same 60ms-per-card ramp, capped at 350ms, that the old spring used.
+        '--stagger': `${Math.min(index * 60, 350)}ms`,
+      } as React.CSSProperties}
     >
       {/* Top row */}
       <div className="flex flex-wrap items-center gap-2">
@@ -610,13 +601,10 @@ function RoomCard({
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Players</p>
             {/* Keyed remount pulses gold when the count changes while mounted */}
-            <motion.p
-              key={room.players}
-              initial={playersJustChanged && !reduced ? { scale: 1.5, color: '#f5c518' } : false}
-              animate={{ scale: 1, color: '#d4c9b2' }}
-              transition={{ type: 'spring', stiffness: 300, damping: 16 }}
-              className="font-heading text-lg leading-none"
-            >{room.players}/{room.maxPlayers}</motion.p>
+            <p
+              className={`font-heading text-lg leading-none${playersJustChanged ? ' count-pulse' : ''}`}
+              style={{ color: '#d4c9b2' }}
+            >{room.players}/{room.maxPlayers}</p>
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase" style={{ color: '#7d9a72' }}>Stake</p>
@@ -685,7 +673,7 @@ function RoomCard({
         <BotControls roomId={room.id} stakeAmount={room.stakeAmount} freeSeats={room.maxPlayers - room.players} />
       )}
 
-    </motion.li>
+    </li>
   )
 }
 
@@ -1510,25 +1498,25 @@ export default function LobbyPage() {
                 </p>
               )}
 
+              {/* No AnimatePresence: cards leave immediately rather than
+                  shrinking out. See the .room-card-in note in globals.css. */}
               <ul className="mt-6 space-y-4 max-h-[320px] sm:max-h-[480px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
-                <AnimatePresence mode="popLayout">
-                  {rooms
-                    .filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null))
-                    .map((room, i) => (
-                      <RoomCard
-                        key={room.id.toString()}
-                        room={room}
-                        index={i}
-                        now={now}
-                        address={address}
-                        myActiveRoom={myActiveRoom}
-                        joiningId={joiningId}
-                        endingRoomId={endingRoomId}
-                        onJoin={handleJoin}
-                        onEnd={handleEndRoom}
-                      />
-                    ))}
-                </AnimatePresence>
+                {rooms
+                  .filter(r => isVisibleRoom(r, now, myActiveRoom?.id ?? null))
+                  .map((room, i) => (
+                    <RoomCard
+                      key={room.id.toString()}
+                      room={room}
+                      index={i}
+                      now={now}
+                      address={address}
+                      myActiveRoom={myActiveRoom}
+                      joiningId={joiningId}
+                      endingRoomId={endingRoomId}
+                      onJoin={handleJoin}
+                      onEnd={handleEndRoom}
+                    />
+                  ))}
               </ul>
             </article>
           </div>

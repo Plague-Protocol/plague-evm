@@ -32,6 +32,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useSound } from '@/providers/sound-provider'
+import { getArenaSounds, markArenaSoundsInUse, fadeOutAndStop } from '@/lib/arena-sounds'
 
 // ── Timeline (seconds unless noted) ───────────────────────────────────────────
 const OPEN_DELAY = 0.4   // stillness before the first movement
@@ -50,56 +51,10 @@ const DOOR_EASES     = ['easeOut', 'linear', 'easeInOut'] as const
 const scanlines =
   'repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,0.55) 2px 4px)'
 
-// ── Primed audio singletons ───────────────────────────────────────────────────
-// Browsers only allow audio after a RECENT user gesture. In live play the lobby
-// click is followed by a wallet prompt + an on-chain tx, so by the time the
-// game page mounts the gesture has expired and play() is silently blocked
-// (the demo works because Start Demo → doors is instant). primeArenaSounds()
-// is called from the lobby's create/join click handlers: it plays both tracks
-// muted for an instant while the gesture is still valid, permanently unlocking
-// these elements for gesture-free playback on the game page.
-let primedCreak: HTMLAudioElement | null = null
-let primedPulse: HTMLAudioElement | null = null
-let soundsInUse = false
-
-function getArenaSounds() {
-  if (typeof window === 'undefined') return null
-  if (!primedCreak || !primedPulse) {
-    primedCreak = new Audio('/sounds/door-creak.mp3')
-    primedPulse = new Audio('/sounds/heartbeat.mp3')
-    primedPulse.loop = true
-  }
-  return { creak: primedCreak, pulse: primedPulse }
-}
-
-export function primeArenaSounds() {
-  const s = getArenaSounds()
-  if (!s) return
-  for (const a of [s.creak, s.pulse]) {
-    a.muted = true
-    a.play()
-      .then(() => {
-        // Don't yank the audio back if the doors started for real meanwhile.
-        if (!soundsInUse) { a.pause(); a.currentTime = 0 }
-        a.muted = false
-      })
-      .catch(() => { a.muted = false })
-  }
-}
-
-// Ramp an audio element to silence then stop it — the creak is longer than the
-// door beat, and a hard cut mid-sound is more jarring than no sound at all.
-function fadeOutAndStop(a: HTMLAudioElement, ms = 400) {
-  const v0 = a.volume
-  const t0 = performance.now()
-  const step = () => {
-    const k = (performance.now() - t0) / ms
-    if (k >= 1) { a.pause(); return }
-    a.volume = v0 * (1 - k)
-    requestAnimationFrame(step)
-  }
-  requestAnimationFrame(step)
-}
+// Audio singletons and the fade helper live in `@/lib/arena-sounds` so the
+// lobby can prime them (it calls primeArenaSounds() from its create/join
+// handlers) without importing this file and dragging framer-motion into the
+// lobby's first-load JS.
 
 export interface ArenaDoorsProps {
   readonly roomId: string | null
@@ -142,7 +97,7 @@ export function ArenaDoors({ roomId }: ArenaDoorsProps) {
     if (!show) return
     const s = getArenaSounds()
     if (!s) return
-    soundsInUse = true
+    markArenaSoundsInUse(true)
     const { pulse, creak } = s
 
     pulse.currentTime = 0
@@ -158,7 +113,7 @@ export function ArenaDoors({ roomId }: ArenaDoorsProps) {
     creak.play().catch(() => {})
 
     return () => {
-      soundsInUse = false
+      markArenaSoundsInUse(false)
       fadeOutAndStop(pulse)
       fadeOutAndStop(creak) // longer than the beat — fade, don't chop
       pulseRef.current = null

@@ -135,6 +135,56 @@
     animation: rise-in 0.55s ease-out both;
   }
 
+  /*
+   * Lobby room-card motion, in CSS rather than framer-motion.
+   *
+   * The lobby used to animate these with `motion.li layout`, which pulled the
+   * whole framer-motion projection engine (~112 kB raw) into the route's first
+   * load and then measured every card's box on every frame — on the main
+   * thread, on a phone, while the room list is also being rebuilt from chain
+   * reads. It was the single largest lobby-only chunk and the reason /lobby
+   * trailed the home route on mobile.
+   *
+   * These keyframes animate transform and opacity only, so they run on the
+   * compositor and cost the main thread nothing. What was given up: the spring
+   * that slid cards around when the list reordered, and the shrink-out on
+   * removal. Cards now reorder and disappear instantly.
+   *
+   * --stagger is set per card from the render index.
+   */
+  .room-card-in {
+    animation: rise-in 0.4s ease-out both;
+    animation-delay: var(--stagger, 0ms);
+    transition: transform 0.18s ease-out;
+  }
+
+  /* Pointer-only: a phone has no hover, and this would otherwise stick after a tap. */
+  @media (hover: hover) {
+    .room-card-in:hover {
+      transform: scale(1.01);
+    }
+  }
+
+  /*
+   * Gold flash when a number changes under the reader (a player joined, a bot
+   * seat freed). Driven by a keyed remount, same as the framer-motion version
+   * it replaces: React tears down the old node, the new one mounts, and the
+   * animation runs once from the top.
+   */
+  .count-pulse {
+    animation: count-pulse 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .room-card-in,
+    .count-pulse {
+      animation: none;
+    }
+    .room-card-in {
+      transition: none;
+    }
+  }
+
   /* Occasional horror flicker — long cycle so it reads as a dying bulb, not a strobe. */
   .flicker-slow {
     animation: none;
@@ -345,6 +395,17 @@ select {
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes count-pulse {
+  from {
+    transform: scale(1.5);
+    color: #f5c518;
+  }
+  to {
+    transform: scale(1);
+    color: #d4c9b2;
   }
 }
 
