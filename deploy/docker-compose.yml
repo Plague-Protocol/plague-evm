@@ -181,6 +181,32 @@ services:
       SUPPORT_ALERT_USER_IDS: ${SUPPORT_ALERT_USER_IDS}
       DATABASE_URL: postgres://plague:${POSTGRES_PASSWORD}@postgres:5432/plague
 
+  # Draft writer for @zplaguehq. Once a day it writes a post about the game and
+  # sends it to the operators on Telegram. It does NOT post: there is no X API
+  # client in the service and no credentials for one. Publishing stays a human
+  # action. Full setup: ../x-bot/README.md
+  #
+  # Its own BotFather token, NOT the support bot's: that bot is DM'd by players
+  # and backs the published SLA, so this one must not share its failure domain.
+  x-bot:
+    build:
+      context: ../x-bot              # self-contained; no workspace deps
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://plague:${POSTGRES_PASSWORD}@postgres:5432/plague
+      X_BOT_TELEGRAM_TOKEN: ${X_BOT_TELEGRAM_TOKEN}
+      # Numeric Telegram user IDs (comma-separated) that receive drafts.
+      # Each must message the bot once or Telegram blocks the DM.
+      X_OPERATOR_IDS: ${X_OPERATOR_IDS}
+      # UTC hour the day's draft is written. One per day is enforced by a
+      # date-keyed unique index, not by this, so a restart cannot double up.
+      X_DRAFT_HOUR_UTC: ${X_DRAFT_HOUR_UTC:-9}
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
