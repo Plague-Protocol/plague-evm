@@ -51,12 +51,19 @@ const CHECK_MS = 15 * 60_000
 async function main() {
   await initStore(DATABASE_URL!)
 
+  // Declared before createApprovalBot so `/draft` can be wired in at
+  // construction, where it lands above the message:text catch-all.
+  let tick: (force?: boolean) => Promise<void>
+
   const { bot, notify } = createApprovalBot({
     token: TELEGRAM_TOKEN!,
     operatorIds: OPERATOR_IDS,
+    // `/draft` writes one now, for when you want something to post today
+    // rather than waiting for tomorrow. Still bound by the one-per-day key.
+    onDraft: () => tick(true),
   })
 
-  async function tick(force = false) {
+  tick = async function tick(force = false) {
     try {
       const now = new Date()
       if (!force && now.getUTCHours() < DRAFT_HOUR_UTC) return
@@ -76,14 +83,6 @@ async function main() {
       console.error('[draft] tick failed:', err)
     }
   }
-
-  // `/draft` forces one, for when you want something to post now rather than
-  // waiting for tomorrow. Still bound by the one-per-day key.
-  bot.command('draft', async ctx => {
-    if (!OPERATOR_IDS.includes(ctx.from?.id ?? -1)) return
-    await ctx.reply('Writing one now.')
-    await tick(true)
-  })
 
   setInterval(() => { void tick() }, CHECK_MS)
   void tick()

@@ -26,6 +26,16 @@ import { enforce, fit } from './style.js'
 export interface TelegramConfig {
   token: string
   operatorIds: number[]
+  /**
+   * Write today's draft now, for `/draft`.
+   *
+   * Passed in rather than registered by the caller after this returns. Command
+   * handlers must be registered before the `message:text` catch-all at the
+   * bottom of this file: a command IS a text message, grammy runs middleware in
+   * registration order, and that handler returns without calling next() when it
+   * has nothing to do. Anything registered later never runs.
+   */
+  onDraft: () => Promise<void>
 }
 
 /** Draft id an operator is currently retyping, keyed by their Telegram user id. */
@@ -131,6 +141,12 @@ export function createApprovalBot(cfg: TelegramConfig) {
     for (const d of rows) await send(ctx.chat.id, d, [])
   })
 
+  bot.command('draft', async ctx => {
+    if (!isOperator(ctx.from?.id)) return
+    await ctx.reply('Writing one now.')
+    await cfg.onDraft()
+  })
+
   bot.callbackQuery(/^(edit|done|skip):(\d+)$/, async ctx => {
     const uid = ctx.from.id
     if (!isOperator(uid)) return ctx.answerCallbackQuery({ text: 'Not authorised.' })
@@ -155,11 +171,16 @@ export function createApprovalBot(cfg: TelegramConfig) {
   })
 
   // Free text is only ever a replacement for a draft being edited.
-  bot.on('message:text', async ctx => {
+  //
+  // Calls next() on every path it does not consume. This handler matches ALL
+  // text, commands included, so swallowing what it cannot use makes every
+  // command registered after it silently dead. That is exactly what happened to
+  // /draft, which returned nothing at all until it moved above this line.
+  bot.on('message:text', async (ctx, next) => {
     const uid = ctx.from?.id
-    if (!isOperator(uid) || uid === undefined) return
+    if (!isOperator(uid) || uid === undefined) return next()
     const id = editing.get(uid)
-    if (id === undefined) return
+    if (id === undefined) return next()
 
     const { text, fixes } = enforce(ctx.message.text)
     await updateBody(id, fit(text))
