@@ -16,9 +16,9 @@
  * Caddy to route, and it keeps working when the public API is down.
  */
 
-import { initStore, enqueue, recentTemplateIds } from './store.js'
+import { initStore, enqueue, exists, recentTemplateIds } from './store.js'
 import { readPulse } from './stats.js'
-import { draftForToday } from './compose.js'
+import { dedupeKeyFor, draftForToday } from './compose.js'
 import { createApprovalBot } from './telegram.js'
 
 const DATABASE_URL = process.env.DATABASE_URL
@@ -67,6 +67,11 @@ async function main() {
     try {
       const now = new Date()
       if (!force && now.getUTCHours() < DRAFT_HOUR_UTC) return
+
+      // Cheapest exit first. Every tick after the draft hour would otherwise
+      // compose a draft and attempt an insert that the unique index rejects,
+      // which still burns a sequence value and made day two "Draft 61".
+      if (await exists(dedupeKeyFor(now))) return
 
       const [pulse, recent] = await Promise.all([readPulse(), recentTemplateIds()])
       const draft = draftForToday(pulse, recent, now)

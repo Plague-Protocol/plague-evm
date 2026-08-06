@@ -36,6 +36,14 @@ export interface Draft {
   fixes: string[]
 }
 
+/**
+ * The one-per-day key. Shared so callers can check for today's draft before
+ * going to the trouble of composing one.
+ */
+export function dedupeKeyFor(day: Date): string {
+  return `daily:${day.toISOString().slice(0, 10)}`
+}
+
 /** 18-decimal wei to a short human string: 12.5, 3, 0.25. */
 export function formatToken(wei: string): string {
   let v: bigint
@@ -219,7 +227,7 @@ export function draftForToday(pulse: Pulse, recentIds: string[], today = new Dat
   return {
     kind: chosen.t.kind,
     templateId: chosen.t.id,
-    dedupeKey: `daily:${today.toISOString().slice(0, 10)}`,
+    dedupeKey: dedupeKeyFor(today),
     text: fit(text, TWEET_MAX),
     fixes,
   }

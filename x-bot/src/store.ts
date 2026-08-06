@@ -49,10 +49,21 @@ export async function initStore(databaseUrl: string): Promise<void> {
   console.log('[store] draft table ready')
 }
 
+/** Whether a draft already exists for this key. */
+export async function exists(dedupeKey: string): Promise<boolean> {
+  const res = await pool.query(`SELECT 1 FROM x_drafts WHERE dedupe_key = $1`, [dedupeKey])
+  return (res.rowCount ?? 0) > 0
+}
+
 /**
  * Queue a draft. Returns null when one already exists for this key, which is
  * the once-a-day guard: `dedupe_key` is the date, and it is unique, so a
  * restart or two overlapping ticks cannot produce a second draft for today.
+ *
+ * Callers should check `exists` first. This still guards correctness on its
+ * own, but a rejected INSERT consumes a sequence value in Postgres even when
+ * ON CONFLICT swallows it, so relying on the conflict alone burns one id per
+ * tick. At a 15 minute tick that turned day two's draft into "Draft 61".
  */
 export async function enqueue(
   kind: string, templateId: string, dedupeKey: string, text: string,
