@@ -461,22 +461,59 @@ function getFriendlyError(err: unknown, isMiniPay: boolean): string {
   // undiagnosable — the player has nothing to report and we have nothing to
   // work from, which is exactly the hole we fell into chasing a MiniPay-only
   // create-room failure that produced no revert and no insufficient-funds text.
-  const detail = firstLineOf(msg, isMiniPay)
+  const detail = firstLineOf(extractErrorDetail(err), isMiniPay)
   return detail ? `Transaction failed — ${detail}` : 'Transaction failed. Please try again.'
 }
 
 /**
- * First meaningful line of a raw error, trimmed for a toast.
+ * Dig the provider's actual complaint out of a wrapped error.
  *
- * Sanitised under MiniPay: raw provider/viem errors routinely contain "gas" and
- * "CELO" (e.g. "insufficient funds for gas * price + value"), and MiniPay's
- * gateway rules forbid both in user-visible copy. A leaked banned term in an
- * error string is still a review failure, so the substitution happens here
- * rather than trusting every upstream message to be clean.
+ * `err.message` alone is not enough. viem wraps provider failures, so an
+ * injected wallet rejecting a request surfaces as the useless top-level string
+ * "An unknown RPC error occurred" (viem's UnknownRpcError) while the real
+ * `code` and `message` sit one or more levels down in `.cause`. Reading only
+ * the top level is what made a MiniPay-only failure undiagnosable.
+ *
+ * Walks the cause chain, collecting viem's `shortMessage`/`details` and the
+ * raw RPC `code`/`message`, deduped and in order of usefulness. Guarded against
+ * cycles because error causes can be self-referential.
+ */
+function extractErrorDetail(err: unknown): string {
+  const parts: string[] = []
+  const seen = new Set<unknown>()
+  let cur: unknown = err
+
+  while (cur && typeof cur === 'object' && !seen.has(cur)) {
+    seen.add(cur)
+    const o = cur as Record<string, unknown>
+    if (typeof o.shortMessage === 'string') parts.push(o.shortMessage)
+    if (typeof o.details === 'string') parts.push(o.details)
+    if (o.code !== undefined && (typeof o.code === 'number' || typeof o.code === 'string')) {
+      parts.push(`code ${o.code}`)
+    }
+    if (typeof o.message === 'string') parts.push(o.message)
+    cur = o.cause
+  }
+  if (parts.length === 0 && typeof err === 'string') parts.push(err)
+
+  // Drop viem's own placeholder once anything more specific exists, and drop
+  // duplicates — the same sentence usually repeats at several levels.
+  const unique = [...new Set(parts.map(p => p.split('\n')[0].trim()).filter(Boolean))]
+  const useful = unique.filter(p => !/^An unknown RPC error occurred/i.test(p))
+  return (useful.length > 0 ? useful : unique).join(' · ')
+}
+
+/**
+ * Trim an extracted detail for a toast, sanitised for MiniPay.
+ *
+ * Raw provider/viem errors routinely contain "gas" and "CELO" (e.g.
+ * "insufficient funds for gas * price + value"), and MiniPay's gateway rules
+ * forbid both in user-visible copy. A leaked banned term in an error string is
+ * still a review failure, so substitution happens here rather than trusting
+ * every upstream message to be clean.
  */
 function firstLineOf(msg: string, isMiniPay: boolean): string {
-  const line = msg.split('\n').map(s => s.trim()).find(Boolean) ?? ''
-  const clipped = line.length > 120 ? `${line.slice(0, 120)}…` : line
+  const clipped = msg.length > 200 ? `${msg.slice(0, 200)}…` : msg
   if (!isMiniPay) return clipped
   return clipped
     .replace(/\bgas\s*fees?\b/gi, 'network fee')
