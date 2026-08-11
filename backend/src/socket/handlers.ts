@@ -1513,6 +1513,60 @@ async function processActiveRoom(io: Server, id: bigint, rawRoom: RawRoom, now: 
   else if (phase === 3) await handleEliminationPhase(io, id, rawRoom, now)
 }
 
+/**
+ * Force one specific room forward, without touching any other room.
+ *
+ * The monitors already do this on a loop, but only for rooms in `liveRoomIds`
+ * and only while they are behaving. When something puts a single room in a
+ * state the loop skips, the previous recovery was "restart the backend" —
+ * which rebuilds `liveRoomIds` from chain, but also interrupts every *other*
+ * live game to fix one. This is the surgical version.
+ *
+ * It re-adds the room to `liveRoomIds` first, so whatever happens next, the
+ * normal monitors keep driving it afterwards.
+ *
+ * Returns a short description of the action taken, for the caller to log or
+ * show to an operator.
+ */
+export async function recoverRoom(io: Server, id: bigint): Promise<string> {
+  const room = await chainAdapter.getRoom(id)
+  const status = Number(room.status)
+
+  // RoomStatus: 0 Waiting, 1 Starting, 2 Active, 3 Ended
+  if (status === 3) {
+    liveRoomIds.delete(id)
+    return 'room already ended — nothing to do'
+  }
+
+  liveRoomIds.add(id)
+
+  if (status === 0) {
+    const expiresAtMs = Number(room.expiresAt) * 1000
+    if (Date.now() < expiresAtMs) {
+      return `waiting room, not yet expired (expires in ${Math.round((expiresAtMs - Date.now()) / 60_000)}m) — left alone`
+    }
+    await chainAdapter.expireRoom(id)
+    queueRoomSnapshot(io, id.toString())
+    return 'expired the waiting room and refunded stakes'
+  }
+
+  if (status === 1) {
+    // Same path the role-commitment monitor uses: commit everyone who can be
+    // committed, then either begin the game or void it and refund.
+    await processRoomForCommitment(id)
+    queueRoomSnapshot(io, id.toString())
+    return 'ran the start/commit path (beginActivePhase or finalizeStartTimeout)'
+  }
+
+  // Active. processActiveRoom dispatches on the current phase, and each phase
+  // handler is individually safe to invoke — they re-read chain state and the
+  // contract rejects anything out of order.
+  await processActiveRoom(io, id, room, Date.now())
+  queueRoomSnapshot(io, id.toString())
+  const phases = ['Infection', 'Discussion', 'Voting', 'Reveal', 'Ended']
+  return `advanced active room from ${phases[Number(room.currentPhase)] ?? room.currentPhase} (round ${room.currentRound})`
+}
+
 export function startPhaseAdvanceMonitor(io: Server, intervalMs = Number(process.env.PHASE_ADVANCE_INTERVAL_MS ?? 2_000)): NodeJS.Timeout {
   return setInterval(async () => {
     if (!liveRoomsInitialized) return

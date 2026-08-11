@@ -13,11 +13,19 @@
  * - **Telegram** (`TELEGRAM_BOT_TOKEN` + `OPS_ALERT_TELEGRAM_IDS`) — reuses the
  *   existing support bot's token. Called over plain `fetch` rather than pulling
  *   grammY into the backend; this is two endpoints, not a framework.
- * - **Email** (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASS`/`OPS_ALERT_EMAIL_TO`).
+ * - **Email** (`RESEND_API_KEY` + `ALERT_EMAIL`) — Resend's HTTP API, also over
+ *   plain `fetch`, which is why this file has no mail dependency at all.
  *
- * ⚠️ Telegram is the one to trust. Mail sent from a bare VPS IP to Gmail
- * frequently lands in spam or is rejected outright, and it will do that exactly
- * when it matters. Treat email as the audit trail and Telegram as the page.
+ * Resend rather than raw SMTP specifically because mail sent from a bare VPS IP
+ * to Gmail is frequently spam-foldered or rejected outright — and it would do
+ * that exactly when an alert matters. Resend sends from its own warmed
+ * infrastructure, which removes that failure mode.
+ *
+ * ⚠️ `ALERT_EMAIL_FROM` defaults to `onboarding@resend.dev`, Resend's shared
+ * sender. On an unverified account that address can ONLY deliver to the address
+ * that owns the Resend account — fine for a single operator, silently useless
+ * the moment you add a second recipient. Verify zplague.xyz in the Resend
+ * dashboard and set a real from-address before relying on it more widely.
  *
  * Every send is wrapped: an alerting failure must never take down the caller.
  * The whole point is that this runs inside the monitors that keep games moving.
@@ -32,12 +40,9 @@ const TELEGRAM_IDS = (process.env.OPS_ALERT_TELEGRAM_IDS ?? '')
   .map(s => s.trim())
   .filter(Boolean)
 
-const SMTP_HOST = process.env.SMTP_HOST ?? ''
-const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587)
-const SMTP_USER = process.env.SMTP_USER ?? ''
-const SMTP_PASS = process.env.SMTP_PASS ?? ''
-const SMTP_FROM = process.env.SMTP_FROM ?? SMTP_USER
-const EMAIL_TO = (process.env.OPS_ALERT_EMAIL_TO ?? '')
+const RESEND_API_KEY = process.env.RESEND_API_KEY ?? ''
+const EMAIL_FROM = process.env.ALERT_EMAIL_FROM ?? 'onboarding@resend.dev'
+const EMAIL_TO = (process.env.ALERT_EMAIL ?? '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean)
@@ -51,7 +56,7 @@ const ICON: Record<Severity, string> = {
 export function alertingConfigured(): { telegram: boolean; email: boolean } {
   return {
     telegram: Boolean(TELEGRAM_TOKEN) && TELEGRAM_IDS.length > 0,
-    email: Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS) && EMAIL_TO.length > 0,
+    email: Boolean(RESEND_API_KEY) && EMAIL_TO.length > 0,
   }
 }
 
@@ -77,18 +82,23 @@ async function sendTelegram(text: string): Promise<void> {
 }
 
 async function sendEmail(subject: string, text: string): Promise<void> {
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || EMAIL_TO.length === 0) return
+  if (!RESEND_API_KEY || EMAIL_TO.length === 0) return
   try {
-    // Imported lazily so a backend with no SMTP configured never pays for the
-    // module, and a missing/broken nodemailer install cannot break boot.
-    const nodemailer = await import('nodemailer')
-    const transport = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: EMAIL_FROM, to: EMAIL_TO, subject, text }),
     })
-    await transport.sendMail({ from: SMTP_FROM, to: EMAIL_TO.join(','), subject, text })
+    if (!res.ok) {
+      // 403 with "You can only send testing emails to your own email address"
+      // means the from-address is still onboarding@resend.dev on an unverified
+      // account. Verify a domain and set ALERT_EMAIL_FROM. Logged in full
+      // because Resend's message is the useful part.
+      logger.warn(`[alerts] resend rejected: ${res.status} ${await res.text()}`)
+    }
   } catch (err) {
     logger.warn(`[alerts] email failed: ${err instanceof Error ? err.message : String(err)}`)
   }

@@ -76,6 +76,16 @@ cast call 0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710 "getRoom(uint256)" <ROOM_ID
   deadlock. It now calls `assignInfection(id, ZERO_ADDRESS)` instead, guarded
   on patient zero being set.
 
+  **Recover ONE room without touching the others** (added 2026-08-11). The old
+  answer was "restart the backend" — that works, because `liveRoomIds` is
+  rebuilt from chain on boot, but it interrupts every other live game to fix
+  one. `POST /api/rooms/:id/unstick` is the surgical version: it re-adds the
+  room to `liveRoomIds` and runs whichever transition its current status calls
+  for (expire / begin-or-void / advance phase). Safe on a healthy room — every
+  action is one the monitors would take anyway, and the contract rejects
+  anything out of order, so the worst case is a no-op. Admin-signed against the
+  on-chain admin, because it spends gas and can end a room holding real stakes.
+
   **Manual recovery**, if a room is stuck on an old backend build:
 
   ```bash

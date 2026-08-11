@@ -57,6 +57,10 @@ const io = new Server(httpServer, {
   cors: { origin: allowedOrigins },
 })
 
+// Routes reach socket.io through the app rather than importing this module,
+// which would be a require cycle (index → routes → index).
+app.set('io', io)
+
 setupSocketHandlers(io)
 startRoomExpiryMonitor(io)
 startRoleCommitmentMonitor(io)

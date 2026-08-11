@@ -107,14 +107,13 @@ services:
       # Telegram is the channel to trust — reuses the support bot's token.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       OPS_ALERT_TELEGRAM_IDS: ${OPS_ALERT_TELEGRAM_IDS:-}
-      # Email is the audit trail. Mail from a bare VPS IP to Gmail lands in spam
-      # often enough that it must not be the only channel.
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      OPS_ALERT_EMAIL_TO: ${OPS_ALERT_EMAIL_TO:-}
+      # Email via Resend's HTTP API (no mail dependency, and it sends from
+      # warmed infrastructure rather than this VPS's bare IP, which Gmail would
+      # spam-folder). ALERT_EMAIL_FROM defaults to onboarding@resend.dev, which
+      # on an unverified account can only deliver to the Resend account owner.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
       interval: 15s

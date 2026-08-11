@@ -144,7 +144,11 @@ async function checkStalledRooms(liveRoomIds: bigint[], now: number): Promise<vo
           `Players: ${room.players.length}, pot ${celo(room.pot)} USDm`,
           '',
           'Check backend gas first, then `docker compose logs backend | grep',
-          'phase-advance-monitor`. Runbook: docs/TROUBLESHOOTING.md section 1.',
+          'phase-advance-monitor`.',
+          '',
+          `Recover just this room (leaves every other game running):`,
+          `  POST /api/rooms/${id}/unstick  — admin-signed, see /admin`,
+          'Runbook: docs/TROUBLESHOOTING.md section 1.',
         ],
       })
     } catch (err) {

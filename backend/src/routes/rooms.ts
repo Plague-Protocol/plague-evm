@@ -1,9 +1,12 @@
 import { Router } from 'express'
+import type { Server } from 'socket.io'
 import { z } from 'zod'
-import { isAddress } from 'viem'
+import { isAddress, recoverMessageAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
 import { createRoomRecord, getActiveRoomByHost, listWaitingRooms } from '../repositories/rooms'
+import { recoverRoom } from '../socket/handlers'
 import { prisma } from '../db/prisma'
+import { logger } from '../lib/logger'
 
 export const roomRouter = Router()
 
@@ -314,6 +317,74 @@ roomRouter.get('/:id/name', async (req, res) => {
     res.json({ name: room?.name ?? null })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
+
+// ─── Ops: recover one stuck room ──────────────────────────────────────────────
+
+/** Admin-signed, and the signature is only valid for this long. Mirrors the
+ *  site-config route so there is one auth story, not two. */
+const SIGNATURE_WINDOW_MS = 5 * 60 * 1000
+
+/** The exact string the admin wallet signs. Must match the frontend builder. */
+export function unstickMessage(roomId: string, timestamp: number): string {
+  return `plague-ops:unstick:${roomId}:${timestamp}`
+}
+
+const UnstickSchema = z.object({
+  address:   z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  timestamp: z.number().int(),
+  signature: z.string().regex(/^0x[0-9a-fA-F]+$/),
+})
+
+/**
+ * POST /api/rooms/:id/unstick
+ *
+ * Force ONE room forward. Before this existed the only recovery was restarting
+ * the backend — which works, because `liveRoomIds` is rebuilt from chain on
+ * boot, but interrupts every other live game to fix one. This touches nothing
+ * else.
+ *
+ * Safe to call on a healthy room: every action it can take is one the monitors
+ * would take anyway, each handler re-reads chain state, and the contract
+ * rejects anything out of order. Worst case it is a no-op.
+ *
+ * Gated on the on-chain admin, not an env secret — it spends real gas and can
+ * end a room holding real stakes.
+ */
+roomRouter.post('/:id/unstick', async (req, res) => {
+  const roomId = req.params.id
+  if (!/^\d+$/.test(roomId)) return res.status(400).json({ error: 'bad_room_id' })
+
+  const parsed = UnstickSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+  const { address, timestamp, signature } = parsed.data
+
+  if (Math.abs(Date.now() - timestamp) > SIGNATURE_WINDOW_MS) {
+    return res.status(401).json({ error: 'stale_signature', message: 'Signature expired — try again.' })
+  }
+
+  try {
+    const signer = await recoverMessageAddress({
+      message: unstickMessage(roomId, timestamp),
+      signature: signature as `0x${string}`,
+    })
+    if (signer.toLowerCase() !== address.toLowerCase()) {
+      return res.status(401).json({ error: 'bad_signature' })
+    }
+    const admin = await chainAdapter.getAdmin()
+    if (signer.toLowerCase() !== admin.toLowerCase()) {
+      return res.status(403).json({ error: 'not_admin', message: 'Only the contract admin can recover a room.' })
+    }
+
+    const io = req.app.get('io') as Server
+    const action = await recoverRoom(io, BigInt(roomId))
+    logger.info(`[ops] room ${roomId} unstick by admin ${signer}: ${action}`)
+    res.json({ success: true, roomId, action })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logger.warn(`[ops] room ${roomId} unstick failed: ${message}`)
     res.status(500).json({ error: message })
   }
 })
