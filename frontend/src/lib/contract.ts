@@ -42,7 +42,29 @@ export const FEE_CURRENCY_USDT_ADAPTER = '0x0e2a3e05bc9a16f5292a6170456a710cb89c
 function supportsFeeCurrency(): boolean {
   const eth = globalThis.window?.ethereum
   if (!eth) return false
-  return !!(eth.isMiniPay || eth.isValora || eth.isOpera)
+  // MiniPay is deliberately EXCLUDED, despite being the most Celo-native wallet
+  // here — passing feeCurrency is what broke every write inside it.
+  //
+  // Symptom: `UnknownRpcError: An unknown RPC error occurred` on createRoom,
+  // with no revert reason and no insufficient-funds text, while the identical
+  // code worked in MetaMask on desktop. viem's UnknownRpcError means the
+  // provider rejected the request before it reached the chain, and `feeCurrency`
+  // is the only field that differs between the two paths: the other two
+  // MiniPay-only branches (ensureChain early-return, gasLimitFor -> undefined)
+  // send nothing extra. A non-standard key in the eth_sendTransaction params is
+  // exactly what makes a provider return an error viem cannot classify.
+  //
+  // Losing nothing by removing it, because MiniPay picks the fee token itself:
+  // "MiniPay may ignore feeCurrency and choose the token the user has the most
+  // of" (docs.minipay.xyz/technical-references/send-transaction.html). Setting
+  // it was at best a no-op and at worst — this. It also actively worked against
+  // users: it named USDm, while MiniPay users typically hold USDC/USDT and no
+  // USDm at all, which is the whole reason the lobby shows a convert banner.
+  //
+  // Valora and Opera keep it. They are Celo-native, handle CIP-64 type-123, and
+  // do not override the choice, so there it genuinely buys stablecoin gas.
+  if (eth.isMiniPay) return false
+  return !!(eth.isValora || eth.isOpera)
 }
 
 /**
