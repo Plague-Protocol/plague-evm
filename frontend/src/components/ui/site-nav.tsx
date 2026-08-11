@@ -145,7 +145,8 @@ export function SiteNav({ currentPath }: SiteNavProps) {
           <div className="mt-3 border-t pt-3" style={{ borderColor: 'rgba(107,142,35,0.15)' }}>
             <PlayerNameChip inline />
             <div className="mt-3 flex items-center justify-between gap-3">
-              <ConnectButton />
+              {/* Left-most item in the panel → the dropdown must open rightward. */}
+              <ConnectButton align="left" />
               <OnlineCount />
             </div>
           </div>

@@ -1185,17 +1185,21 @@ export default function LobbyPage() {
               className="mb-6 rounded-lg border p-4"
               style={{ backgroundColor: 'rgba(245,197,24,0.06)', borderColor: 'rgba(245,197,24,0.4)' }}
             >
+              {/* The action is the word "Convert" inline, not a separate button
+                  below — on a 360px-wide MiniPay viewport the banner plus a
+                  full-width button ate most of the fold before the room list. */}
               <p className="font-mono text-sm" style={{ color: '#f5c518' }}>
                 You hold {altStables.map(a => `${a.amount.toFixed(2)} ${a.symbol}`).join(' and ')}, but
-                stakes are paid in {STABLE_TOKEN}. Convert to {STABLE_TOKEN} to play.
+                stakes are paid in {STABLE_TOKEN}.{' '}
+                <a
+                  href={MINIPAY_POCKETS_URL}
+                  className="font-bold uppercase tracking-wider underline transition-all hover:opacity-80"
+                  style={{ color: '#f5c518', textUnderlineOffset: '3px' }}
+                >
+                  Convert
+                </a>
+                {' '}to {STABLE_TOKEN} to play.
               </p>
-              <a
-                href={MINIPAY_POCKETS_URL}
-                className="mt-3 inline-block rounded px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-all hover:opacity-90"
-                style={{ backgroundColor: '#f5c518', color: '#0a0e27' }}
-              >
-                Convert in MiniPay
-              </a>
             </div>
           )}
 
@@ -1260,8 +1264,8 @@ export default function LobbyPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
-                    Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN} per extra Shield
-                    {' '}(1% of stake, min {formatToken(MIN_PROOF_FEE_WEI)}). First Shield is free.
+                    Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN}.
+                    <br />First Shield is free.
                   </p>
 
                   {myActiveRoom && (

@@ -66,6 +66,13 @@ const earlyResolveRetryAttempts = new Map<string, number>()
 const liveRoomIds = new Set<bigint>()
 let liveRoomsInitialized = false
 
+/** Rooms the backend is currently driving. Exposed for the ops watchdog, which
+ *  checks each one's phase clock for a stall. Returns a copy — callers must not
+ *  be able to mutate the monitor's working set. */
+export function getLiveRoomIds(): bigint[] {
+  return [...liveRoomIds]
+}
+
 async function initLiveRoomIds(): Promise<void> {
   try {
     const count = await chainAdapter.getRoomCount()

@@ -3,7 +3,16 @@
 import { useState, useRef, useEffect } from 'react'
 import { useWallet } from '@/hooks/useWallet'
 
-export function ConnectButton() {
+/**
+ * `align` controls which edge the account dropdown hangs from.
+ *
+ * The default 'right' is correct in the desktop header, where the button sits
+ * at the far right and the panel opens inward. In the mobile menu the button is
+ * the LEFT-most item, so a right-anchored 200px panel starts at roughly -74px
+ * and gets clipped off-screen — which is exactly what MiniPay showed on device:
+ * "SIGNED IN" rendered as "SNED IN" with the address and copy row cut in half.
+ */
+export function ConnectButton({ align = 'right' }: { align?: 'left' | 'right' } = {}) {
   const { isConnected, address, isLoading, isMiniPay, connect, disconnect } = useWallet()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -85,7 +94,9 @@ export function ConnectButton() {
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 min-w-[200px] rounded-xl border p-2"
+          className={`absolute top-full mt-1 min-w-[200px] max-w-[calc(100vw-2rem)] rounded-xl border p-2 ${
+            align === 'left' ? 'left-0' : 'right-0'
+          }`}
           style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200, position: 'absolute' }}
         >
           {/* Address — truncated under MiniPay (secondary hint only), full

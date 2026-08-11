@@ -100,6 +100,8 @@ const PLAGUE_ABI = parseAbi([
   'function expireRoom(uint256 roomId) external',
   // Reads
   'function getRoom(uint256 roomId) external view returns ((uint256 id, address host, uint8 status, (uint32 minPlayers, uint32 maxPlayers, uint256 stakeAmount, uint32 maxRounds, uint64 roundDurationSecs, uint64 discussionDurationSecs, uint64 votingDurationSecs, uint64 expirySecs, uint256 proofFee) config, address[] players, uint32 currentRound, uint8 currentPhase, uint256 pot, uint64 createdAt, uint64 expiresAt, uint64 startedAt, uint64 phaseStartedAt))',
+  'function activeRoomCount() external view returns (uint256)',
+  'function maxActiveRooms() external view returns (uint256)',
   'function getPlayer(uint256 roomId, address player) external view returns ((address addr, uint8 status, bytes32 roleCommitment, uint256 staked, address voteTarget, uint64 joinedAt, bool freeProofUsed, uint32 proofsSubmittedTotal, bool pendingInfectionNextRound, bool hasProofThisRound, bool hasVotedThisRound, bool roleCommitted))',
   'function currentPatientZero(uint256 roomId) external view returns (address)',
   'function roomCount() external view returns (uint256)',
@@ -283,6 +285,35 @@ export const chainAdapter = {
    *  our server (same-origin, no public-RPC CORS/rate-limit exposure). */
   getRpcUrls(): string[] {
     return clients().rpcUrls
+  },
+
+  // ── Ops / watchdog reads ───────────────────────────────────────────────────
+
+  /** Address of the BACKEND_SIGNER key. Watched for a low gas balance — when it
+   *  ran dry every phase transition failed silently for 100 hours. */
+  getSignerAddress(): `0x${string}` {
+    return clients().account.address
+  },
+
+  /** Native CELO balance. Gas is paid in CELO, never in the USDm stake token. */
+  async getNativeBalance(addr: `0x${string}`): Promise<bigint> {
+    return clients().publicClient.getBalance({ address: addr })
+  },
+
+  /** Rooms currently occupying a slot. A room that deadlocks holds its slot
+   *  forever, so this creeping toward maxActiveRooms is an early warning. */
+  async getActiveRoomCount(): Promise<bigint> {
+    const { publicClient, address } = clients()
+    return publicClient.readContract({
+      address, abi: PLAGUE_ABI, functionName: 'activeRoomCount',
+    }) as Promise<bigint>
+  },
+
+  async getMaxActiveRooms(): Promise<bigint> {
+    const { publicClient, address } = clients()
+    return publicClient.readContract({
+      address, abi: PLAGUE_ABI, functionName: 'maxActiveRooms',
+    }) as Promise<bigint>
   },
 
   // ── Reads ──────────────────────────────────────────────────────────────────

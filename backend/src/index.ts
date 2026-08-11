@@ -16,8 +16,10 @@ import {
   startRoomExpiryMonitor,
   startRoleCommitmentMonitor,
   startPhaseAdvanceMonitor,
+  getLiveRoomIds,
 } from './socket/handlers'
 import { startRpcHealthMonitor } from './services/chainAdapter'
+import { startOpsWatchdog } from './services/opsWatchdog'
 import { logger } from './lib/logger'
 
 dotenv.config()
@@ -60,6 +62,10 @@ startRoomExpiryMonitor(io)
 startRoleCommitmentMonitor(io)
 startPhaseAdvanceMonitor(io)
 startRpcHealthMonitor()
+// Watches signer gas, stalled phase clocks and room-slot exhaustion, and pages
+// an operator. `/health` stayed green through the 2026-08-11 freeze, so uptime
+// alone is not evidence the games are moving.
+startOpsWatchdog(getLiveRoomIds)
 
 // ─── Live presence ──────────────────────────────────────────────────────────
 // Heartbeat model: every open tab POSTs a ping every ~30s; "online" = distinct
