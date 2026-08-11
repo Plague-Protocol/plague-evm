@@ -92,6 +92,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (!provider?.isMiniPay) return
     setIsMiniPay(true)
     twConnect(async () => {
+      // Ask for accounts EXPLICITLY before handing the provider to thirdweb.
+      //
+      // Reading accounts and being authorised to sign are separate grants.
+      // `eth_accounts` returns the address without granting anything, and every
+      // write then fails with MiniPay's "Permission denied" (code -32604) —
+      // which reads like a wallet bug but is the origin never having been
+      // authorised. It is deceptive precisely because the app looks connected:
+      // the address renders, balances load, and only transactions fail.
+      //
+      // `eth_requestAccounts` is the grant, and it is what MiniPay's own
+      // connection docs call. It is idempotent — already-authorised origins get
+      // the accounts back with no prompt — so this is safe on every reload and
+      // does not reintroduce a connect step.
+      await provider.request({ method: 'eth_requestAccounts' }).catch(() => {
+        // Non-fatal: if it fails, fall through and let thirdweb try. A hard
+        // throw here would leave MiniPay users with no wallet at all, which is
+        // strictly worse than the failure this is meant to prevent.
+      })
       const wallet = EIP1193.fromProvider({ provider })
       await wallet.connect({ client: thirdwebClient, chain: targetChain() })
       return wallet
