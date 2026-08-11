@@ -35,9 +35,7 @@ export const FEE_CURRENCY_USDT_ADAPTER = '0x0e2a3e05bc9a16f5292a6170456a710cb89c
  * the native-CELO path. Guessing optimistically here would break signing against
  * a live contract holding real stakes.
  *
- * Note MiniPay is listed but does not actually honour the value: per its docs it
- * "may ignore feeCurrency and choose the token the user has the most of". We set
- * it anyway so the intent is explicit in code rather than implied.
+ * MiniPay is NOT on the list — see the inline note below for why it was removed.
  */
 function supportsFeeCurrency(): boolean {
   const eth = globalThis.window?.ethereum
@@ -85,6 +83,29 @@ function feeCurrencyFor(chainId: number): `0x${string}` | undefined {
 const ATTRIBUTION_SUFFIX = toDataSuffix(
   process.env.NEXT_PUBLIC_ATTRIBUTION_TAG ?? 'celo_c2d022d1d4ac',
 )
+
+/**
+ * The attribution suffix, or undefined under MiniPay.
+ *
+ * MiniPay refuses tagged calldata. Every write there failed instantly with
+ * "Permission denied" (code -32604) and no confirmation sheet, and the labelled
+ * error pinned it to the ERC-20 `approve`. A standard approve is exactly 68
+ * bytes (selector + spender + amount); appending the tag makes it longer, and a
+ * wallet that decodes approvals to show "approve X USDm to <spender>" cannot
+ * parse that. Refusing to sign calldata it cannot describe is correct behaviour
+ * on MiniPay's part — showing a user an approval it could not read would be
+ * worse.
+ *
+ * Everywhere else the tag stays, so existing attribution is unaffected.
+ *
+ * ⚠️ The tag is very likely dead weight now: it exists for the Celo Builders
+ * "Agentic Payments & DeFAI" hackathon, which closed 2026-08-03. Once you are
+ * sure no leaderboard still reads it, delete ATTRIBUTION_SUFFIX and this helper
+ * outright rather than carrying a special case for a finished competition.
+ */
+function attributionSuffixFor(): `0x${string}` | undefined {
+  return isMiniPay() ? undefined : ATTRIBUTION_SUFFIX
+}
 
 // ── ABI ───────────────────────────────────────────────────────────────────────
 // Mirrors PlagueGame.sol — update if the Solidity interface changes.
@@ -376,7 +397,7 @@ export class PlagueContractClient {
       functionName: 'createRoom',
       args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
       gas,
     })
@@ -424,7 +445,7 @@ export class PlagueContractClient {
       functionName: 'joinRoom',
       args:         [roomId],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
       gas,
     })
@@ -491,7 +512,7 @@ export class PlagueContractClient {
       functionName: 'approve',
       args:         [this.address, approvalAmount],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
@@ -517,7 +538,7 @@ export class PlagueContractClient {
       functionName: 'startGame',
       args:         [roomId],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -540,7 +561,7 @@ export class PlagueContractClient {
       functionName: 'submitRoleCommitment',
       args:         [roomId, commitment, zkProof],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -554,7 +575,7 @@ export class PlagueContractClient {
       functionName: 'castVote',
       args:         [roomId, target],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -578,7 +599,7 @@ export class PlagueContractClient {
       functionName: 'submitInnocenceProof',
       args:         [roomId, commitment, nullifier, zkProof],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -595,7 +616,7 @@ export class PlagueContractClient {
       functionName: 'expireRoom',
       args:         [roomId],
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -729,7 +750,7 @@ export class PlagueContractClient {
       abi:          PLAGUE_GAME_ABI,
       functionName: 'withdrawPlatformFees',
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -823,7 +844,7 @@ export class FaucetClient {
       abi:          FAUCET_ABI,
       functionName: 'claim',
       account,
-      dataSuffix:   ATTRIBUTION_SUFFIX,
+      dataSuffix:   attributionSuffixFor(),
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
