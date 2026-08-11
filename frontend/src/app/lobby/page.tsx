@@ -456,7 +456,32 @@ function getFriendlyError(err: unknown, isMiniPay: boolean): string {
     if (reason) return `Transaction reverted: ${reason}`
     return 'Transaction reverted by the contract.'
   }
-  return 'Transaction failed. Please try again.'
+  // Anything we don't recognise. Showing the underlying reason matters more
+  // than a tidy sentence: "Transaction failed. Please try again." is
+  // undiagnosable — the player has nothing to report and we have nothing to
+  // work from, which is exactly the hole we fell into chasing a MiniPay-only
+  // create-room failure that produced no revert and no insufficient-funds text.
+  const detail = firstLineOf(msg, isMiniPay)
+  return detail ? `Transaction failed — ${detail}` : 'Transaction failed. Please try again.'
+}
+
+/**
+ * First meaningful line of a raw error, trimmed for a toast.
+ *
+ * Sanitised under MiniPay: raw provider/viem errors routinely contain "gas" and
+ * "CELO" (e.g. "insufficient funds for gas * price + value"), and MiniPay's
+ * gateway rules forbid both in user-visible copy. A leaked banned term in an
+ * error string is still a review failure, so the substitution happens here
+ * rather than trusting every upstream message to be clean.
+ */
+function firstLineOf(msg: string, isMiniPay: boolean): string {
+  const line = msg.split('\n').map(s => s.trim()).find(Boolean) ?? ''
+  const clipped = line.length > 120 ? `${line.slice(0, 120)}…` : line
+  if (!isMiniPay) return clipped
+  return clipped
+    .replace(/\bgas\s*fees?\b/gi, 'network fee')
+    .replace(/\bgas\b/gi, 'network fee')
+    .replace(/\bCELO\b/g, 'the fee token')
 }
 
 /** Does this failure mean "the wallet is short of money" rather than anything else? */
@@ -472,6 +497,10 @@ function isLowFundsError(err: unknown): boolean {
  * The toast still fires first so the reason is visible before the screen changes.
  */
 function reportTxError(err: unknown, isMiniPay: boolean): void {
+  // Full object, untruncated — the toast is necessarily short and sanitised.
+  // Kept unconditionally: MiniPay has no devtools, so when a user reports a
+  // failure the only other record is whatever they can retype from a toast.
+  console.error('[tx] failed', { isMiniPay, err })
   toast.error(getFriendlyError(err, isMiniPay))
   if (isMiniPay && isLowFundsError(err)) {
     // Delay so the toast is readable before MiniPay swaps the view out.
