@@ -54,15 +54,50 @@ docker compose logs backend | grep "phase-advance-monitor" | tail -20
 cast call 0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710 "getRoom(uint256)" <ROOM_ID> --rpc-url https://forno.celo.org
 ```
 
-- **Log shows `no clean alive players to infect`** → cause B. The warning
-  fires once per room+round. This means the game reached round N with every
-  alive player infected but was NOT ended by `finalizeElimination` in round
-  N-1. That is a **contract-level question**: the win-condition check should
-  arguably have ended the game as `infected_win`. If this ever fires, capture
-  the room id + round and review `finalizeElimination` / win conditions in
-  `contracts/src/PlagueGame.sol` before large-pot games hit it. Stakes in a
-  stuck Active room are NOT recoverable via `expireRoom` (that only handles
-  Waiting rooms) — check the contract for an admin path if funds are trapped.
+- **Log shows `no clean alive players to infect`** → cause B. **Fixed
+  2026-08-11 — this should no longer deadlock a room.** Read the rest of this
+  bullet before concluding funds are trapped; the earlier version of this
+  runbook said they were, and that was wrong.
+
+  The state is real: the game reaches round N with every alive player infected,
+  because `finalizeElimination` has no `cleanAlive == 0 → InfectedWin` terminal
+  branch (`PlagueGame.sol:837-846` checks only `infectedAlive == 0`,
+  `1v1`, and max-rounds), so it advances into an Infection phase that has no
+  valid target.
+
+  **But the contract can still resolve it — the backend just wasn't asking.**
+  `assignInfection` reaches an endgame parity check at
+  `PlagueGame.sol:614-621` (`infectedAlive > cleanAlive` → `InfectedWin`,
+  pot distributed). From round 2 on, `firstInfection` is false, so the contract
+  **ignores the `target` argument entirely**, reads its own
+  `pendingInfectionTarget`, skips the infection when that target isn't
+  clean/alive, and falls through to the parity check. `handleInfectionPhase`
+  used to `return` on an empty `cleanAlive` — that early return *was* the
+  deadlock. It now calls `assignInfection(id, ZERO_ADDRESS)` instead, guarded
+  on patient zero being set.
+
+  **Manual recovery**, if a room is stuck on an old backend build:
+
+  ```bash
+  # Simulate first — succeeds (returns 0x) if the room will resolve
+  cast call --from $BACKEND_SIGNER $GAME "assignInfection(uint256,address)" \
+    <ROOM_ID> 0x0000000000000000000000000000000000000000 --rpc-url https://forno.celo.org
+  # Then send it for real with --private-key $BACKEND_SIGNER_KEY
+  ```
+
+  Verified against mainnet room 186 on 2026-08-11 (5 players, 3 eliminated,
+  2 infected, 0 clean, stuck at round 3 for 100+ hours).
+
+  ⚠️ `expireRoom` genuinely does NOT help — it requires `RoomStatus.Waiting`.
+  And there is **no admin override**: `PlagueGame` is a plain
+  (non-upgradeable) contract whose `onlyAdmin` surface is limited to
+  `setPlatformReceiver` / `setFeeManager` / `setPotEscrow` /
+  `withdrawPlatformFees` / `setBackendSigner` / `setZkVerifier` /
+  `setMaxActiveRooms`. `assignInfection` is the only door out.
+
+  A room that stays stuck also permanently holds one of the 10
+  `maxActiveRooms` slots, since `activeRoomCount` only decrements on the
+  end-game paths. `setMaxActiveRooms` is the stopgap if slots get burned.
 - **Log shows repeated `assignInfection failed`** with a real error (not
   WrongPhase/NotActive) → backend signer problem: check its CELO gas
   (`0xb895af9AA23451314601822B403E4e6f7456E950`), RPC health, nonce.

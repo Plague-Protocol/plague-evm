@@ -1358,17 +1358,47 @@ async function handleInfectionPhase(io: Server, id: bigint, rawRoom: RawRoom): P
       if (playerStates[i].status === 0) cleanAlive.push(playerAddrs[i])
     }
     if (cleanAlive.length === 0) {
-      // No valid infection target → this room can never leave the Infection
-      // phase via assignInfection. Surface it loudly (once per round) instead
-      // of skipping silently — a room stuck here needs investigation.
+      // Every alive player is already infected, so there is no target to pass.
+      // This used to `return` — and that is what deadlocked rooms permanently:
+      // assignInfection is ALSO the only call that reaches the contract's
+      // endgame parity check (`infectedAlive > cleanAlive` → InfectedWin,
+      // PlagueGame.sol:614-621). Bailing out left the room in Infection forever
+      // with the pot trapped, no admin override, and the contract not
+      // upgradeable. Mainnet room 186 sat here for 100+ hours.
+      //
+      // So call it anyway. From round 2 on the contract computes
+      // `firstInfection = currentPatientZero == address(0)` as false, which
+      // means it IGNORES our `target` argument entirely, reads its own
+      // `pendingInfectionTarget`, silently skips the infection because that
+      // target is not clean/alive (it cannot be — cleanAlive is empty), and
+      // falls straight through to the parity check that ends the game and pays
+      // out the infected side.
+      //
+      // Guarded on patient zero existing: while `currentPatientZero` is still
+      // zero the contract takes the firstInfection branch instead, which
+      // validates the target and reverts, and skips the parity check. That
+      // cannot co-occur with an empty cleanAlive in practice — round 1 opens
+      // with every alive player Clean — so treat it as the genuine anomaly it
+      // would be and keep warning rather than sending a doomed transaction.
+      const pz = await chainAdapter.getCurrentPatientZero(id)
       const key = `${id}:${rawRoom.currentRound}`
-      if (!noTargetWarned.has(key)) {
-        noTargetWarned.add(key)
-        logger.warn(
-          `[phase-advance-monitor] room ${id} round ${rawRoom.currentRound}: ` +
-          'no clean alive players to infect — room cannot advance out of Infection phase',
-        )
+      if (!pz || pz === ZERO_ADDRESS) {
+        if (!noTargetWarned.has(key)) {
+          noTargetWarned.add(key)
+          logger.warn(
+            `[phase-advance-monitor] room ${id} round ${rawRoom.currentRound}: ` +
+            'no clean alive players AND no patient zero — cannot self-resolve, needs investigation',
+          )
+        }
+        return
       }
+      await chainAdapter.assignInfection(id, ZERO_ADDRESS)
+      logger.info(
+        `[phase-advance-monitor] room ${id} round ${rawRoom.currentRound}: ` +
+        'no clean alive players — called assignInfection to trigger the on-chain ' +
+        'parity check and end the game as an infected win',
+      )
+      queueRoomSnapshot(io, id.toString())
       return
     }
     const patientZero = await chainAdapter.getCurrentPatientZero(id)
