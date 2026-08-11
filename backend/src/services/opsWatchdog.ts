@@ -45,12 +45,27 @@ const ROOM_STALL_MS = Number(process.env.OPS_ROOM_STALL_MS ?? 15 * 60_000)
  *  keep nagging about a real outage without becoming noise you learn to ignore. */
 const COOLDOWN_MS = Number(process.env.OPS_ALERT_COOLDOWN_MS ?? 6 * 60 * 60_000)
 
-/** Extra addresses to watch for low gas — bot wallets pay their own gas, and a
- *  benched bot pool is a quieter but equally real outage. Comma-separated. */
-const EXTRA_WATCHED = (process.env.OPS_WATCH_ADDRESSES ?? '')
+/**
+ * Extra addresses to watch for low gas — bot wallets pay their own gas, and a
+ * benched bot pool is a quieter but equally real outage.
+ *
+ * Comma-separated, and each entry may be labelled `name=0xaddr`. Labels are
+ * worth setting: an unlabelled alert reads "watched wallet 6", which tells the
+ * person being paged at 3am nothing at all.
+ *
+ *   OPS_WATCH_ADDRESSES=bot-1=0xabc…,bot-2=0xdef…
+ */
+const EXTRA_WATCHED: { label: string; addr: `0x${string}` }[] = (process.env.OPS_WATCH_ADDRESSES ?? '')
   .split(',')
   .map(s => s.trim())
-  .filter((s): s is `0x${string}` => /^0x[0-9a-fA-F]{40}$/.test(s))
+  .filter(Boolean)
+  .map((entry, i) => {
+    const eq = entry.lastIndexOf('=')
+    const rawLabel = eq > 0 ? entry.slice(0, eq).trim() : ''
+    const rawAddr = (eq > 0 ? entry.slice(eq + 1) : entry).trim()
+    return { label: rawLabel || `watched wallet ${i + 1}`, addr: rawAddr as `0x${string}` }
+  })
+  .filter(w => /^0x[0-9a-fA-F]{40}$/.test(w.addr))
 
 /** key → last time we alerted. Absence means "healthy", which is what lets us
  *  send a recovery notice exactly once on the transition back. */
@@ -77,14 +92,30 @@ function celo(wei: bigint): string {
   return (Number(wei) / 1e18).toFixed(3)
 }
 
+/** Why a given wallet running dry matters. These are NOT the same failure, and
+ *  saying so wrongly sends whoever is paged chasing the wrong thing. */
+function consequenceOf(isSigner: boolean): string[] {
+  return isSigner
+    ? [
+        'Gas is paid in native CELO, not USDm. If this reaches zero every',
+        'backend phase transition reverts and live games freeze mid-round.',
+      ]
+    : [
+        'Gas is paid in native CELO, not USDm. This wallet funds its own',
+        'transactions: below the floor it gets benched — dropped from new games',
+        'and from the lobby bot count — so self-play quietly stops. Live games',
+        'are NOT affected; that is the backend signer.',
+      ]
+}
+
 async function checkGas(now: number): Promise<void> {
   const signer = chainAdapter.getSignerAddress()
-  const watched: { label: string; addr: `0x${string}` }[] = [
-    { label: 'backend signer', addr: signer },
-    ...EXTRA_WATCHED.map((addr, i) => ({ label: `watched wallet ${i + 1}`, addr })),
+  const watched: { label: string; addr: `0x${string}`; isSigner: boolean }[] = [
+    { label: 'backend signer', addr: signer, isSigner: true },
+    ...EXTRA_WATCHED.map(w => ({ ...w, isSigner: false })),
   ]
 
-  for (const { label, addr } of watched) {
+  for (const { label, addr, isSigner } of watched) {
     const key = `gas:${addr.toLowerCase()}`
     try {
       const balance = await chainAdapter.getNativeBalance(addr)
@@ -102,8 +133,7 @@ async function checkGas(now: number): Promise<void> {
           `Address: ${addr}`,
           `Floor:   ${celo(MIN_SIGNER_WEI)} CELO`,
           '',
-          'Gas is paid in native CELO, not USDm. If this reaches zero every',
-          'backend phase transition reverts and live games freeze mid-round.',
+          ...consequenceOf(isSigner),
         ],
       })
     } catch (err) {

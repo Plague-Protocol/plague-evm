@@ -1264,7 +1264,11 @@ export default function LobbyPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
-                    Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN}.
+                    {/* "minimum" only while the floor is actually binding. Once
+                        1% of the stake clears MIN_PROOF_FEE_WEI the number shown
+                        IS the fee, and calling that a minimum would be a lie. */}
+                    Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN}
+                    {proofFeeWeiFor(stakeInput) === MIN_PROOF_FEE_WEI ? ' minimum' : ''}.
                     <br />First Shield is free.
                   </p>
 
