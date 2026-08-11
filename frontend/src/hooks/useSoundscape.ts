@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { RoundPhase } from '@/types/game'
+import { trackAudio, untrackAudio, stopAllAudio } from '@/lib/audio-registry'
 
 // ── Track manifest ────────────────────────────────────────────────────────────
 // Each looping track fades in/out as the phase changes.
@@ -135,7 +136,7 @@ export function useSoundscape(
     // Play one-shot sting if applicable
     const stingSrc = STING_TRACKS[scene as keyof typeof STING_TRACKS]
     if (stingSrc) {
-      const sting = new Audio(stingSrc)
+      const sting = trackAudio(new Audio(stingSrc))
       sting.volume = muted ? 0 : BASE_VOLUME + 0.15
       sting.play().catch(() => {})
     }
@@ -146,7 +147,7 @@ export function useSoundscape(
     }
 
     const startNew = () => {
-      const a = new Audio(src)
+      const a = trackAudio(new Audio(src))
       a.loop = true
       a.volume = 0
       audioRef.current = a
@@ -174,7 +175,7 @@ export function useSoundscape(
     } else if (sceneRef.current && sceneRef.current !== 'ended') {
       const src = LOOP_TRACKS[sceneRef.current]
       if (src) {
-        const a = new Audio(src)
+        const a = trackAudio(new Audio(src))
         a.loop = true
         audioRef.current = a
         fadeIn(a)
@@ -187,7 +188,14 @@ export function useSoundscape(
   useEffect(() => {
     return () => {
       clearFades()
-      audioRef.current?.pause()
+      if (audioRef.current) {
+        audioRef.current.pause()
+        untrackAudio(audioRef.current)
+      }
+      // Kills any sting still ringing too. Pausing only the loop left one-shots
+      // playing after the player had already navigated away, since nothing held
+      // a reference to them.
+      stopAllAudio()
     }
   }, [clearFades])
 }
@@ -195,7 +203,7 @@ export function useSoundscape(
 // ── One-shot helper (game-over stings, eliminations etc.) ────────────────────
 export function playSting(src: string, muted: boolean, volume = BASE_VOLUME + 0.15) {
   if (muted) return
-  const a = new Audio(src)
+  const a = trackAudio(new Audio(src))
   a.volume = volume
   a.play().catch(() => {})
 }

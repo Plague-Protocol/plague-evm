@@ -13,6 +13,8 @@
  * unlocked-by-gesture state is lost in the navigation between them.
  */
 
+import { trackAudio } from './audio-registry'
+
 // Browsers only allow audio after a RECENT user gesture. In live play the lobby
 // click is followed by a wallet prompt + an on-chain tx, so by the time the
 // game page mounts the gesture has expired and play() is silently blocked
@@ -26,8 +28,11 @@ let soundsInUse = false
 export function getArenaSounds() {
   if (typeof window === 'undefined') return null
   if (!primedCreak || !primedPulse) {
-    primedCreak = new Audio('/sounds/door-creak.mp3')
-    primedPulse = new Audio('/sounds/heartbeat.mp3')
+    // Tracked so backgrounding the app silences them. The heartbeat especially:
+    // it is `loop = true`, so without this it plays forever behind whatever the
+    // user switched to.
+    primedCreak = trackAudio(new Audio('/sounds/door-creak.mp3'))
+    primedPulse = trackAudio(new Audio('/sounds/heartbeat.mp3'))
     primedPulse.loop = true
   }
   return { creak: primedCreak, pulse: primedPulse }
