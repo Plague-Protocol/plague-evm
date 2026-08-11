@@ -52,6 +52,13 @@ export function ConnectButton() {
 
   const short = `${address.slice(0, 6)}…${address.slice(-4)}`
 
+  // MiniPay's gateway rules forbid a raw 0x… address as the *primary* user
+  // identifier — a truncated form is allowed only as a secondary hint. Inside
+  // MiniPay the chip therefore reads "Account" and the address appears once,
+  // truncated, inside the dropdown. Outside MiniPay (desktop wallets) the full
+  // address is genuinely useful, so it stays.
+  const chipLabel = isMiniPay ? 'Account' : short
+
   return (
     <div ref={ref} className="relative flex-shrink-0" style={{ zIndex: 100 }}>
       <button
@@ -67,7 +74,7 @@ export function ConnectButton() {
           className="inline-block h-1.5 w-1.5 rounded-full"
           style={{ background: '#060b06', boxShadow: '0 0 4px rgba(0,0,0,0.5)' }}
         />
-        {short}
+        {chipLabel}
         <svg
           width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
@@ -81,10 +88,13 @@ export function ConnectButton() {
           className="absolute right-0 top-full mt-1 min-w-[200px] rounded-xl border p-2"
           style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', zIndex: 200, position: 'absolute' }}
         >
-          {/* Full address */}
+          {/* Address — truncated under MiniPay (secondary hint only), full
+              elsewhere, where desktop users actually want to read it. */}
           <div className="px-3 py-2">
             <p className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#7d9a72' }}>Signed In</p>
-            <p className="mt-1 font-mono text-xs break-all" style={{ color: '#8fa882' }}>{address}</p>
+            <p className="mt-1 font-mono text-xs break-all" style={{ color: '#8fa882' }}>
+              {isMiniPay ? short : address}
+            </p>
           </div>
 
           <div className="my-1 border-t" style={{ borderColor: 'rgba(107,142,35,0.1)' }} />

@@ -62,6 +62,11 @@ docs/CELO_PORT_HANDOFF.md
 # that should not be public in an open repo. Keep it local; see CLAUDE.md.
 docs/CELO_STARTUPBANK_SUBMISSION.md
 
+# MiniPay listing answer sheet — same reasoning. Holds the filled-in intake-form
+# answers plus the unvarnished readiness read (bot/human traction split, the
+# never-device-tested transaction flow, PageSpeed variance). Local-only.
+docs/MINIPAY_LISTING_SUBMISSION.md
+
 # Store-listing screenshots — build output, not source. ~4.8 MB of PNGs that
 # are regenerated wholesale on every UI change, and binaries never diff, so
 # each pass would pin another full set into history forever. Nothing secret

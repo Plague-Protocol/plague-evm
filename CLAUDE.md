@@ -104,13 +104,38 @@ Live-ops playbook (stuck game phases, benched bots / gas floor, gas-drain
 diagnosis, chat names, wallet session): [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 Check it before re-deriving a diagnosis for a production symptom.
 
-## MiniPay support (⚠️ UNVERIFIED — not yet tested on a device)
+## MiniPay support (⚠️ PARTIALLY verified — connect yes, transactions no)
 
 The app loads in MiniPay's in-app browser. Four fixes landed 2026-07-20 after it
-was found asking MiniPay users to connect a wallet. **None of them have been
-confirmed against real MiniPay** — they typecheck and build, nothing more.
-Verifying needs ngrok + a physical phone (MiniPay has no emulator). Delete this
-warning once tested.
+was found asking MiniPay users to connect a wallet.
+
+- ✅ **Zero-click connect is device-verified** (2026-07-31, real phone) — no
+  connect prompt appears in MiniPay.
+- ⚠️ **No transaction has ever been run inside MiniPay on a device.** Stake →
+  role commit → vote → payout is still theory: it typechecks and builds, nothing
+  more. This is the single biggest unverified claim in any submission package.
+  Verifying needs ngrok + a physical phone (MiniPay has no emulator).
+
+**Listing submission:** the intake form moved to
+`https://developer.minipay.to/mini-app-listing` and its fields changed (app
+name / tagline / publisher / support + ToS + privacy URLs / category / icon) —
+the older `minipay.to/mini-apps` field list is stale. MiniPay also now requires
+**exact dependency pinning, a committed lockfile, `ignore-scripts=true`, and a
+7-day minimum package age**. Filled-in answer sheet, per-item audit, and the
+`ignore-scripts` workspace trap: `docs/MINIPAY_LISTING_SUBMISSION.md` —
+**gitignored on purpose**, same as the StartupBank doc; read it, never commit it.
+
+⚠️ **`zplague.xyz` 308-redirects to `www.zplague.xyz`** — the apex is not
+canonical. `metadataBase` in `layout.tsx` still points at the apex.
+
+⚠️ **Never put `ignore-scripts=true` in the ROOT `.npmrc`.** npm ignores a
+workspace-package `.npmrc` (`frontend/.npmrc` is documentation, not
+enforcement), so the temptation is to move it up — but nine transitive deps
+need install scripts (`@prisma/client`, `@prisma/engines`, `prisma`, `esbuild`,
+`keccak`, `unrs-resolver`, `bufferutil`, `utf-8-validate`, `fsevents`) and
+`backend/` + `agents/` would install without Prisma engines. Enforce it via the
+Vercel env var `NPM_CONFIG_IGNORE_SCRIPTS=true` instead; the frontend alone was
+verified to build clean with scripts skipped.
 
 - **Never use `createWallet('io.metamask')` to reach MiniPay's provider.** In
   thirdweb v5 that resolves via `injectedProvider()`, a strict EIP-6963 rdns

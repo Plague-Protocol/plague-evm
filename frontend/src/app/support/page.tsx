@@ -100,7 +100,7 @@ const FAQS: Faq[] = [
   {
     question: 'My transaction failed',
     answer:
-      'The two usual causes: your USDm balance is lower than the room’s stake plus proof fee, or (outside MiniPay) your wallet has no CELO to cover the network fee — a few cents’ worth is plenty. MiniPay users never need to think about this; MiniPay pays the network fee from your stablecoin balance automatically.',
+      'Almost always your USDm balance is lower than the room’s stake plus the proof fee — top up and try again. On MiniPay that is the only thing to check; MiniPay pays the network fee out of your stablecoin balance automatically. On other wallets you also need a few cents of the network’s own fee token to cover the network fee.',
   },
   {
     question: 'Where did part of the pot go?',
