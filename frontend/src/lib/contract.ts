@@ -763,15 +763,57 @@ export function createContractClient(config: ContractConfig): PlagueContractClie
 
 // ── Shared wallet helper ──────────────────────────────────────────────────────
 
+/**
+ * Shape of the last eth_sendTransaction handed to the wallet.
+ *
+ * Six rounds of eliminating one suspect field at a time failed to explain
+ * MiniPay's "Permission denied", because every round was reasoning about what
+ * the request *should* contain rather than observing what it did. This records
+ * the real thing so the error can report it.
+ *
+ * Keys and a calldata fingerprint only — never full values. This string is
+ * shown to users in a toast and must not leak an address or an amount.
+ */
+let lastTxShape: string | null = null
+
+export function getLastTxShape(): string | null {
+  return lastTxShape
+}
+
+function recordTxShape(params: unknown): void {
+  if (!params || typeof params !== 'object') return
+  const tx = params as Record<string, unknown>
+  const keys = Object.keys(tx).sort().join(',')
+  const data = typeof tx.data === 'string' ? tx.data : ''
+  // Selector plus length: length is what reveals an appended data suffix, and
+  // for `approve` a standard call is exactly 138 chars ("0x" + 4+32+32 bytes).
+  const dataInfo = data ? ` data=${data.slice(0, 10)} len=${data.length}` : ''
+  const type = typeof tx.type === 'string' ? ` type=${tx.type}` : ''
+  lastTxShape = `keys=[${keys}]${dataInfo}${type}`
+}
+
 function makeWalletClient(account: `0x${string}`, chain: typeof celo | typeof celoSepolia) {
-  if (!globalThis.window?.ethereum) {
+  const eth = globalThis.window?.ethereum
+  if (!eth) {
     throw new Error('No EIP-1193 wallet provider found. Install MetaMask or Valora.')
+  }
+  // Thin pass-through that records outgoing transaction requests. Wrapping
+  // rather than replacing: every method still reaches the real provider, and
+  // `on`/`removeListener` are forwarded so event subscriptions keep working.
+  const observed = {
+    ...eth,
+    request: async (args: { method: string; params?: unknown[] }) => {
+      if (args.method === 'eth_sendTransaction') recordTxShape(args.params?.[0])
+      return eth.request(args)
+    },
+    on: eth.on?.bind(eth),
+    removeListener: eth.removeListener?.bind(eth),
   }
   return createWalletClient({
     account,
     chain,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    transport: custom(globalThis.window.ethereum as any),
+    transport: custom(observed as any),
   })
 }
 

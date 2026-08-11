@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
-import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBalance } from '@/lib/contract'
+import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBalance, getLastTxShape } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { useChangePulse } from '@/hooks/useChangePulse'
@@ -463,7 +463,15 @@ function getFriendlyError(err: unknown, isMiniPay: boolean): string {
   // work from, which is exactly the hole we fell into chasing a MiniPay-only
   // create-room failure that produced no revert and no insufficient-funds text.
   const detail = firstLineOf(extractErrorDetail(err), isMiniPay)
-  return detail ? `Transaction failed — ${detail}` : 'Transaction failed. Please try again.'
+  // Append the shape of the request the wallet actually received. Keys and a
+  // calldata fingerprint only — no addresses, no amounts. Diagnosing a wallet
+  // that rejects a transaction without saying which part it objects to is
+  // guesswork otherwise, as six rounds of it demonstrated.
+  const shape = getLastTxShape()
+  const suffix = shape ? ` · ${shape}` : ''
+  return detail
+    ? `Transaction failed — ${detail}${suffix}`
+    : `Transaction failed. Please try again.${suffix}`
 }
 
 /**
