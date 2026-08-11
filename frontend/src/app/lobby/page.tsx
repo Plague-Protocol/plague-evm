@@ -277,11 +277,12 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     const network  = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
     const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
     if (cUSDAddr) {
-      await assertSufficientCUSD(address, cUSDAddr, stakeWei, network)
+      await inStep('balance check', () => assertSufficientCUSD(address, cUSDAddr, stakeWei, network))
       // Only the host's stake is needed upfront — createRoom auto-joins them.
-      await client.approveCUSD(address, cUSDAddr, stakeWei)
+      await inStep('approve', () => client.approveCUSD(address, cUSDAddr, stakeWei))
     }
-    const newId = await client.createRoom(address, maxPlayers, stakeWei, feeWei, 600)
+    const newId = await inStep('create room', () =>
+      client.createRoom(address, maxPlayers, stakeWei, feeWei, 600))
     // Persist room name off-chain
     const trimmedName = roomNameInput.trim()
     if (trimmedName) {
@@ -463,6 +464,32 @@ function getFriendlyError(err: unknown, isMiniPay: boolean): string {
   // create-room failure that produced no revert and no insufficient-funds text.
   const detail = firstLineOf(extractErrorDetail(err), isMiniPay)
   return detail ? `Transaction failed — ${detail}` : 'Transaction failed. Please try again.'
+}
+
+/**
+ * Tag a failure with the step that produced it.
+ *
+ * Creating a room is four calls that can each fail differently — balance read,
+ * allowance read, ERC-20 approve, createRoom — and MiniPay reports several of
+ * them with the same opaque "Permission denied". Without a label there is no
+ * way to tell an approval the wallet refused from a room creation that
+ * reverted, which is the difference between a one-line fix and another round of
+ * guessing.
+ *
+ * The original error is preserved as `cause`, so extractErrorDetail still
+ * reaches the provider's own code and message underneath.
+ */
+async function inStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    const base = err instanceof Error ? err.message : String(err)
+    const wrapped = new Error(`[${step}] ${base}`)
+    // Assigned rather than passed to the constructor so this does not depend on
+    // the ES2022 `cause` option being in the compile target.
+    ;(wrapped as Error & { cause?: unknown }).cause = err
+    throw wrapped
+  }
 }
 
 /**

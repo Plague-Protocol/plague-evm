@@ -469,13 +469,27 @@ export class PlagueContractClient {
       args:         [account, this.address],
     })
     if (current >= amount) return
-    // Approve MaxUint256 — set-and-forget; never needs re-approval.
+    // Unlimited approval everywhere EXCEPT MiniPay — set-and-forget, so a
+    // player never re-approves no matter how many rooms they join.
+    //
+    // MiniPay is excluded because an infinite allowance is the classic
+    // token-drain vector, and a consumer wallet aimed at first-time users has
+    // every reason to refuse one outright. Writes there fail instantly with
+    // "Permission denied" (code -32604) and no confirmation sheet at all — a
+    // policy rejection before any UI, which is what a blanket allowance ban
+    // looks like from the dapp side.
+    //
+    // The cost is one approval per stake rather than one ever. That is the
+    // right trade for the wallet whose users are least equipped to understand
+    // what an unlimited allowance means, and it keeps the approval amount
+    // legible on the confirmation sheet.
+    const approvalAmount = isMiniPay() ? amount : maxUint256
     const wc = this.walletClient(account)
     const hash = await wc.writeContract({
       address:      cUSDAddress,
       abi:          erc20Abi,
       functionName: 'approve',
-      args:         [this.address, maxUint256],
+      args:         [this.address, approvalAmount],
       account,
       dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
