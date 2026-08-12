@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react'
 
-export type GameTab = 'game' | 'board' | 'chat' | 'feed'
+/**
+ * `play` is the merged Game + Vote tab.
+ *
+ * They were separate, which meant the thing you had to do and the board you had
+ * to look at while doing it lived on different screens: Shield sat at the bottom
+ * of Game, the vote panel sat below the fold on Vote, and players had to know
+ * which tab a phase wanted them on. Chat and Feed stay separate because they are
+ * things you read, not things the game is waiting on.
+ */
+export type GameTab = 'play' | 'chat' | 'feed'
 
 interface GameTabNavProps {
   readonly activeTab: GameTab
@@ -12,25 +21,13 @@ interface GameTabNavProps {
 
 const TABS: { id: GameTab; label: string; icon: React.ReactNode }[] = [
   {
-    id: 'game',
-    label: 'Game',
+    id: 'play',
+    label: 'Play',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
         <path d="M12 8v4l2 2" />
         <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
-    id: 'board',
-    label: 'Vote',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
   },

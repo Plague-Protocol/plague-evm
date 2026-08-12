@@ -248,11 +248,11 @@ function GamePageInner() { // NOSONAR
   const phaseAdvanceNudgeKeyRef = useRef<string>('')
 
   // ── Mobile tab navigation ───────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<GameTab>('game')
+  const [activeTab, setActiveTab] = useState<GameTab>('play')
   const [unreadChat, setUnreadChat] = useState(0)
   const [isMobile, setIsMobile] = useState(false)
   // Refs to expose current values inside socket-handler closures without re-registering
-  const activeTabRef = useRef<GameTab>('game')
+  const activeTabRef = useRef<GameTab>('play')
   const isMobileRef  = useRef(false)
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
   useEffect(() => { isMobileRef.current  = isMobile  }, [isMobile])
@@ -270,21 +270,17 @@ function GamePageInner() { // NOSONAR
     if (tab === 'chat') setUnreadChat(0)
   }, [])
 
-  // Auto-switch tab on mobile when the game phase changes so players always land
-  // on the relevant panel without having to hunt for it manually.
-  //   starting           → Game tab  (Set Shield Password action is there)
-  //   discussion         → Game tab  (Activate Shield action is there)
-  //   infection / voting / reveal → Vote tab (Area 51 grid + vote panel)
+  // Pull a player back to Play when the game starts wanting something from them.
+  //
+  // This used to run on every phase change and pick between the Game and Vote
+  // tabs. Now that both are one tab there is nothing to choose, and no reason to
+  // fire mid-round — the action panel is already at the top of Play whatever the
+  // phase. So it only fires on the transitions where a player reading Chat or
+  // Feed would genuinely miss their turn.
   useEffect(() => {
     if (!isMobile) return
-    const status   = room?.status
-    const phaseNow = currentRound?.phase ?? 'ended'
-    if (status === 'starting') {
-      setActiveTab('game')
-    } else if (status === 'active') {
-      setActiveTab(phaseNow === 'discussion' ? 'game' : 'board')
-    }
-  }, [room?.status, currentRound?.phase, isMobile])
+    if (room?.status === 'starting' || room?.status === 'active') setActiveTab('play')
+  }, [room?.status, isMobile])
 
   const schedulePostTxRefresh = useCallback(() => {
     socket?.emit('request_room_refresh', { roomId })
@@ -895,7 +891,7 @@ function GamePageInner() { // NOSONAR
 
   // ── Set Shield Password card ────────────────────────────────────────────
   // Rendered once, at the top of the telemetry strip (see its slot below).
-  const shieldCommitCard = room?.status === 'starting' && showOnTab('game') ? (
+  const shieldCommitCard = room?.status === 'starting' && showOnTab('play') ? (
     <div className={commitDone ? undefined : 'toxic-pulse rounded-lg'}>
       <div
         className="rise-in rounded-lg border p-5"
@@ -976,7 +972,7 @@ function GamePageInner() { // NOSONAR
       </div>
 
       {/* Game Header + Telemetry — visible on Game tab (mobile) or always (desktop) */}
-      {showOnTab('game') && (
+      {showOnTab('play') && (
       <>
       <header
         className="relative overflow-hidden px-6 py-12"
@@ -1225,7 +1221,7 @@ function GamePageInner() { // NOSONAR
                   the Area 51 board, below the fold) so the host recruits bots
                   and starts the game without hunting for it. Only during
                   `waiting`, which is mutually exclusive with `starting`. */}
-              {room?.status === 'waiting' && isHost && showOnTab('game') && (
+              {room?.status === 'waiting' && isHost && showOnTab('play') && (
                 <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(245,197,24,0.6)', backgroundColor: 'rgba(245,197,24,0.08)', boxShadow: '0 0 16px rgba(245,197,24,0.22)' }}>
                   <p className="font-mono text-xs font-bold uppercase tracking-[0.2em]" style={{ color: '#f5c518' }}>Host Controls</p>
                   <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>{hostPlayerCountLabel}</p>
@@ -1257,10 +1253,11 @@ function GamePageInner() { // NOSONAR
                 </div>
               )}
 
-              {/* Phase card — Game tab (mobile) / always (desktop) */}
-              {showOnTab('game') && (
+              {/* Phase card — the round/timer readout, kept at the very top on a
+                  phone so "how long have I got" never needs a scroll. */}
+              {showOnTab('play') && (
                 <div
-                  className="rise-in rounded-lg border p-5"
+                  className="rise-in order-1 md:order-none rounded-lg border p-5"
                   style={{ backgroundColor: phaseCardBackground, borderColor: `${phaseColor}4d` }}
                 >
                   {/* Round phase sequence indicator */}
@@ -1308,9 +1305,10 @@ function GamePageInner() { // NOSONAR
                 </div>
               )}
 
-              {/* Containment Board — Board tab (mobile) / always (desktop) */}
-              {showOnTab('board') && (
-                <article className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
+              {/* Containment Board (the cam) — sits below the action panels on a
+                  phone, see the ordering note on the Action panels block. */}
+              {showOnTab('play') && (
+                <article className="rise-in order-4 md:order-none rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
                   <div className="flex items-center justify-between gap-4">
                     <h2 className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
                     <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(107,142,35,0.35)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.1)' }}>
@@ -1367,9 +1365,29 @@ function GamePageInner() { // NOSONAR
                 </article>
               )}
 
-              {/* Action panels — Game tab (mobile) / always (desktop) */}
-              {showOnTab('game') && (
-                <>
+              {/* Action panels (Shield).
+                  ── Mobile ordering ──────────────────────────────────────────
+                  The parent is `flex flex-col`, so these blocks are reordered
+                  with `order-*` rather than moved in the source — the JSX stays
+                  grouped by what it is, not by where it happens to sit on a
+                  phone. Only the three that matter are numbered:
+
+                    order-1  phase card + timer
+                    order-2  action panels (Shield)  ← this block
+                    order-3  vote panel
+                    order-4  containment board (the cam)
+
+                  Everything else keeps source order (0) and lands above them,
+                  which is correct: the waiting-room and host controls only
+                  render before a game is running.
+
+                  Reported from a real phone: Shield sat at the bottom of one tab
+                  and the vote panel below the fold on another, so players did
+                  not see either until their window had closed. `md:order-none`
+                  resets it — desktop shows every panel at once and never had the
+                  problem. */}
+              {showOnTab('play') && (
+                <div className="order-2 md:order-none flex flex-col gap-6">
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>
@@ -1437,7 +1455,7 @@ function GamePageInner() { // NOSONAR
                       </div>
                     </article>
                   )}
-                </>
+                </div>
               )}
 
               {/* Live Feed — Feed tab (mobile) / always (desktop) */}
@@ -1464,9 +1482,10 @@ function GamePageInner() { // NOSONAR
             {/* ── RIGHT SIDEBAR ── */}
             <aside className="flex flex-col gap-6">
 
-              {/* Vote Panel — Board tab (mobile) / always (desktop) */}
-              {showOnTab('board') && (
-                <div className="rise-in rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
+              {/* Vote Panel — above the cam on a phone (see the ordering note on
+                  the Action panels block). */}
+              {showOnTab('play') && (
+                <div className="rise-in order-3 md:order-none rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
                   <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
                   <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7d9a72' }}>{votePanelLabel}</p>
 
