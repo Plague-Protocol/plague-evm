@@ -35,34 +35,14 @@ export const FEE_CURRENCY_USDT_ADAPTER = '0x0e2a3e05bc9a16f5292a6170456a710cb89c
  * the native-CELO path. Guessing optimistically here would break signing against
  * a live contract holding real stakes.
  *
- * MiniPay is NOT on the list — see the inline note below for why it was removed.
+ * Note MiniPay is listed but does not actually honour the value: per its docs it
+ * "may ignore feeCurrency and choose the token the user has the most of". We set
+ * it anyway so the intent is explicit in code rather than implied.
  */
 function supportsFeeCurrency(): boolean {
   const eth = globalThis.window?.ethereum
   if (!eth) return false
-  // MiniPay is deliberately EXCLUDED, despite being the most Celo-native wallet
-  // here — passing feeCurrency is what broke every write inside it.
-  //
-  // Symptom: `UnknownRpcError: An unknown RPC error occurred` on createRoom,
-  // with no revert reason and no insufficient-funds text, while the identical
-  // code worked in MetaMask on desktop. viem's UnknownRpcError means the
-  // provider rejected the request before it reached the chain, and `feeCurrency`
-  // is the only field that differs between the two paths: the other two
-  // MiniPay-only branches (ensureChain early-return, gasLimitFor -> undefined)
-  // send nothing extra. A non-standard key in the eth_sendTransaction params is
-  // exactly what makes a provider return an error viem cannot classify.
-  //
-  // Losing nothing by removing it, because MiniPay picks the fee token itself:
-  // "MiniPay may ignore feeCurrency and choose the token the user has the most
-  // of" (docs.minipay.xyz/technical-references/send-transaction.html). Setting
-  // it was at best a no-op and at worst — this. It also actively worked against
-  // users: it named USDm, while MiniPay users typically hold USDC/USDT and no
-  // USDm at all, which is the whole reason the lobby shows a convert banner.
-  //
-  // Valora and Opera keep it. They are Celo-native, handle CIP-64 type-123, and
-  // do not override the choice, so there it genuinely buys stablecoin gas.
-  if (eth.isMiniPay) return false
-  return !!(eth.isValora || eth.isOpera)
+  return !!(eth.isMiniPay || eth.isValora || eth.isOpera)
 }
 
 /**
@@ -83,29 +63,6 @@ function feeCurrencyFor(chainId: number): `0x${string}` | undefined {
 const ATTRIBUTION_SUFFIX = toDataSuffix(
   process.env.NEXT_PUBLIC_ATTRIBUTION_TAG ?? 'celo_c2d022d1d4ac',
 )
-
-/**
- * The attribution suffix, or undefined under MiniPay.
- *
- * MiniPay refuses tagged calldata. Every write there failed instantly with
- * "Permission denied" (code -32604) and no confirmation sheet, and the labelled
- * error pinned it to the ERC-20 `approve`. A standard approve is exactly 68
- * bytes (selector + spender + amount); appending the tag makes it longer, and a
- * wallet that decodes approvals to show "approve X USDm to <spender>" cannot
- * parse that. Refusing to sign calldata it cannot describe is correct behaviour
- * on MiniPay's part — showing a user an approval it could not read would be
- * worse.
- *
- * Everywhere else the tag stays, so existing attribution is unaffected.
- *
- * ⚠️ The tag is very likely dead weight now: it exists for the Celo Builders
- * "Agentic Payments & DeFAI" hackathon, which closed 2026-08-03. Once you are
- * sure no leaderboard still reads it, delete ATTRIBUTION_SUFFIX and this helper
- * outright rather than carrying a special case for a finished competition.
- */
-function attributionSuffixFor(): `0x${string}` | undefined {
-  return isMiniPay() ? undefined : ATTRIBUTION_SUFFIX
-}
 
 // ── ABI ───────────────────────────────────────────────────────────────────────
 // Mirrors PlagueGame.sol — update if the Solidity interface changes.
@@ -397,7 +354,7 @@ export class PlagueContractClient {
       functionName: 'createRoom',
       args:         [maxPlayers, stakeAmount, proofFee, BigInt(expirySecs)],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
       gas,
     })
@@ -445,7 +402,7 @@ export class PlagueContractClient {
       functionName: 'joinRoom',
       args:         [roomId],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
       gas,
     })
@@ -490,29 +447,15 @@ export class PlagueContractClient {
       args:         [account, this.address],
     })
     if (current >= amount) return
-    // Unlimited approval everywhere EXCEPT MiniPay — set-and-forget, so a
-    // player never re-approves no matter how many rooms they join.
-    //
-    // MiniPay is excluded because an infinite allowance is the classic
-    // token-drain vector, and a consumer wallet aimed at first-time users has
-    // every reason to refuse one outright. Writes there fail instantly with
-    // "Permission denied" (code -32604) and no confirmation sheet at all — a
-    // policy rejection before any UI, which is what a blanket allowance ban
-    // looks like from the dapp side.
-    //
-    // The cost is one approval per stake rather than one ever. That is the
-    // right trade for the wallet whose users are least equipped to understand
-    // what an unlimited allowance means, and it keeps the approval amount
-    // legible on the confirmation sheet.
-    const approvalAmount = isMiniPay() ? amount : maxUint256
+    // Approve MaxUint256 — set-and-forget; never needs re-approval.
     const wc = this.walletClient(account)
     const hash = await wc.writeContract({
       address:      cUSDAddress,
       abi:          erc20Abi,
       functionName: 'approve',
-      args:         [this.address, approvalAmount],
+      args:         [this.address, maxUint256],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.publicClient.waitForTransactionReceipt({ hash })
@@ -538,7 +481,7 @@ export class PlagueContractClient {
       functionName: 'startGame',
       args:         [roomId],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -561,7 +504,7 @@ export class PlagueContractClient {
       functionName: 'submitRoleCommitment',
       args:         [roomId, commitment, zkProof],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -575,7 +518,7 @@ export class PlagueContractClient {
       functionName: 'castVote',
       args:         [roomId, target],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -599,7 +542,7 @@ export class PlagueContractClient {
       functionName: 'submitInnocenceProof',
       args:         [roomId, commitment, nullifier, zkProof],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -616,7 +559,7 @@ export class PlagueContractClient {
       functionName: 'expireRoom',
       args:         [roomId],
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -750,7 +693,7 @@ export class PlagueContractClient {
       abi:          PLAGUE_GAME_ABI,
       functionName: 'withdrawPlatformFees',
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.sendTx(account, request)
@@ -763,57 +706,15 @@ export function createContractClient(config: ContractConfig): PlagueContractClie
 
 // ── Shared wallet helper ──────────────────────────────────────────────────────
 
-/**
- * Shape of the last eth_sendTransaction handed to the wallet.
- *
- * Six rounds of eliminating one suspect field at a time failed to explain
- * MiniPay's "Permission denied", because every round was reasoning about what
- * the request *should* contain rather than observing what it did. This records
- * the real thing so the error can report it.
- *
- * Keys and a calldata fingerprint only — never full values. This string is
- * shown to users in a toast and must not leak an address or an amount.
- */
-let lastTxShape: string | null = null
-
-export function getLastTxShape(): string | null {
-  return lastTxShape
-}
-
-function recordTxShape(params: unknown): void {
-  if (!params || typeof params !== 'object') return
-  const tx = params as Record<string, unknown>
-  const keys = Object.keys(tx).sort().join(',')
-  const data = typeof tx.data === 'string' ? tx.data : ''
-  // Selector plus length: length is what reveals an appended data suffix, and
-  // for `approve` a standard call is exactly 138 chars ("0x" + 4+32+32 bytes).
-  const dataInfo = data ? ` data=${data.slice(0, 10)} len=${data.length}` : ''
-  const type = typeof tx.type === 'string' ? ` type=${tx.type}` : ''
-  lastTxShape = `keys=[${keys}]${dataInfo}${type}`
-}
-
 function makeWalletClient(account: `0x${string}`, chain: typeof celo | typeof celoSepolia) {
-  const eth = globalThis.window?.ethereum
-  if (!eth) {
+  if (!globalThis.window?.ethereum) {
     throw new Error('No EIP-1193 wallet provider found. Install MetaMask or Valora.')
-  }
-  // Thin pass-through that records outgoing transaction requests. Wrapping
-  // rather than replacing: every method still reaches the real provider, and
-  // `on`/`removeListener` are forwarded so event subscriptions keep working.
-  const observed = {
-    ...eth,
-    request: async (args: { method: string; params?: unknown[] }) => {
-      if (args.method === 'eth_sendTransaction') recordTxShape(args.params?.[0])
-      return eth.request(args)
-    },
-    on: eth.on?.bind(eth),
-    removeListener: eth.removeListener?.bind(eth),
   }
   return createWalletClient({
     account,
     chain,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    transport: custom(observed as any),
+    transport: custom(globalThis.window.ethereum as any),
   })
 }
 
@@ -886,7 +787,7 @@ export class FaucetClient {
       abi:          FAUCET_ABI,
       functionName: 'claim',
       account,
-      dataSuffix:   attributionSuffixFor(),
+      dataSuffix:   ATTRIBUTION_SUFFIX,
       feeCurrency:  feeCurrencyFor(this.chain.id),
     })
     await this.publicClient.waitForTransactionReceipt({ hash })

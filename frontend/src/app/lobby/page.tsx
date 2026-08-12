@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape } from '@/hooks/useSoundscape'
 import { useSound } from '@/providers/sound-provider'
-import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBalance, getLastTxShape } from '@/lib/contract'
+import { createContractClient, createFaucetClient, readCUSDBalance, readNativeBalance } from '@/lib/contract'
 import { formatToken } from '@/lib/format'
 import { quarantineCode, roomLabel } from '@/lib/roomLabel'
 import { useChangePulse } from '@/hooks/useChangePulse'
@@ -277,12 +277,11 @@ async function runCreateRoomAction(args: CreateRoomActionArgs) {
     const network  = (process.env.NEXT_PUBLIC_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
     const cUSDAddr = chainId ? CUSD_ADDRESSES[chainId] : undefined
     if (cUSDAddr) {
-      await inStep('balance check', () => assertSufficientCUSD(address, cUSDAddr, stakeWei, network))
+      await assertSufficientCUSD(address, cUSDAddr, stakeWei, network)
       // Only the host's stake is needed upfront — createRoom auto-joins them.
-      await inStep('approve', () => client.approveCUSD(address, cUSDAddr, stakeWei))
+      await client.approveCUSD(address, cUSDAddr, stakeWei)
     }
-    const newId = await inStep('create room', () =>
-      client.createRoom(address, maxPlayers, stakeWei, feeWei, 600))
+    const newId = await client.createRoom(address, maxPlayers, stakeWei, feeWei, 600)
     // Persist room name off-chain
     const trimmedName = roomNameInput.trim()
     if (trimmedName) {
@@ -431,12 +430,15 @@ const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
   'stakeAmount must be > 0':  'Stake amount must be greater than zero.',
 }
 
-// `isMiniPay` is required, not optional. MiniPay's gateway rules forbid naming
-// CELO or "gas" anywhere in the UI (it abstracts fees away and hides CELO
-// entirely), so an error string that leaks either one is a review failure. This
-// used to be a plain formatter with no wallet awareness, which meant MiniPay
-// users hitting a revert were told to "Add CELO to your wallet" — advice that is
-// both jargon and impossible to act on inside MiniPay.
+/**
+ * Turns a transaction failure into something a player can act on.
+ *
+ * `isMiniPay` is required rather than optional because MiniPay's gateway rules
+ * forbid naming CELO or "gas" anywhere in the UI — it abstracts fees away and
+ * hides CELO entirely, so an error string that leaks either term is a review
+ * failure, and advice like "add CELO to your wallet" is impossible to act on
+ * there anyway.
+ */
 function getFriendlyError(err: unknown, isMiniPay: boolean): string {
   const msg = err instanceof Error ? err.message : String(err)
   if (/user (rejected|denied)/i.test(msg)) return 'Transaction cancelled.'
@@ -457,69 +459,25 @@ function getFriendlyError(err: unknown, isMiniPay: boolean): string {
     if (reason) return `Transaction reverted: ${reason}`
     return 'Transaction reverted by the contract.'
   }
-  // Anything we don't recognise. Showing the underlying reason matters more
-  // than a tidy sentence: "Transaction failed. Please try again." is
-  // undiagnosable — the player has nothing to report and we have nothing to
-  // work from, which is exactly the hole we fell into chasing a MiniPay-only
-  // create-room failure that produced no revert and no insufficient-funds text.
-  const detail = firstLineOf(extractErrorDetail(err), isMiniPay)
-  // Append the shape of the request the wallet actually received. Keys and a
-  // calldata fingerprint only — no addresses, no amounts. Diagnosing a wallet
-  // that rejects a transaction without saying which part it objects to is
-  // guesswork otherwise, as six rounds of it demonstrated.
-  // MiniPay only. This is a debugging aid for a live investigation, and
-  // "keys=[data,from,to] data=0x095ea7b3 len=138" is noise to a desktop player
-  // who just wants to know their transaction failed. Delete the whole suffix
-  // once the MiniPay approve issue is closed.
-  const shape = isMiniPay ? getLastTxShape() : null
-  const suffix = shape ? ` · ${shape}` : ''
-  return detail
-    ? `Transaction failed — ${detail}${suffix}`
-    : `Transaction failed. Please try again.${suffix}`
+  const detail = providerReason(err, isMiniPay)
+  return detail ? `Transaction failed — ${detail}` : 'Transaction failed. Please try again.'
 }
 
 /**
- * Tag a failure with the step that produced it.
+ * The provider's own complaint, dug out of viem's wrapper.
  *
- * Creating a room is four calls that can each fail differently — balance read,
- * allowance read, ERC-20 approve, createRoom — and MiniPay reports several of
- * them with the same opaque "Permission denied". Without a label there is no
- * way to tell an approval the wallet refused from a room creation that
- * reverted, which is the difference between a one-line fix and another round of
- * guessing.
+ * viem wraps injected-wallet failures, so a wallet that rejects a request
+ * surfaces at the top level as the useless "An unknown RPC error occurred"
+ * while the real `code` and `message` sit one or more levels down in `.cause`.
+ * Reading only `err.message` therefore tells a player nothing and leaves us
+ * nothing to work from when they report it.
  *
- * The original error is preserved as `cause`, so extractErrorDetail still
- * reaches the provider's own code and message underneath.
+ * Returns an empty string if nothing more specific than viem's placeholder is
+ * available, so the caller can fall back to its own wording.
  */
-async function inStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn()
-  } catch (err) {
-    const base = err instanceof Error ? err.message : String(err)
-    const wrapped = new Error(`[${step}] ${base}`)
-    // Assigned rather than passed to the constructor so this does not depend on
-    // the ES2022 `cause` option being in the compile target.
-    ;(wrapped as Error & { cause?: unknown }).cause = err
-    throw wrapped
-  }
-}
-
-/**
- * Dig the provider's actual complaint out of a wrapped error.
- *
- * `err.message` alone is not enough. viem wraps provider failures, so an
- * injected wallet rejecting a request surfaces as the useless top-level string
- * "An unknown RPC error occurred" (viem's UnknownRpcError) while the real
- * `code` and `message` sit one or more levels down in `.cause`. Reading only
- * the top level is what made a MiniPay-only failure undiagnosable.
- *
- * Walks the cause chain, collecting viem's `shortMessage`/`details` and the
- * raw RPC `code`/`message`, deduped and in order of usefulness. Guarded against
- * cycles because error causes can be self-referential.
- */
-function extractErrorDetail(err: unknown): string {
+function providerReason(err: unknown, isMiniPay: boolean): string {
   const parts: string[] = []
-  const seen = new Set<unknown>()
+  const seen = new Set<unknown>()   // error causes can be self-referential
   let cur: unknown = err
 
   while (cur && typeof cur === 'object' && !seen.has(cur)) {
@@ -527,33 +485,22 @@ function extractErrorDetail(err: unknown): string {
     const o = cur as Record<string, unknown>
     if (typeof o.shortMessage === 'string') parts.push(o.shortMessage)
     if (typeof o.details === 'string') parts.push(o.details)
-    if (o.code !== undefined && (typeof o.code === 'number' || typeof o.code === 'string')) {
-      parts.push(`code ${o.code}`)
-    }
+    if (typeof o.code === 'number' || typeof o.code === 'string') parts.push(`code ${o.code}`)
     if (typeof o.message === 'string') parts.push(o.message)
     cur = o.cause
   }
-  if (parts.length === 0 && typeof err === 'string') parts.push(err)
 
-  // Drop viem's own placeholder once anything more specific exists, and drop
-  // duplicates — the same sentence usually repeats at several levels.
+  // The same sentence usually repeats at several levels; viem's placeholder is
+  // only worth showing when nothing more specific turned up.
   const unique = [...new Set(parts.map(p => p.split('\n')[0].trim()).filter(Boolean))]
   const useful = unique.filter(p => !/^An unknown RPC error occurred/i.test(p))
-  return (useful.length > 0 ? useful : unique).join(' · ')
-}
+  const msg = (useful.length > 0 ? useful : unique).join(' · ')
 
-/**
- * Trim an extracted detail for a toast, sanitised for MiniPay.
- *
- * Raw provider/viem errors routinely contain "gas" and "CELO" (e.g.
- * "insufficient funds for gas * price + value"), and MiniPay's gateway rules
- * forbid both in user-visible copy. A leaked banned term in an error string is
- * still a review failure, so substitution happens here rather than trusting
- * every upstream message to be clean.
- */
-function firstLineOf(msg: string, isMiniPay: boolean): string {
   const clipped = msg.length > 200 ? `${msg.slice(0, 200)}…` : msg
   if (!isMiniPay) return clipped
+  // Raw provider errors routinely say "gas" and "CELO" ("insufficient funds for
+  // gas * price + value"). Both are banned in MiniPay copy, so substitute here
+  // rather than trusting every upstream message to be clean.
   return clipped
     .replace(/\bgas\s*fees?\b/gi, 'network fee')
     .replace(/\bgas\b/gi, 'network fee')
@@ -573,9 +520,8 @@ function isLowFundsError(err: unknown): boolean {
  * The toast still fires first so the reason is visible before the screen changes.
  */
 function reportTxError(err: unknown, isMiniPay: boolean): void {
-  // Full object, untruncated — the toast is necessarily short and sanitised.
-  // Kept unconditionally: MiniPay has no devtools, so when a user reports a
-  // failure the only other record is whatever they can retype from a toast.
+  // The toast is necessarily short and sanitised; keep the full object where a
+  // developer can still reach it.
   console.error('[tx] failed', { isMiniPay, err })
   toast.error(getFriendlyError(err, isMiniPay))
   if (isMiniPay && isLowFundsError(err)) {
@@ -1290,9 +1236,9 @@ export default function LobbyPage() {
               className="mb-6 rounded-lg border p-4"
               style={{ backgroundColor: 'rgba(245,197,24,0.06)', borderColor: 'rgba(245,197,24,0.4)' }}
             >
-              {/* The action is the word "Convert" inline, not a separate button
-                  below — on a 360px-wide MiniPay viewport the banner plus a
-                  full-width button ate most of the fold before the room list. */}
+              {/* Inline link rather than a button below: on a 360px MiniPay
+                  viewport the banner plus a full-width button pushed the room
+                  list off the fold. */}
               <p className="font-mono text-sm" style={{ color: '#f5c518' }}>
                 You hold {altStables.map(a => `${a.amount.toFixed(2)} ${a.symbol}`).join(' and ')}, but
                 stakes are paid in {STABLE_TOKEN}.{' '}
@@ -1369,9 +1315,8 @@ export default function LobbyPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#7d9a72' }}>
-                    {/* "minimum" only while the floor is actually binding. Once
-                        1% of the stake clears MIN_PROOF_FEE_WEI the number shown
-                        IS the fee, and calling that a minimum would be a lie. */}
+                    {/* "minimum" only while the floor is binding — above it the
+                        figure shown IS the fee, not a lower bound. */}
                     Shield fee: {formatToken(proofFeeWeiFor(stakeInput))} {STABLE_TOKEN}
                     {proofFeeWeiFor(stakeInput) === MIN_PROOF_FEE_WEI ? ' minimum' : ''}.
                     <br />First Shield is free.
