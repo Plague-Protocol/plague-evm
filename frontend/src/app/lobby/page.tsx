@@ -467,7 +467,11 @@ function getFriendlyError(err: unknown, isMiniPay: boolean): string {
   // calldata fingerprint only — no addresses, no amounts. Diagnosing a wallet
   // that rejects a transaction without saying which part it objects to is
   // guesswork otherwise, as six rounds of it demonstrated.
-  const shape = getLastTxShape()
+  // MiniPay only. This is a debugging aid for a live investigation, and
+  // "keys=[data,from,to] data=0x095ea7b3 len=138" is noise to a desktop player
+  // who just wants to know their transaction failed. Delete the whole suffix
+  // once the MiniPay approve issue is closed.
+  const shape = isMiniPay ? getLastTxShape() : null
   const suffix = shape ? ` · ${shape}` : ''
   return detail
     ? `Transaction failed — ${detail}${suffix}`
