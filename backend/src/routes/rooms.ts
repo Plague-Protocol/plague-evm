@@ -162,9 +162,11 @@ roomRouter.put('/:id/name', async (req, res) => {
     // not land), and a room stuck at `waiting` would otherwise hold its name
     // forever with nothing to clear it. A waiting room past its own expiry
     // cannot be joined on-chain, so it does not get to keep the name.
+    // Case-insensitive: "Outbreak" and "outbreak" are the same room name to a
+    // player scanning the lobby, so they must clash rather than sit side by side.
     const conflict = await prisma.room.findFirst({
       where: {
-        name,
+        name: { equals: name, mode: 'insensitive' },
         NOT: { roomId },
         status: { not: 'ended' },
         OR: [
