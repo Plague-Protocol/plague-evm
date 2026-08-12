@@ -154,9 +154,24 @@ roomRouter.put('/:id/name', async (req, res) => {
   const roomId = req.params.id
   const name = parsed.data.name
   try {
-    // Reject if another active room already has this name
+    // Reject only if a room that is genuinely still live holds this name. A
+    // finished game must release its name — players reuse the ones they like.
+    //
+    // "Live" is deliberately not just `status != ended`. Status transitions can
+    // be missed (a backend restart mid-game, an on-chain expiry the sweep could
+    // not land), and a room stuck at `waiting` would otherwise hold its name
+    // forever with nothing to clear it. A waiting room past its own expiry
+    // cannot be joined on-chain, so it does not get to keep the name.
     const conflict = await prisma.room.findFirst({
-      where: { name, status: { not: 'ended' }, NOT: { roomId } },
+      where: {
+        name,
+        NOT: { roomId },
+        status: { not: 'ended' },
+        OR: [
+          { status: { not: 'waiting' } },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
       select: { roomId: true },
     })
     if (conflict) {

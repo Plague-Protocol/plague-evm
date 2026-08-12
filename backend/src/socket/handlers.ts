@@ -538,6 +538,25 @@ async function persistGameSummaryFromChain(roomId: string, outcome?: number): Pr
     endedAt: new Date(),
     players: playerSummaries,
   })
+
+  // Mark the room itself finished, not just the summary.
+  //
+  // Until this existed, `setRoomStatus` was called from exactly one place —
+  // the expiry sweep — so a room that was actually *played to completion*
+  // stayed at its default `waiting` forever. Two things depend on that status
+  // and both got it wrong: the room-name check treated a finished game's name
+  // as still taken, and `getActiveRoomByHost` kept its host blocked from ever
+  // opening another room.
+  //
+  // Deliberately after the summary write: the summary is the durable record, so
+  // if the status update fails the game is still counted and the expiry sweep
+  // or an operator can clean up. The reverse order could lose a result.
+  try {
+    await setRoomStatus(roomId, 'ended')
+  } catch {
+    // Rooms created straight on-chain from the frontend may have no persisted
+    // record yet. Nothing to mark, and the summary above is already saved.
+  }
 }
 
 async function enrichEventArgs(
