@@ -89,6 +89,15 @@ const PHASE_MAP: Record<number, RoundPhase> = {
   4: 'ended',
 }
 
+/** Progress order within a round. Used by the monotonic guard below. */
+const PHASE_ORDER: Record<RoundPhase, number> = {
+  infection:  0,
+  discussion: 1,
+  voting:     2,
+  reveal:     3,
+  ended:      4,
+}
+
 // ── Status numeric → string (PlayerStatus enum) ───────────────────────────────
 const PLAYER_STATUS_MAP: Record<number, 'clean' | 'infected' | 'eliminated'> = {
   0: 'clean',
@@ -204,7 +213,17 @@ function buildRoundFromRaw(rawRoom: any, players: Player[]): Round | null {
 function isStaleRound(current: Round | null, incoming: Round | null): boolean {
   if (!current || !incoming) return false
   if (incoming.number !== current.number) return incoming.number < current.number
-  return incoming.startedAt < current.startedAt
+  if (incoming.startedAt !== current.startedAt) return incoming.startedAt < current.startedAt
+  // Same round AND same phaseStartedAt, so the two comparisons above cannot
+  // separate them — yet the phase can still differ, because `phase_changed`
+  // advances the phase from the socket without touching `startedAt` (the chain
+  // is the only thing that moves it). A lagging read of the pre-change state
+  // therefore arrives looking identical to the guard and drags the phase
+  // backwards: voting reverts to discussion, or the UI sticks on infection for
+  // the rest of the round.
+  //
+  // Phases only ever run forward within a round, so their order settles it.
+  return PHASE_ORDER[incoming.phase] < PHASE_ORDER[current.phase]
 }
 
 async function enrichLocalRole(
