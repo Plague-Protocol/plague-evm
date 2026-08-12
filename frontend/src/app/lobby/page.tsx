@@ -522,6 +522,7 @@ function isLowFundsError(err: unknown): boolean {
 function reportTxError(err: unknown, isMiniPay: boolean): void {
   // The toast is necessarily short and sanitised; keep the full object where a
   // developer can still reach it.
+  // eslint-disable-next-line no-console
   console.error('[tx] failed', { isMiniPay, err })
   toast.error(getFriendlyError(err, isMiniPay))
   if (isMiniPay && isLowFundsError(err)) {

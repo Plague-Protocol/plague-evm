@@ -10,7 +10,9 @@ import {
   type PublicClient,
 } from 'viem'
 import { celoSepolia, celo } from 'viem/chains'
+import { EIP1193, type Wallet as ThirdwebWallet } from 'thirdweb/wallets'
 import { toDataSuffix } from '@celo/attribution-tags'
+import { thirdwebClient, targetChain } from './thirdweb'
 
 /** MiniPay's in-app browser. Gates the wallet quirks it doesn't share with
  *  extension wallets: no chain switching, and gas paid in stablecoin. */
@@ -706,15 +708,53 @@ export function createContractClient(config: ContractConfig): PlagueContractClie
 
 // ── Shared wallet helper ──────────────────────────────────────────────────────
 
+/**
+ * The connected thirdweb wallet, published here by WalletProvider.
+ *
+ * Signing needs an EIP-1193 provider, and for a long time this file only knew
+ * how to find one at `window.ethereum`. That silently excluded the connect
+ * modal's *first and most prominent* option: social sign-in creates a thirdweb
+ * in-app wallet, which injects nothing. Those users could connect, see their
+ * address and read their balance, then hit "No EIP-1193 wallet provider found"
+ * on every single write.
+ *
+ * A module-level handle rather than a parameter because the contract client is
+ * built outside React (`createContractClient`) and threading a wallet through
+ * every call site would touch far more code than the bug is worth.
+ */
+let connectedWallet: ThirdwebWallet | null = null
+
+export function setConnectedWallet(wallet: ThirdwebWallet | null): void {
+  connectedWallet = wallet
+}
+
 function makeWalletClient(account: `0x${string}`, chain: typeof celo | typeof celoSepolia) {
-  if (!globalThis.window?.ethereum) {
-    throw new Error('No EIP-1193 wallet provider found. Install MetaMask or Valora.')
+  const injected = globalThis.window?.ethereum
+
+  // MiniPay keeps using its injected provider directly. That path is verified
+  // on a real device and adapting it through thirdweb would re-route the one
+  // wallet whose behaviour we have actually confirmed, for no gain — MiniPay
+  // connects by wrapping this same provider in the first place.
+  const provider = isMiniPay() && injected
+    ? injected
+    : connectedWallet
+      ? EIP1193.toProvider({ wallet: connectedWallet, chain: targetChain(), client: thirdwebClient })
+      : injected
+
+  if (!provider) {
+    throw new Error('No wallet connected. Sign in or connect a wallet, then try again.')
   }
+
+  // Everything else prefers the thirdweb wallet, because thirdweb is what
+  // actually holds the connection here. Preferring `window.ethereum` would be
+  // wrong whenever both exist: a user who signed in with Google in a browser
+  // that also has MetaMask installed would have their transaction sent to
+  // MetaMask, addressed from an account MetaMask has never heard of.
   return createWalletClient({
     account,
     chain,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    transport: custom(globalThis.window.ethereum as any),
+    transport: custom(provider as any),
   })
 }
 

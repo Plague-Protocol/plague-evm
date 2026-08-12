@@ -21,6 +21,7 @@ import {
 } from 'thirdweb/react'
 import { EIP1193 } from 'thirdweb/wallets'
 import { thirdwebClient, supportedWallets, targetChain, celo, celoSepolia } from '@/lib/thirdweb'
+import { setConnectedWallet } from '@/lib/contract'
 
 declare global {
   interface Window {
@@ -99,6 +100,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // twConnect is stable ref — only run once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Hand the connected wallet to lib/contract.ts, which builds wallet clients
+  // outside React and would otherwise only know how to find `window.ethereum`.
+  // Social sign-in produces an in-app wallet that injects nothing, so without
+  // this every write fails for the connect modal's most prominent option.
+  useEffect(() => {
+    setConnectedWallet(activeWallet ?? null)
+    return () => setConnectedWallet(null)
+  }, [activeWallet])
 
   const isConnected = !!account
   const address     = (account?.address ?? null) as `0x${string}` | null
