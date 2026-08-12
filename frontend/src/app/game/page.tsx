@@ -294,6 +294,10 @@ function GamePageInner() { // NOSONAR
 
   // ── Mobile tab navigation ───────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<GameTab>('play')
+  // Phone-only: the pot/infected/shield strip starts collapsed. Closed by
+  // default because the three numbers on the strip are the whole answer most of
+  // the time; the expansion explains what they mean, which you need once.
+  const [statsOpen, setStatsOpen] = useState(false)
   const [unreadChat, setUnreadChat] = useState(0)
   const [isMobile, setIsMobile] = useState(false)
   // Refs to expose current values inside socket-handler closures without re-registering
@@ -338,6 +342,8 @@ function GamePageInner() { // NOSONAR
   // ── Derived ──────────────────────────────────────────────────────────────
   const phase       = currentRound?.phase ?? 'ended'
   const round       = currentRound?.number ?? 0
+  /** Shields can only be activated during Discussion — see PlagueGame.submitInnocenceProof. */
+  const shieldWindowOpen = phase === 'discussion'
   const activePlayers = room?.players?.filter(p => !p.isEliminated) ?? []
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
@@ -1246,11 +1252,53 @@ function GamePageInner() { // NOSONAR
               </p>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          {/* Pot / infected / shield window.
+              ── Phone: one strip. Tablet up: three cards. ────────────────────
+              These were three full-width stacked cards on a phone, roughly a
+              third of the fold spent before the game itself appeared. They are
+              not reading material though — nobody reads their pot, they glance
+              at it — so the phone gets one line and taps it open for the
+              detail.
+
+              Not moved to a tab, which was the other option considered: hiding
+              the stake and the infected count is how you end up with players
+              who never learn the money is real, and this session already
+              established that panels behind tabs do not get looked at. */}
+          <button
+            type="button"
+            onClick={() => setStatsOpen(o => !o)}
+            aria-expanded={statsOpen}
+            className="rise-in w-full rounded-lg border px-3 py-2.5 sm:hidden"
+            style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.25)' }}
+          >
+            <span className="flex items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-wider" style={{ color: '#7d9a72' }}>
+              <span>POT <b style={{ color: '#f5c518' }}>{potCUSD}</b></span>
+              <span>☣ <b style={{ color: '#e63329' }}>{infectedCount}/{activePlayers.length}</b></span>
+              <span>SHIELD <b style={{ color: shieldWindowOpen ? '#6b8e23' : '#7d9a72' }}>{shieldWindowOpen ? 'OPEN' : 'CLOSED'}</b></span>
+              <span aria-hidden="true" style={{ color: '#6b8e23' }}>{statsOpen ? '▴' : '▾'}</span>
+            </span>
+          </button>
+          {statsOpen && (
+            <div className="mt-2 space-y-1.5 rounded-lg border px-3 py-3 sm:hidden" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)' }}>
+              <p className="font-mono text-[11px]" style={{ color: '#8fa882' }}>
+                Pot: <span style={{ color: '#f5c518' }}>{potCUSD} USDm</span> — split between the winners.
+              </p>
+              <p className="font-mono text-[11px]" style={{ color: '#8fa882' }}>
+                Infected: <span style={{ color: '#e63329' }}>{infectedCount}</span> of {activePlayers.length} still alive.
+                {' '}They win by reaching a majority.
+              </p>
+              <p className="font-mono text-[11px]" style={{ color: '#8fa882' }}>
+                Shield window: <span style={{ color: shieldWindowOpen ? '#6b8e23' : '#7d9a72' }}>{shieldWindowOpen ? 'open' : 'closed'}</span>
+                {' '}— Shields can only be activated during Discussion.
+              </p>
+            </div>
+          )}
+
+          <div className="hidden sm:grid sm:grid-cols-3 gap-3 sm:gap-4">
             {[
               { label: 'POT',          value: `${potCUSD} USDm`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
-              { label: 'SHIELD WINDOW', value: phase === 'discussion' ? 'OPEN' : 'CLOSED', accent: '#6b8e23' },
+              { label: 'SHIELD WINDOW', value: shieldWindowOpen ? 'OPEN' : 'CLOSED', accent: '#6b8e23' },
             ].map((stat) => (
               <div
                 key={stat.label}
