@@ -107,17 +107,20 @@ function getPhaseDescription(
   roomStatus?: string,
   isInfected?: boolean,
 ): string {
+  // Kept to roughly one line each. On a phone these wrapped to three or four,
+  // and the phase card is the thing sitting between a player and the board —
+  // the sentence they need is "what do I do now", not the lore.
   if (phase === 'infection') return isInfected
-    ? 'You are a carrier. Patient Zero is spreading infection to a new target this round.'
-    : 'Patient Zero is spreading the plague. A new carrier is being assigned — stay vigilant.'
-  if (phase === 'discussion') return 'Infection has spread. Activate your Shield now before voting opens.'
-  if (phase === 'voting') return hasVoted ? 'Your vote has been cast. Awaiting other votes…' : 'Vote to eliminate the suspected carrier before more are infected.'
-  if (phase === 'reveal') return 'Votes tallied — elimination is being resolved on-chain.'
+    ? 'You are a carrier. A new target is being infected.'
+    : 'A new carrier is being assigned.'
+  if (phase === 'discussion') return 'Activate your Shield before voting opens.'
+  if (phase === 'voting') return hasVoted ? 'Vote cast. Waiting on the others…' : 'Vote out the suspected carrier.'
+  if (phase === 'reveal') return 'Resolving the elimination on-chain…'
   // Status is checked ahead of `result` here: a room can carry an aborted
   // result while sitting in `waiting`, and "Game over" is the wrong first
   // thing to say to someone who just walked into a room that hasn't started.
-  if (roomStatus === 'waiting') return 'Waiting for players to join. The game has not started yet.'
-  if (roomStatus === 'starting') return 'Set your Shield Password to continue — the game begins once every player has committed.'
+  if (roomStatus === 'waiting') return 'Waiting for players to join.'
+  if (roomStatus === 'starting') return 'Set your Shield Password — the game starts once everyone has.'
   if (result) return `Game over: ${result.outcome.replaceAll('_', ' ')}`
   return 'Game ended.'
 }
@@ -306,7 +309,10 @@ function GamePageInner() { // NOSONAR
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
   useEffect(() => { isMobileRef.current  = isMobile  }, [isMobile])
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 768px)')
+    // 767.98 so this is the exact complement of Tailwind's `md:` (min-width
+    // 768px) and of the .game-tab-bar rule in globals.css. A plain 768 here
+    // overlapped both by a pixel, and that pixel is iPad portrait.
+    const mq = window.matchMedia('(max-width: 767.98px)')
     setIsMobile(mq.matches)
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
     mq.addEventListener('change', handler)
@@ -1356,7 +1362,7 @@ function GamePageInner() { // NOSONAR
             type="button"
             onClick={() => setStatsOpen(o => !o)}
             aria-expanded={statsOpen}
-            className="rise-in w-full rounded-lg border px-3 py-2.5 sm:hidden"
+            className="rise-in w-full rounded-lg border px-3 py-2.5 md:hidden"
             style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.25)' }}
           >
             <span className="flex items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-wider" style={{ color: '#7d9a72' }}>
@@ -1367,7 +1373,7 @@ function GamePageInner() { // NOSONAR
             </span>
           </button>
           {statsOpen && (
-            <div className="mt-2 space-y-1.5 rounded-lg border px-3 py-3 sm:hidden" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)' }}>
+            <div className="mt-2 space-y-1.5 rounded-lg border px-3 py-3 md:hidden" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.18)' }}>
               <p className="font-mono text-[11px]" style={{ color: '#8fa882' }}>
                 Pot: <span style={{ color: '#f5c518' }}>{potCUSD} USDm</span> — split between the winners.
               </p>
@@ -1382,7 +1388,7 @@ function GamePageInner() { // NOSONAR
             </div>
           )}
 
-          <div className="hidden sm:grid sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="hidden md:grid md:grid-cols-3 gap-3 sm:gap-4">
             {[
               { label: 'POT',          value: `${potCUSD} USDm`, accent: '#f5c518' },
               { label: 'INFECTED',     value: `${infectedCount} / ${activePlayers.length}`, accent: '#e63329' },
@@ -1590,8 +1596,8 @@ function GamePageInner() { // NOSONAR
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>
                       <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
-                        Activate your Shield to prove innocence before voting opens. Your first Shield activation is free.
-                        {localPlayer?.freeProofUsed && ' (Free activation used — fee will be charged.)'}
+                        Proves you are clean, before voting opens.
+                        {localPlayer?.freeProofUsed ? ' Your free one is used — this costs the Shield fee.' : ' Your first one is free.'}
                       </p>
                       <input
                         type="password"

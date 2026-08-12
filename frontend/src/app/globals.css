@@ -362,7 +362,12 @@ select {
 }
 
 /* Hide tab bar on desktop */
-@media (min-width: 769px) {
+/* 768px, not 769px, so this lines up exactly with Tailwind's `md:` breakpoint.
+   At 769 there was a one-pixel-wide disagreement at exactly 768px — which is
+   iPad portrait, not an obscure width — where the mobile tab bar was still
+   showing while every `md:` utility had already switched to its desktop value,
+   putting the vote panel back in the sidebar under a mobile layout. */
+@media (min-width: 768px) {
   .game-tab-bar {
     display: none;
   }
