@@ -166,8 +166,14 @@ verified to build clean with scripts skipped.
   MiniPay's Pockets screen (`https://link.minipay.xyz/balance`); **no deeplink
   pre-fills a swap**. An in-app swap via Mento V3 (USDC/USDm pool
   `0x462fe0…A19E`, router `0x486184…B6f6`) is designed but unbuilt.
-- MiniPay constraints that already shape this code: **no message signing**
-  (`signMessage` is exposed but never called — keep it that way), and **never
+- ⚠️ **"MiniPay doesn't support message signing" is FALSE** — observed on a real
+  device 2026-08-12: another Mini App (Waffles) raised a "Digital signature"
+  sheet for a SIWE-style login and MiniPay signed it. That is `personal_sign`.
+  Whether **`eth_signTypedData_v4`** works is still untested, and only that one
+  matters for EIP-2612 `permit` — they are different RPC methods and a wallet
+  can support one without the other. Don't collapse them.
+- MiniPay constraints that already shape this code: `signMessage` is exposed but
+  never called (nothing needs it yet), and **never
   display or require CELO** (MiniPay hides it; the low-CELO gate is already
   `isMiniPay`-exempt).
 
