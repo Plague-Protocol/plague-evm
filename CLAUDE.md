@@ -111,10 +111,48 @@ was found asking MiniPay users to connect a wallet.
 
 - ✅ **Zero-click connect is device-verified** (2026-07-31, real phone) — no
   connect prompt appears in MiniPay.
-- ⚠️ **No transaction has ever been run inside MiniPay on a device.** Stake →
+- ⚠️ **No transaction has ever succeeded inside MiniPay on a device.** Stake →
   role commit → vote → payout is still theory: it typechecks and builds, nothing
   more. This is the single biggest unverified claim in any submission package.
   Verifying needs ngrok + a physical phone (MiniPay has no emulator).
+
+### 🚨 MiniPay allowlists contracts — nothing in this repo was ever the bug
+
+Every write attempted inside MiniPay failed with **`Permission denied`, code
+`-32604`**, instantly and with no confirmation sheet, on calldata that was
+provably clean (a textbook 68-byte ERC-20 `approve`). It looks like a
+client-side bug and is not one: **MiniPay allowlists Mini Apps by contract
+address and function selector**, and this app has not been submitted for review
+yet (secondhand from a shipped Mini App builder, 2026-08-12 — plausible, fits
+every observation, but not yet confirmed by a working transaction).
+
+Six changes were made hunting this and **all six are reverted** in `43e759d`:
+dropping `feeCurrency`, dropping the attribution `dataSuffix`, exact-amount
+instead of `maxUint256` allowances, an explicit `eth_requestAccounts`, a
+provider wrapper that recorded tx shapes, and a `?diag=1` probe panel. **Do not
+reintroduce any of them from first principles** — each looked correct and none
+worked.
+
+What to submit for the allowlist (selectors computed from the deployed ABI):
+
+| Contract | Selector | Signature |
+|---|---|---|
+| USDm `0x765DE8…1282a` | `0x095ea7b3` | `approve(address,uint256)`, spender = PlagueGame |
+| PlagueGame `0xe157…2710` | `0x9ea2ef14` | `createRoom(uint32,uint256,uint256,uint64)` |
+| | `0x9cfc4b45` | `joinRoom(uint256)` |
+| | `0xe5ed1d59` | `startGame(uint256)` |
+| | `0x7e7c90b3` | `submitRoleCommitment(uint256,bytes32,bytes)` — **5,479 B calldata** |
+| | `0x77df41b7` | `castVote(uint256,address)` |
+| | `0x3225b30c` | `submitInnocenceProof(uint256,bytes32,bytes32,bytes)` — **5,860 B calldata** |
+| | `0x6e5e8a2e` | `expireRoom(uint256)` |
+
+The `approve` is on **USDm's** contract, not ours — easiest one to omit.
+
+⚠️ **Do not make PlagueGame upgradeable to work around this.** It is a plain
+`contract PlagueGame {` with a zero EIP-1967 slot, so upgradeability means a new
+address — which invalidates the allowlist submission, the verified Blockscout
+links, and the mainnet tx evidence in the submission docs. Deployed bytecode is
+also **23,397 / 24,576 bytes**, leaving ~1.1 kB, less than OZ UUPS needs.
 
 **Listing submission:** the intake form moved to
 `https://developer.minipay.to/mini-app-listing` and its fields changed (app
@@ -151,7 +189,8 @@ verified to build clean with scripts skipped.
 - **MiniPay sets the fee currency, not you.** Per
   [docs](https://docs.minipay.xyz/technical-references/send-transaction.html):
   "MiniPay may ignore feeCurrency and choose the token the user has the most
-  of." So do **not** plumb `feeCurrency` through — it's overridden. But *our own*
+  of." We pass it anyway so the intent is explicit in code, but treat it as a
+  no-op — it is not a lever, and removing it fixes nothing. But *our own*
   `estimateContractGas` goes through the RPC proxy without it, so the node
   simulates a native-CELO payer with a zero balance and can reject with
   "insufficient funds" before MiniPay is consulted. `gasLimitFor()` in
