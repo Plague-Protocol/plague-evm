@@ -133,6 +133,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [withdrawing, setWithdrawing] = useState(false)
+  const [recovering, setRecovering] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const client = getContractClient()
@@ -234,6 +235,47 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : 'Withdraw failed.')
     } finally {
       setWithdrawing(false)
+    }
+  }, [address, load])
+
+  /**
+   * Force one room forward.
+   *
+   * The backend decides what that means from the room's live on-chain status —
+   * expire a lapsed waiting room, run the commit path, or advance a stalled
+   * phase. Nothing here chooses the action, so this button cannot do anything
+   * the phase monitors would not have done on their own.
+   *
+   * Confirmed first anyway: it spends real gas, and on a lapsed waiting room it
+   * refunds every stake, which is not something to trigger by mis-click.
+   */
+  const handleUnstick = useCallback(async (roomId: string) => {
+    const client = getContractClient()
+    if (!client || !address) return
+    if (!globalThis.confirm(`Force room #${roomId} forward?\n\nThe backend picks the action from the room's on-chain status — this can expire the room and refund every stake.`)) {
+      return
+    }
+    setRecovering(roomId)
+    try {
+      const timestamp = Date.now()
+      // Must match unstickMessage() in backend/src/routes/rooms.ts.
+      const signature = await client.signMessage(address, `plague-ops:unstick:${roomId}:${timestamp}`)
+      const r = await fetch(`${BACKEND_URL}/api/rooms/${roomId}/unstick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, timestamp, signature }),
+      })
+      const j = await r.json().catch(() => null)
+      if (!r.ok) throw new Error(j?.message ?? j?.error ?? `Recovery failed (${r.status})`)
+      // The backend reports what it actually did — surface it verbatim rather
+      // than a generic success, because "already ended, nothing to do" and
+      // "refunded stakes" need to be told apart.
+      toast.success(`Room #${roomId}: ${j?.action ?? 'done'}`)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Recovery failed.')
+    } finally {
+      setRecovering(null)
     }
   }, [address, load])
 
@@ -653,7 +695,8 @@ export default function AdminPage() {
                         <th className="py-2 pr-4">Players</th>
                         <th className="py-2 pr-4">Pot</th>
                         <th className="py-2 pr-4">Phase age</th>
-                        <th className="py-2">Flag</th>
+                        <th className="py-2 pr-4">Flag</th>
+                        <th className="py-2">Recover</th>
                       </tr>
                     </thead>
                     <tbody style={{ color: '#8fa882' }}>
@@ -667,11 +710,28 @@ export default function AdminPage() {
                           <td className="py-2 pr-4">{r.players}/{r.maxPlayers}</td>
                           <td className="py-2 pr-4">{formatToken(r.pot)}</td>
                           <td className="py-2 pr-4">{r.status === 2 ? ago(r.phaseStartedAt) : '—'}</td>
-                          <td className="py-2" style={{ color: '#e63329' }}>{r.stuck ? '⚠ STUCK?' : ''}</td>
+                          <td className="py-2 pr-4" style={{ color: '#e63329' }}>{r.stuck ? '⚠ STUCK?' : ''}</td>
+                          <td className="py-2">
+                            {/* Ended rooms are a guaranteed no-op on the backend,
+                                so there is nothing to offer for them. */}
+                            {r.status !== 3 && (
+                              <button
+                                onClick={() => void handleUnstick(r.id.toString())}
+                                disabled={recovering !== null}
+                                className="rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-all hover:opacity-80 disabled:opacity-40"
+                                style={{
+                                  borderColor: r.stuck ? 'rgba(230,51,41,0.6)' : 'rgba(107,142,35,0.35)',
+                                  color:       r.stuck ? '#e63329' : '#7d9a72',
+                                }}
+                              >
+                                {recovering === r.id.toString() ? 'Running…' : 'Recover'}
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                       {!loading && rooms.length === 0 && (
-                        <tr><td colSpan={7} className="py-4" style={{ color: '#7d9a72' }}>No rooms found.</td></tr>
+                        <tr><td colSpan={8} className="py-4" style={{ color: '#7d9a72' }}>No rooms found.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -679,6 +739,10 @@ export default function AdminPage() {
                 <p className="mt-3 font-mono text-[10px] leading-relaxed" style={{ color: '#7d9a72' }}>
                   ⚠ STUCK? = Active room whose phase hasn&apos;t advanced in 15+ minutes — see
                   docs/TROUBLESHOOTING.md (stuck game phases) before touching anything.
+                  <br />
+                  Recover asks the backend to force one room forward. It picks the action from the
+                  room&apos;s on-chain status, so it can only do what the phase monitors would have
+                  done — and on a lapsed waiting room that means expiring it and refunding stakes.
                 </p>
               </div>
             </>
