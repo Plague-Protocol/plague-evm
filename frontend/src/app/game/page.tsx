@@ -178,7 +178,52 @@ function parseContractError(err: unknown): string {
   for (const [name, friendly] of Object.entries(CONTRACT_ERROR_MAP)) {
     if (msg.includes(name)) return friendly
   }
+  if (isTransientRpcError(err)) return TRANSIENT_RPC_MESSAGE
   return msg.split('\n')[0]
+}
+
+const TRANSIENT_RPC_MESSAGE = 'Network hiccup — nothing was charged. Tap the button again.'
+
+/**
+ * Did this fail because the network dropped it, rather than because the
+ * transaction was wrong?
+ *
+ * Celo reads go through load-balanced nodes that intermittently time out or
+ * return a response viem cannot classify, which surfaces as the useless
+ * "An unknown RPC error occurred". Reported from a phone: activating a Shield
+ * failed with exactly that, and the identical retry a moment later succeeded.
+ *
+ * These are worth distinguishing because the advice is the opposite of a real
+ * failure. A revert means stop and fix something; this means press it again.
+ * Matching is deliberately narrow — a contract revert must never be described
+ * as a hiccup, so anything with a decoded reason is handled above this.
+ */
+function isTransientRpcError(err: unknown): boolean {
+  const seen = new Set<unknown>()
+  let cur: unknown = err
+  while (cur && typeof cur === 'object' && !seen.has(cur)) {
+    seen.add(cur)
+    const o = cur as Record<string, unknown>
+    const text = [o.shortMessage, o.details, o.message].filter(v => typeof v === 'string').join(' ')
+    if (/unknown rpc error|request timed out|timeout|failed to fetch|network ?error|internal error|service unavailable|502|503|504/i.test(text)) {
+      return true
+    }
+    cur = o.cause
+  }
+  return false
+}
+
+/** Run `fn`, retrying once if the network dropped it rather than rejected it. */
+async function retryOnTransient<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    if (!isTransientRpcError(err)) throw err
+    // Short pause so the retry has a chance of landing on a healthier node
+    // rather than hammering the one that just failed.
+    await new Promise(r => setTimeout(r, 1_200))
+    return fn()
+  }
 }
 
 // ── Inner component (uses hooks that need Suspense) ───────────────────────────
@@ -584,7 +629,10 @@ function GamePageInner() { // NOSONAR
     setVoting(true)
     setVoteError(null)
     try {
-      await client.castVote(address, BigInt(roomId), selectedVote as `0x${string}`)
+      // Same dropped-request retry as the Shield. A vote lost to a flaky node is
+      // worse than a Shield lost to one: an absent vote is counted against you.
+      await retryOnTransient(() =>
+        client.castVote(address, BigInt(roomId), selectedVote as `0x${string}`))
       // Optimistic update — flip the UI immediately without waiting for the socket broadcast.
       setOptimisticVotedFor(selectedVote)
       setSelectedVote(null)
@@ -660,7 +708,10 @@ function GamePageInner() { // NOSONAR
         }
       }
 
-      await client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes)
+      // Retried on a dropped request, but NOT the proof generation above — that
+      // is seconds of work and the Shield window is on a clock.
+      await retryOnTransient(() =>
+        client.submitInnocenceProof(address, BigInt(roomId), commitment, nullifierHex, proofBytes))
       setOptimisticProofDone(true)
       socket?.emit('request_room_refresh', { roomId })
       toast.success('Shield activated!')
@@ -783,16 +834,23 @@ function GamePageInner() { // NOSONAR
     setStarting(true)
     setStartError(null)
     try {
-      await client.startGame(address, BigInt(roomId))
+      await retryOnTransient(() => client.startGame(address, BigInt(roomId)))
       socket?.emit('request_room_refresh', { roomId })
       schedulePostTxRefresh()
+      // `starting` is deliberately NOT cleared here.
+      //
+      // The transaction is mined by this point, but the room is still `waiting`
+      // until the backend observes it — several seconds on a slow read. Clearing
+      // the flag would put a live "Start Game" button back in front of the host
+      // during that gap, and pressing it again just reverts. This whole block is
+      // gated on `status === 'waiting'`, so it unmounts itself the moment the
+      // room actually starts.
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to start game.'
-      // Extract the human-readable revert reason if present (e.g. NotEnoughPlayers)
+      const msg = parseContractError(err)
+      // Keep the revert name if there is one (e.g. NotEnoughPlayers).
       const revert = (/Error:\s*(\w+\(\))/).exec(msg)?.[1] ?? msg.split('\n')[0]
       toast.error(`Start failed: ${revert}`)
       setStartError(revert)
-    } finally {
       setStarting(false)
     }
   }, [address, roomId, schedulePostTxRefresh, socket])
