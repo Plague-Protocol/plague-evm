@@ -82,28 +82,44 @@ export function useSoundscape(
   const gestureReady = useHasGesture()
   const audioRef  = useRef<HTMLAudioElement | null>(null)
   const sceneRef  = useRef<string | null>(null)
-  const fadingOut = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Only the fade-IN is shared state now. Fade-outs belong to the track being
+  // retired and clean up after themselves, so nothing else can cancel one.
+
   const fadingIn  = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const clearFades = useCallback(() => {
-    if (fadingOut.current) clearInterval(fadingOut.current)
-    if (fadingIn.current)  clearInterval(fadingIn.current)
+    if (fadingIn.current) clearInterval(fadingIn.current)
   }, [])
 
-  const fadeOut = useCallback((audio: HTMLAudioElement, onDone: () => void) => {
-    clearFades()
-    const step = audio.volume / (FADE_DURATION_MS / 50)
-    fadingOut.current = setInterval(() => {
+  /**
+   * Fade a track out and retire it.
+   *
+   * Owns its own interval rather than sharing `fadingOut.current`, and holds no
+   * reference to "the current track". The old version did both, which is what
+   * broke phase music: the swap ran as `fadeOut(current, startNew)` over 1500ms
+   * while `audioRef` was only reassigned inside `startNew`, so a second scene
+   * change during that window called `clearFades()`, killed the in-flight
+   * interval, and `startNew` never fired. The outgoing track stayed installed as
+   * the current one and the incoming track never started — every later phase
+   * then found the same stale element and faded it again, which is why one
+   * track played all game and stuttered doing it.
+   *
+   * Untracked immediately so the audio registry cannot resume a retired track
+   * when the app returns from the background.
+   */
+  const retire = useCallback((audio: HTMLAudioElement) => {
+    untrackAudio(audio)
+    const step = Math.max(audio.volume / (FADE_DURATION_MS / 50), 0.01)
+    const timer = setInterval(() => {
       if (audio.volume > step) {
         audio.volume = Math.max(0, audio.volume - step)
       } else {
         audio.volume = 0
         audio.pause()
-        clearInterval(fadingOut.current!)
-        onDone()
+        clearInterval(timer)
       }
     }, 50)
-  }, [clearFades])
+  }, [])
 
   const fadeIn = useCallback((audio: HTMLAudioElement) => {
     clearFades()
@@ -141,46 +157,44 @@ export function useSoundscape(
       sting.play().catch(() => {})
     }
 
-    if (!src) {
-      if (audioRef.current) fadeOut(audioRef.current, () => {})
-      return
-    }
+    // Retire the outgoing track FIRST and unconditionally, so `audioRef` always
+    // holds the track belonging to the current scene. The incoming track no
+    // longer waits on the outgoing one's fade to finish, which is what made the
+    // swap losable — the two overlap for ~1.5s instead, which is a crossfade
+    // and sounds better than the gap it replaces.
+    const outgoing = audioRef.current
+    audioRef.current = null
+    if (outgoing) retire(outgoing)
 
-    const startNew = () => {
-      const a = trackAudio(new Audio(src))
-      a.loop = true
-      a.volume = 0
-      audioRef.current = a
-      fadeIn(a)
-    }
+    if (!src) return
 
-    if (audioRef.current && !audioRef.current.paused) {
-      fadeOut(audioRef.current, startNew)
-    } else {
-      startNew()
-    }
+    const a = trackAudio(new Audio(src))
+    a.loop = true
+    a.volume = 0
+    audioRef.current = a
+    fadeIn(a)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, gestureReady])
 
   // ── Respond to mute toggle ────────────────────────────────────────────────
+  //
+  // Mutes the element in place instead of retiring it. It used to fade out on
+  // mute and rebuild the track from `sceneRef` on unmute, which meant a second
+  // Audio for the same scene, the first left tracked and playable — pressing
+  // mute twice could leave two copies of one loop layered slightly apart.
+  //
+  // No fade on the way down: pressing mute should be immediate.
   useEffect(() => {
-    if (!audioRef.current) return
+    const a = audioRef.current
+    if (!a) return
     if (muted) {
-      fadeOut(audioRef.current, () => {})
-    } else if (!audioRef.current.paused) {
       clearFades()
-      audioRef.current.volume = 0
-      audioRef.current.play().catch(() => {})
-      fadeIn(audioRef.current)
-    } else if (sceneRef.current && sceneRef.current !== 'ended') {
-      const src = LOOP_TRACKS[sceneRef.current]
-      if (src) {
-        const a = trackAudio(new Audio(src))
-        a.loop = true
-        audioRef.current = a
-        fadeIn(a)
-      }
+      a.volume = 0
+      a.pause()
+      return
     }
+    a.play().catch(() => {/* gesture expired */})
+    fadeIn(a)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [muted])
 

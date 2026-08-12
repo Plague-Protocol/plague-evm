@@ -955,6 +955,94 @@ function GamePageInner() { // NOSONAR
 
   // ── Set Shield Password card ────────────────────────────────────────────
   // Rendered once, at the top of the telemetry strip (see its slot below).
+  /**
+   * Vote Panel, defined once and rendered in two slots.
+   *
+   * It lived in the right-hand `<aside>`, a different flex container from the
+   * left column that holds the board. On a phone the grid collapses to one
+   * column and the whole aside renders after everything in the left column, so
+   * the panel sat below the cam no matter what `order` it was given — order only
+   * sorts siblings, and these were never siblings.
+   *
+   * So the phone renders it from the LEFT column at order-3, directly above the
+   * cam, and desktop keeps it in the sidebar where there is room for it.
+   */
+  const votePanel = showOnTab('play') ? (
+              <div className="rise-in order-3 md:order-none rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
+                <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
+                <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7d9a72' }}>{votePanelLabel}</p>
+
+                {phase === 'voting' && hasVoted && (
+                  <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.06)' }}>
+                    <p className="font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Your vote has been recorded.</p>
+                    {myVotedTarget && (
+                      <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
+                        You voted against{' '}
+                        <span style={{ color: '#f5c518' }}>
+                          {room?.players?.find(p => p.walletAddress.toLowerCase() === myVotedTarget.toLowerCase())?.displayName ?? `${myVotedTarget.slice(0, 6)}…`}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {phase === 'voting' && canVote && (
+                  <div className="mt-4 space-y-2">
+                    {activePlayers
+                      .filter(p => p.walletAddress !== address)
+                      .map((p) => (
+                        <button
+                          key={p.walletAddress}
+                          onClick={() => setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
+                          className="flex w-full items-center justify-between rounded-lg border px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] transition-all hover:opacity-90"
+                          style={{
+                            borderColor: selectedVote === p.walletAddress ? '#f5c518' : 'rgba(230,51,41,0.35)',
+                            backgroundColor: selectedVote === p.walletAddress ? 'rgba(245,197,24,0.1)' : 'rgba(230,51,41,0.1)',
+                            color: '#d4c9b2',
+                          }}
+                        >
+                          <span>{p.displayName}</span>
+                          {voteTally[p.walletAddress] ? (
+                            <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(230,51,41,0.25)', color: '#ff6b6b' }}>
+                              {voteTally[p.walletAddress]}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))}
+                    {voteError && <p className="font-mono text-xs" style={{ color: '#e63329' }}>{voteError}</p>}
+                    <button
+                      onClick={handleCastVote}
+                      disabled={!selectedVote || voting || !canVote}
+                      className="mt-2 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
+                      style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#d4c9b2' }}
+                    >
+                      {voting ? 'Submitting…' : 'Cast Vote'}
+                    </button>
+                  </div>
+                )}
+
+                {phase === 'voting' && !canVote && !hasVoted && (
+                  <p className="mt-4 font-mono text-xs" style={{ color: '#8fa882' }}>Voting is available only to alive room participants.</p>
+                )}
+
+                {phase !== 'voting' && currentRound?.votes.length ? (
+                  <div className="mt-4 space-y-1">
+                    {Object.entries(voteTally)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([addr, cnt]) => {
+                        const name = room?.players?.find(p => p.walletAddress.toLowerCase() === addr.toLowerCase())?.displayName ?? `${addr.slice(0, 8)}…`
+                        return (
+                          <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
+                            <span>{name}</span>
+                            <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt === 1 ? '' : 's'}</span>
+                          </div>
+                        )
+                      })}
+                  </div>
+                ) : null}
+              </div>
+  ) : null
+
   const shieldCommitCard = room?.status === 'starting' && showOnTab('play') ? (
     <div className={commitDone ? undefined : 'toxic-pulse rounded-lg'}>
       <div
@@ -1411,6 +1499,10 @@ function GamePageInner() { // NOSONAR
                 </div>
               )}
 
+              {/* Phone-only slot for the Vote Panel — above the cam, which is the
+                  whole point. Desktop renders it from the sidebar instead. */}
+              <div className="order-3 md:hidden">{votePanel}</div>
+
               {/* Containment Board (the cam) — sits below the action panels on a
                   phone, see the ordering note on the Action panels block. */}
               {showOnTab('play') && (
@@ -1588,83 +1680,10 @@ function GamePageInner() { // NOSONAR
             {/* ── RIGHT SIDEBAR ── */}
             <aside className="flex flex-col gap-6">
 
-              {/* Vote Panel — above the cam on a phone (see the ordering note on
-                  the Action panels block). */}
-              {showOnTab('play') && (
-                <div className="rise-in order-3 md:order-none rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(230,51,41,0.25)', animationDelay: '80ms' }}>
-                  <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>Vote Panel</h3>
-                  <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]" style={{ color: '#7d9a72' }}>{votePanelLabel}</p>
-
-                  {phase === 'voting' && hasVoted && (
-                    <div className="mt-4 rounded-lg border p-3" style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.06)' }}>
-                      <p className="font-mono text-xs" style={{ color: '#6b8e23' }}>✓ Your vote has been recorded.</p>
-                      {myVotedTarget && (
-                        <p className="mt-1 font-mono text-xs" style={{ color: '#8fa882' }}>
-                          You voted against{' '}
-                          <span style={{ color: '#f5c518' }}>
-                            {room?.players?.find(p => p.walletAddress.toLowerCase() === myVotedTarget.toLowerCase())?.displayName ?? `${myVotedTarget.slice(0, 6)}…`}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {phase === 'voting' && canVote && (
-                    <div className="mt-4 space-y-2">
-                      {activePlayers
-                        .filter(p => p.walletAddress !== address)
-                        .map((p) => (
-                          <button
-                            key={p.walletAddress}
-                            onClick={() => setSelectedVote(p.walletAddress === selectedVote ? null : p.walletAddress)}
-                            className="flex w-full items-center justify-between rounded-lg border px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] transition-all hover:opacity-90"
-                            style={{
-                              borderColor: selectedVote === p.walletAddress ? '#f5c518' : 'rgba(230,51,41,0.35)',
-                              backgroundColor: selectedVote === p.walletAddress ? 'rgba(245,197,24,0.1)' : 'rgba(230,51,41,0.1)',
-                              color: '#d4c9b2',
-                            }}
-                          >
-                            <span>{p.displayName}</span>
-                            {voteTally[p.walletAddress] ? (
-                              <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: 'rgba(230,51,41,0.25)', color: '#ff6b6b' }}>
-                                {voteTally[p.walletAddress]}
-                              </span>
-                            ) : null}
-                          </button>
-                        ))}
-                      {voteError && <p className="font-mono text-xs" style={{ color: '#e63329' }}>{voteError}</p>}
-                      <button
-                        onClick={handleCastVote}
-                        disabled={!selectedVote || voting || !canVote}
-                        className="mt-2 w-full rounded border py-2 font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90 disabled:opacity-40"
-                        style={{ backgroundColor: '#e63329', borderColor: '#e63329', color: '#d4c9b2' }}
-                      >
-                        {voting ? 'Submitting…' : 'Cast Vote'}
-                      </button>
-                    </div>
-                  )}
-
-                  {phase === 'voting' && !canVote && !hasVoted && (
-                    <p className="mt-4 font-mono text-xs" style={{ color: '#8fa882' }}>Voting is available only to alive room participants.</p>
-                  )}
-
-                  {phase !== 'voting' && currentRound?.votes.length ? (
-                    <div className="mt-4 space-y-1">
-                      {Object.entries(voteTally)
-                        .sort(([, a], [, b]) => b - a)
-                        .map(([addr, cnt]) => {
-                          const name = room?.players?.find(p => p.walletAddress.toLowerCase() === addr.toLowerCase())?.displayName ?? `${addr.slice(0, 8)}…`
-                          return (
-                            <div key={addr} className="flex justify-between font-mono text-xs" style={{ color: '#8fa882' }}>
-                              <span>{name}</span>
-                              <span style={{ color: '#ff6b6b' }}>{cnt} vote{cnt === 1 ? '' : 's'}</span>
-                            </div>
-                          )
-                        })}
-                    </div>
-                  ) : null}
-                </div>
-              )}
+              {/* Vote Panel renders on a phone from the LEFT column (see
+                  `votePanel` and the ordering note on the Action panels block).
+                  This slot is the desktop one, where the sidebar is fine. */}
+              <div className="hidden md:block">{votePanel}</div>
 
               {/* Chat — Chat tab (mobile) / always (desktop) */}
               {showOnTab('chat') && (
