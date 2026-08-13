@@ -3,7 +3,7 @@ import type { Server } from 'socket.io'
 import { z } from 'zod'
 import { isAddress, recoverMessageAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
-import { createRoomRecord, getActiveRoomByHost, listWaitingRooms } from '../repositories/rooms'
+import { createRoomRecord, getActiveRoomByHost, listLiveRooms, listWaitingRooms } from '../repositories/rooms'
 import { recoverRoom } from '../socket/handlers'
 import { prisma } from '../db/prisma'
 import { logger } from '../lib/logger'
@@ -64,6 +64,71 @@ roomRouter.get('/names', async (req, res) => {
       for (const r of rooms) names[r.roomId] = r.name ?? null
     }
     res.json({ names })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
+
+/**
+ * GET /api/rooms/live
+ * Rooms currently mid-game, for the arena hub's fast first paint and the nav
+ * live-dot. Served from Postgres, so it costs no RPC — the hub still confirms
+ * against the chain before rendering a Spectate button.
+ *
+ * Must be registered BEFORE `/:id` so "live" isn't parsed as a room id.
+ */
+roomRouter.get('/live', async (_req, res) => {
+  try {
+    const rooms = await listLiveRooms()
+    res.json({
+      count: rooms.length,
+      rooms: rooms.map(r => ({
+        roomId:     r.roomId,
+        name:       r.name,
+        status:     r.status,
+        maxPlayers: r.maxPlayers,
+        stakeAmount: r.stakeAmount,
+      })),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
+
+/**
+ * GET /api/rooms/recent?limit=5
+ * Most recently finished games, for the hub's "last outbreak" recap. Reads the
+ * durable GameSummary record, so it works even for rooms whose live state is
+ * long gone from the chain window the lobby scans.
+ *
+ * Must be registered BEFORE `/:id`.
+ */
+roomRouter.get('/recent', async (req, res) => {
+  const parsed = Number.parseInt(String(req.query.limit ?? '5'), 10)
+  const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 20) : 5
+  try {
+    const summaries = await prisma.gameSummary.findMany({
+      orderBy: { endedAt: 'desc' },
+      take: limit,
+      include: { players: true },
+    })
+    res.json({
+      games: summaries.map(s => ({
+        roomId:       s.roomId,
+        outcome:      s.outcome,
+        totalRounds:  s.totalRounds,
+        totalPot:     s.totalPot,
+        potPerWinner: s.potPerWinner,
+        winnerCount:  s.winnerCount,
+        endedAt:      s.endedAt.toISOString(),
+        playerCount:  s.players.length,
+        winners: s.players
+          .filter(p => p.result === 'win')
+          .map(p => ({ address: p.address, displayName: p.displayNameSnapshot })),
+      })),
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: message })

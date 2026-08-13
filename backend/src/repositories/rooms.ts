@@ -75,6 +75,35 @@ export async function listWaitingRooms(): Promise<Room[]> {
   return rooms
 }
 
+/**
+ * Rooms that are mid-game (`starting` or `active`).
+ *
+ * Read cache only — the chain is the authority, and the arena hub still does an
+ * on-chain read for the list it renders. This exists so the nav live-dot can
+ * ask "is anything running?" on every page without an RPC enumeration.
+ *
+ * Accuracy caveat: a room whose status update failed (no persisted record for
+ * on-chain-created rooms) is missing here. Under-reporting is the safe
+ * direction — a missing dot beats a dot that leads nowhere.
+ *
+ * The age bound is the other half of that. `active` is cleared by the game-end
+ * and expiry paths, but a backend restart mid-game leaves a row stranded there
+ * with nothing to clear it — which would light the live indicator forever. A
+ * game runs for minutes, so anything older than this is stale by definition.
+ */
+const LIVE_ROOM_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+export async function listLiveRooms(): Promise<Room[]> {
+  return prisma.room.findMany({
+    where: {
+      status: { in: ['starting', 'active'] },
+      createdAt: { gt: new Date(Date.now() - LIVE_ROOM_MAX_AGE_MS) },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+  })
+}
+
 export async function listExpiredWaitingRooms(now = new Date()): Promise<Room[]> {
   // Always use Postgres as the authority for expiry to avoid missing rooms due to cache evictions.
   return prisma.room.findMany({
@@ -90,6 +119,33 @@ export async function setRoomStatus(roomId: string, status: RoomStatus): Promise
   const room = await prisma.room.update({
     where: { roomId },
     data: { status },
+  })
+  await cacheRoom(room)
+  return room
+}
+
+/**
+ * Set a room's status, creating the record first if it does not exist.
+ *
+ * Rooms are created directly on-chain by the lobby — the backend only ever
+ * learns about one if the host also named it (`PUT /:id/name` upserts). So an
+ * unnamed player-made room has no row, `setRoomStatus` throws, and the room
+ * stays invisible to anything reading Postgres. That was harmless while status
+ * only fed the name check; it is not harmless now that `/api/rooms/live`
+ * answers "is a match running?" for the nav.
+ *
+ * Chain-derived fields are supplied by the caller (only the socket layer has a
+ * chain adapter), so this stays a pure persistence concern.
+ */
+export async function setRoomStatusEnsuring(
+  roomId: string,
+  status: RoomStatus,
+  fallback: Omit<CreateRoomRecordInput, 'roomId'>,
+): Promise<Room> {
+  const room = await prisma.room.upsert({
+    where:  { roomId },
+    update: { status },
+    create: { roomId, status, ...fallback },
   })
   await cacheRoom(room)
   return room

@@ -3,7 +3,7 @@ import { logger } from '../lib/logger'
 import { checkChatMessage } from '../lib/chatFilter'
 import type { GameEvent } from '../types/game'
 import { chainAdapter } from '../services/chainAdapter'
-import { listExpiredWaitingRooms, setRoomStatus, upsertGameSummary } from '../repositories/rooms'
+import { listExpiredWaitingRooms, setRoomStatus, setRoomStatusEnsuring, upsertGameSummary } from '../repositories/rooms'
 import { keccak256, toBytes } from 'viem'
 import { redis } from '../db/redis'
 import { prisma } from '../db/prisma'
@@ -1320,6 +1320,32 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
 
     await chainAdapter.beginActivePhase(id)
     logger.info(`[role-commitment-monitor] beginActivePhase called for room ${id}`)
+
+    // Keep the persisted status truthful. Postgres only ever learned about
+    // `ended` (expiry sweep + game end), so a room that was mid-game still read
+    // `waiting` — which made the DB useless for answering "is a match live?".
+    // The nav live-dot needs that answer on every page without paying for an
+    // on-chain enumeration.
+    //
+    // Ensuring rather than updating: an unnamed lobby-created room has no row
+    // at all, and those are exactly the human games the dot most needs to
+    // catch. Best-effort — the chain stays the authority and the hub reads it
+    // directly, so a failure here costs a dot, not a game.
+    try {
+      const onChain = await chainAdapter.getRoom(id)
+      await setRoomStatusEnsuring(id.toString(), 'active', {
+        hostAddress:     onChain.host as string,
+        maxPlayers:      Number(onChain.config.maxPlayers),
+        stakeAmount:     onChain.config.stakeAmount.toString(),
+        proofFee:        onChain.config.proofFee.toString(),
+        expiresAt:       new Date(Number(onChain.expiresAt) * 1000),
+        chainId:         process.env.NETWORK === 'mainnet' ? 42220 : 44787,
+        contractAddress: process.env.CONTRACT_ADDRESS ?? '',
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.warn(`[role-commitment-monitor] could not mark room ${id} active: ${message}`)
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     // Ignore expected races/timeouts.
