@@ -262,12 +262,47 @@ function unlockBed() {
  * here: every caller is a live page mid-navigation, never a frozen one.
  */
 let bedRamp = 0
+
+/**
+ * iOS ignores HTMLMediaElement.volume — it is effectively read-only there, and
+ * assignments are dropped silently rather than throwing. `muted` is honoured.
+ *
+ * So volume alone cannot mute the bed on a phone: the mute button flipped its
+ * icon while the track played straight through. Everything below drives
+ * `muted` as the authority and treats the volume ramp as enhancement for the
+ * platforms that implement it.
+ */
+let volumeSettable: boolean | null = null
+function canSetVolume(el: HTMLAudioElement): boolean {
+  if (volumeSettable !== null) return volumeSettable
+  const prev = el.volume
+  try {
+    el.volume = 0.123
+    volumeSettable = Math.abs(el.volume - 0.123) < 0.001
+    el.volume = prev
+  } catch {
+    volumeSettable = false
+  }
+  return volumeSettable
+}
+
 function rampBed(target: number, ms = FADE_DURATION_MS, onDone?: () => void) {
   const el = getBed()
   if (!el) return
   const token = ++bedRamp
-  const from = el.volume
   const to = Math.max(0, Math.min(1, target))
+
+  // The authority, and the only lever iOS respects.
+  el.muted = to === 0
+
+  if (!canSetVolume(el)) {
+    // No gradual fade available — the level is whatever the asset was mastered
+    // at. Silence still lands, which is the part that matters.
+    onDone?.()
+    return
+  }
+
+  const from = el.volume
   const t0 = performance.now()
   const step = () => {
     if (token !== bedRamp) return          // a newer ramp took over
