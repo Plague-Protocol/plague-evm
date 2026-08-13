@@ -127,6 +127,41 @@ function stopLoop() {
   }
 }
 
+/** Milliseconds of ramp before the loop is cut. Short enough to read as "off". */
+const STOP_FADE_MS = 90
+
+/**
+ * Leave-the-page version of stopLoop: ramp to silence, *then* stop.
+ *
+ * `stopLoop` cuts the buffer mid-waveform at full gain, which is a step
+ * discontinuity — audible as a sharp click when navigating away from the lobby
+ * or a game on mobile. Zeroing the gain afterwards was too late to prevent it.
+ *
+ * Both the ramp and the stop are scheduled on the audio clock, so they complete
+ * on the audio thread after React has torn the component down. The module-level
+ * context outlives the component, which is what makes that safe. Disconnection
+ * waits for `onended` so nothing is unplugged mid-sound either.
+ *
+ * Not used when switching phase loops: those share one gain node, so a fade
+ * there would be overwritten by the incoming track's fade-in. Only correct
+ * where nothing follows.
+ */
+function fadeOutLoop() {
+  if (!ctx || !loopGain) { stopLoop(); return }
+  const now   = ctx.currentTime
+  const endAt = now + STOP_FADE_MS / 1000
+
+  loopGain.gain.cancelScheduledValues(now)
+  loopGain.gain.setValueAtTime(loopGain.gain.value, now)
+  loopGain.gain.linearRampToValueAtTime(0, endAt)
+
+  const source = loopSource
+  loopSource = null
+  if (!source) return
+  source.onended = () => { try { source.disconnect() } catch { /* already gone */ } }
+  try { source.stop(endAt) } catch { stopLoop() }
+}
+
 async function playLoop(src: string, target: number) {
   if (!ctx || !loopGain) return
   const token = ++loopToken
@@ -197,8 +232,9 @@ export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
   useEffect(() => {
     return () => {
       loopToken++          // cancel any decode still in flight
-      stopLoop()
-      if (ctx && loopGain) loopGain.gain.value = 0
+      // Ramped, not cut — see fadeOutLoop. The old `stopLoop()` + `gain = 0`
+      // here was the sharp click heard when leaving the lobby or a game.
+      fadeOutLoop()
       sceneRef.current = null
       stopAllAudio()       // arena creak/heartbeat still use HTMLAudioElement
     }

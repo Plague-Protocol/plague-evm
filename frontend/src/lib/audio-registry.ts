@@ -77,16 +77,56 @@ export function untrackAudio(audio: HTMLAudioElement): void {
   pausedByRegistry.delete(audio)
 }
 
+/** Ramp length before a route-exit stop. Long enough to kill the click, short
+ *  enough that the sound is gone by the time the next screen paints. */
+const STOP_FADE_MS = 90
+
 /**
  * Stop everything now — used when leaving a route, where "pause and maybe
  * resume" is wrong: the scene that owned the sound is gone.
+ *
+ * Ramped rather than cut. `pause()` on a looping element (the arena heartbeat
+ * is `loop = true`) stops it mid-waveform at full volume, and that step
+ * discontinuity is audible as a sharp click — reported on mobile when leaving
+ * the lobby or a game. The element is untracked up front so a `visibilitychange`
+ * landing mid-fade cannot resume a track that is on its way out.
+ *
+ * Volume is restored after the pause: these are long-lived singletons, and one
+ * left at 0 would replay silently the next time a scene starts it.
  */
 export function stopAllAudio(): void {
-  for (const a of tracked) {
-    a.pause()
-    // Rewind so a later scene starts the track from the top rather than
-    // resuming mid-phrase from a game the player already left.
-    try { a.currentTime = 0 } catch { /* not seekable yet */ }
+  for (const a of [...tracked]) {
+    untrackAudio(a)
+    if (a.paused) continue
+
+    const v0 = a.volume
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      a.pause()
+      a.volume = v0
+      // Rewind so a later scene starts the track from the top rather than
+      // resuming mid-phrase from a game the player already left.
+      try { a.currentTime = 0 } catch { /* not seekable yet */ }
+    }
+
+    // A hidden page gets no animation frames at all, so a route change that
+    // coincides with backgrounding would leave the track playing forever.
+    // Timers still fire when throttled; rAF does not. This is the guarantee,
+    // the ramp below is only the polish.
+    setTimeout(finish, STOP_FADE_MS + 50)
+    if (document.hidden) { finish(); continue }
+
+    const t0 = performance.now()
+    const step = () => {
+      if (done) return
+      const k = (performance.now() - t0) / STOP_FADE_MS
+      if (k >= 1) { finish(); return }
+      a.volume = v0 * (1 - k)
+      requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
   }
   pausedByRegistry.clear()
 }
