@@ -87,16 +87,33 @@ function buildContext() {
 
 function armGestureListener() {
   if (typeof window === 'undefined' || hasGesture) return
-  const events = ['pointerdown', 'keydown', 'touchstart'] as const
+
+  // `touchstart` is deliberately absent. Chrome and Brave exclude it from user
+  // activation on purpose — so that scrolling a page cannot unlock audio —
+  // while iOS Safari accepts it. With `touchstart` armed as a one-shot, a
+  // single scroll on Android fired the handler, marked the gesture consumed and
+  // removed every listener, leaving a context that could never resume: the
+  // lobby was silent for the rest of the session and no later tap retried.
+  const events = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const
+
   const handler = () => {
     if (hasGesture) return
-    hasGesture = true
-    buildContext()   // must be inside the gesture on iOS
-    for (const w of gestureWaiters) w()
-    gestureWaiters.clear()
-    for (const e of events) window.removeEventListener(e, handler)
+    buildContext()   // must be created inside the gesture on iOS
+    if (!ctx) return
+
+    // The gesture only counts once the context is actually running. Anything
+    // the browser declined to treat as activation leaves us armed for the next
+    // one, instead of burning the unlock on it.
+    void ctx.resume().then(() => {
+      if (hasGesture || ctx?.state !== 'running') return
+      hasGesture = true
+      for (const w of gestureWaiters) w()
+      gestureWaiters.clear()
+      for (const e of events) window.removeEventListener(e, handler)
+    }).catch(() => { /* not a real activation — stay armed */ })
   }
-  for (const e of events) window.addEventListener(e, handler, { once: true, passive: true })
+
+  for (const e of events) window.addEventListener(e, handler, { passive: true })
 }
 
 function useHasGesture(): boolean {
@@ -129,6 +146,9 @@ function stopLoop() {
 
 /** Milliseconds of ramp before the loop is cut. Short enough to read as "off". */
 const STOP_FADE_MS = 90
+
+/** Ramp before suspending on backgrounding. Shorter — the app is already gone. */
+const SUSPEND_FADE_MS = 60
 
 /**
  * Leave-the-page version of stopLoop: ramp to silence, *then* stop.
@@ -215,11 +235,40 @@ export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
   // Suspending the whole context is the reliable way to go quiet in the
   // background — one switch for every node, and nothing left ringing because a
   // throttled timer never reached the line that would have paused it.
+  //
+  // But suspending it *while it is still producing sound* is what caused the
+  // buzz heard after backgrounding the app on mobile: measured at a 375 Hz
+  // fundamental with harmonics past 12 kHz, and 48000/128 = 375 — one Web Audio
+  // render quantum, repeating. The graph stops being rendered while the output
+  // device keeps pulling, so the hardware loops the last block it was given
+  // until the audio session tears down.
+  //
+  // Fix: ramp to silence first, so the block left looping is silence. The ramp
+  // is scheduled on the audio clock, which runs on the audio thread — it
+  // completes even though backgrounding freezes the main thread. The suspend
+  // itself is best-effort on a timer; if that never fires the context is
+  // already silent, which is the outcome that matters.
   useEffect(() => {
     const onVisibility = () => {
       if (!ctx) return
-      if (document.hidden) void ctx.suspend()
-      else if (sceneRef.current) void ctx.resume()
+      if (document.hidden) {
+        const now = ctx.currentTime
+        if (loopGain) {
+          loopGain.gain.cancelScheduledValues(now)
+          loopGain.gain.setValueAtTime(loopGain.gain.value, now)
+          loopGain.gain.linearRampToValueAtTime(0, now + SUSPEND_FADE_MS / 1000)
+        }
+        window.setTimeout(() => {
+          if (document.hidden) void ctx?.suspend()
+        }, SUSPEND_FADE_MS + 20)
+      } else if (sceneRef.current) {
+        // The gain was ramped to zero on the way out, so resuming the context
+        // is not enough on its own — without this the app comes back silent.
+        void ctx.resume().then(() => {
+          if (!sceneRef.current) return
+          rampGain(mutedRef.current ? 0 : (sceneRef.current === 'ended' ? ENDED_VOLUME : BASE_VOLUME))
+        }).catch(() => { /* resume needs a fresh gesture — the listener handles it */ })
+      }
     }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', onVisibility)
