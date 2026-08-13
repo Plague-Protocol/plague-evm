@@ -8,6 +8,7 @@ import { MuteButton } from './mute-button'
 import { OnlineCount } from './online-count'
 import { PlayerNameChip } from './player-name-chip'
 import { useIsAdmin } from '@/hooks/useIsAdmin'
+import { useLiveMatchCount } from '@/hooks/useLiveMatchCount'
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -21,9 +22,29 @@ type SiteNavProps = {
   currentPath: string
 }
 
+/**
+ * Amber pulse on the Match tab while a game is being played.
+ *
+ * Without it there is no way to tell from any other page that something is
+ * happening — a visitor has to open the lobby and look. The dot is the return
+ * signal: it makes a live match visible from wherever the player already is.
+ */
+function LiveDot() {
+  return (
+    <span className="relative ml-1.5 inline-flex h-1.5 w-1.5 align-middle" aria-hidden>
+      <span
+        className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-70"
+        style={{ backgroundColor: '#f5c518', animationDuration: '2s' }}
+      />
+      <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#f5c518' }} />
+    </span>
+  )
+}
+
 export function SiteNav({ currentPath }: SiteNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const isAdmin = useIsAdmin()
+  const liveMatches = useLiveMatchCount()
   // The Ops console only appears for the contract admin's wallet.
   const items = [
     ...navItems,
@@ -67,8 +88,12 @@ export function SiteNav({ currentPath }: SiteNavProps) {
                     ? { backgroundColor: 'rgba(107,142,35,0.1)', color: '#6b8e23', border: '1px solid rgba(107,142,35,0.35)' }
                     : { backgroundColor: 'transparent', color: '#7d9a72', border: '1px solid transparent' }
                 }
+                title={item.href === '/game' && liveMatches > 0
+                  ? `${liveMatches} match${liveMatches === 1 ? '' : 'es'} in progress`
+                  : undefined}
               >
                 {item.label}
+                {item.href === '/game' && liveMatches > 0 && <LiveDot />}
               </Link>
             )
           })}
@@ -138,6 +163,7 @@ export function SiteNav({ currentPath }: SiteNavProps) {
                   }
                 >
                   {item.label}
+                  {item.href === '/game' && liveMatches > 0 && <LiveDot />}
                 </Link>
               )
             })}

@@ -17,6 +17,7 @@ import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
+import { ArenaHub } from '@/components/game/ArenaHub'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayersGrid } from '@/components/game/PlayersGrid'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
@@ -920,16 +921,13 @@ function GamePageInner() { // NOSONAR
     return () => clearInterval(id)
   }, [roomId, socketOn, refresh])
 
-  // ── No roomId guard ─────────────────────────────────────────────────────
+  // ── No roomId → the arena hub, not a dead end ───────────────────────────
+  // The "Match" nav item links here with no room param, so this is the landing
+  // state for anyone who clicks the tab rather than following a room link. It
+  // used to read "No room specified." even mid-game; ArenaHub resolves the
+  // player's own room, offers live matches to spectate, or shows the hub.
   if (!roomId) {
-    return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-game.webp)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
-        <p className="font-mono text-lg" style={{ color: '#e63329' }}>No room specified.</p>
-        <button onClick={() => router.push('/lobby')} className="rounded border px-6 py-3 font-mono text-sm uppercase tracking-wider" style={{ borderColor: '#6b8e23', color: '#6b8e23' }}>
-          ← Back to Lobby
-        </button>
-      </main>
-    )
+    return <ArenaHub />
   }
 
   // ── Room not found / initializing guard ─────────────────────────────────
