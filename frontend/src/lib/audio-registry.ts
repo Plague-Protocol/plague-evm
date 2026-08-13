@@ -26,11 +26,24 @@ const tracked = new Set<HTMLAudioElement>()
 /** Paused by us on hide, so they are the only ones eligible to resume. */
 const pausedByRegistry = new Set<HTMLAudioElement>()
 
+/**
+ * Mid-fade on the way out (see stopAllAudio). Backgrounding must not adopt
+ * these into `pausedByRegistry`, or returning to the tab would resume a track
+ * whose scene is already gone.
+ *
+ * They stay *tracked* while stopping. Untracking them instead looks equivalent
+ * and is not: the arena creak and heartbeat are module singletons registered
+ * once, on creation, so dropping them from the registry on one route exit
+ * unregisters them for the rest of the session — and the heartbeat is
+ * `loop = true`, which is the exact case this registry exists to catch.
+ */
+const stopping = new Set<HTMLAudioElement>()
+
 let armed = false
 
 function pauseAll(): void {
   for (const a of tracked) {
-    if (!a.paused) {
+    if (!a.paused && !stopping.has(a)) {
       pausedByRegistry.add(a)
       a.pause()
     }
@@ -41,7 +54,7 @@ function resumePaused(): void {
   for (const a of pausedByRegistry) {
     // Still tracked? A sting that ended while hidden was untracked on 'ended'
     // and must not be restarted.
-    if (tracked.has(a)) a.play().catch(() => {/* gesture expired — stay silent */})
+    if (tracked.has(a) && !stopping.has(a)) a.play().catch(() => {/* gesture expired — stay silent */})
   }
   pausedByRegistry.clear()
 }
@@ -88,16 +101,22 @@ const STOP_FADE_MS = 90
  * Ramped rather than cut. `pause()` on a looping element (the arena heartbeat
  * is `loop = true`) stops it mid-waveform at full volume, and that step
  * discontinuity is audible as a sharp click — reported on mobile when leaving
- * the lobby or a game. The element is untracked up front so a `visibilitychange`
- * landing mid-fade cannot resume a track that is on its way out.
+ * the lobby or a game. Elements are flagged `stopping` for the duration so a
+ * `visibilitychange` landing mid-fade cannot resume one on its way out.
  *
  * Volume is restored after the pause: these are long-lived singletons, and one
  * left at 0 would replay silently the next time a scene starts it.
  */
 export function stopAllAudio(): void {
   for (const a of [...tracked]) {
-    untrackAudio(a)
-    if (a.paused) continue
+    // Already paused (by backgrounding) — nothing to fade, but it still owes
+    // the rewind, or the next scene resumes it mid-phrase.
+    if (a.paused) {
+      try { a.currentTime = 0 } catch { /* not seekable yet */ }
+      continue
+    }
+    stopping.add(a)
+    pausedByRegistry.delete(a)
 
     const v0 = a.volume
     let done = false
@@ -109,6 +128,9 @@ export function stopAllAudio(): void {
       // Rewind so a later scene starts the track from the top rather than
       // resuming mid-phrase from a game the player already left.
       try { a.currentTime = 0 } catch { /* not seekable yet */ }
+      // Back in the registry's normal care: still tracked throughout, so the
+      // next time it plays, backgrounding pauses it as before.
+      stopping.delete(a)
     }
 
     // A hidden page gets no animation frames at all, so a route change that

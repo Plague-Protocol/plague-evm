@@ -54,6 +54,8 @@ const ENDED_VOLUME = BASE_VOLUME * 0.6
 let ctx: AudioContext | null = null
 let loopGain: GainNode | null = null
 let loopSource: AudioBufferSourceNode | null = null
+/** A source ramping out but not yet stopped. See fadeOutLoop / killFadingSource. */
+let fadingSource: AudioBufferSourceNode | null = null
 let loopToken = 0
 const buffers = new Map<string, Promise<AudioBuffer>>()
 
@@ -178,8 +180,28 @@ function fadeOutLoop() {
   const source = loopSource
   loopSource = null
   if (!source) return
-  source.onended = () => { try { source.disconnect() } catch { /* already gone */ } }
+  fadingSource = source
+  source.onended = () => {
+    if (fadingSource === source) fadingSource = null
+    try { source.disconnect() } catch { /* already gone */ }
+  }
   try { source.stop(endAt) } catch { stopLoop() }
+}
+
+/**
+ * Cut a still-fading source immediately.
+ *
+ * A fade-out survives the component that started it, so a route change back
+ * within STOP_FADE_MS would leave the old track feeding the shared gain node
+ * while the new one ramps up on it — the incoming `rampGain` cancels the
+ * outgoing fade, so both play. Rare and quiet, but unbounded if the player
+ * bounces between pages, and there is only one gain node to share.
+ */
+function killFadingSource() {
+  if (!fadingSource) return
+  try { fadingSource.stop() } catch { /* already stopped */ }
+  try { fadingSource.disconnect() } catch { /* already gone */ }
+  fadingSource = null
 }
 
 async function playLoop(src: string, target: number) {
@@ -190,6 +212,7 @@ async function playLoop(src: string, target: number) {
   // a slow first load could start under whatever phase came next.
   if (!buffer || token !== loopToken || !ctx || !loopGain) return
   stopLoop()
+  killFadingSource()   // nothing from a previous page may bleed into this one
   const source = ctx.createBufferSource()
   source.buffer = buffer
   source.loop = true          // sample-accurate, no gap at the seam
@@ -249,32 +272,40 @@ export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
   // itself is best-effort on a timer; if that never fires the context is
   // already silent, which is the outcome that matters.
   useEffect(() => {
+    const silence = () => {
+      if (!ctx) return
+      const now = ctx.currentTime
+      if (loopGain) {
+        loopGain.gain.cancelScheduledValues(now)
+        loopGain.gain.setValueAtTime(loopGain.gain.value, now)
+        loopGain.gain.linearRampToValueAtTime(0, now + SUSPEND_FADE_MS / 1000)
+      }
+      window.setTimeout(() => {
+        if (document.hidden) void ctx?.suspend()
+      }, SUSPEND_FADE_MS + 20)
+    }
+
     const onVisibility = () => {
       if (!ctx) return
-      if (document.hidden) {
-        const now = ctx.currentTime
-        if (loopGain) {
-          loopGain.gain.cancelScheduledValues(now)
-          loopGain.gain.setValueAtTime(loopGain.gain.value, now)
-          loopGain.gain.linearRampToValueAtTime(0, now + SUSPEND_FADE_MS / 1000)
-        }
-        window.setTimeout(() => {
-          if (document.hidden) void ctx?.suspend()
-        }, SUSPEND_FADE_MS + 20)
-      } else if (sceneRef.current) {
-        // The gain was ramped to zero on the way out, so resuming the context
-        // is not enough on its own — without this the app comes back silent.
-        void ctx.resume().then(() => {
-          if (!sceneRef.current) return
-          rampGain(mutedRef.current ? 0 : (sceneRef.current === 'ended' ? ENDED_VOLUME : BASE_VOLUME))
-        }).catch(() => { /* resume needs a fresh gesture — the listener handles it */ })
-      }
+      if (document.hidden) { silence(); return }
+      if (!sceneRef.current) return
+      // The gain was ramped to zero on the way out, so resuming the context is
+      // not enough on its own — without this the app comes back silent.
+      void ctx.resume().then(() => {
+        if (!sceneRef.current) return
+        rampGain(mutedRef.current ? 0 : (sceneRef.current === 'ended' ? ENDED_VOLUME : BASE_VOLUME))
+      }).catch(() => { /* resume needs a fresh gesture — the listener handles it */ })
     }
+
+    // `pagehide` gets its own handler rather than sharing the one above. It can
+    // fire while `document.hidden` is still false (bfcache navigation), which
+    // would send it down the *resume* branch and ramp the volume back up on a
+    // page that is going away — the opposite of what is wanted.
     document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('pagehide', onVisibility)
+    window.addEventListener('pagehide', silence)
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('pagehide', onVisibility)
+      window.removeEventListener('pagehide', silence)
     }
   }, [])
 
