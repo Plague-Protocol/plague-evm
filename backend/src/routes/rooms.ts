@@ -3,7 +3,8 @@ import type { Server } from 'socket.io'
 import { z } from 'zod'
 import { isAddress, recoverMessageAddress } from 'viem'
 import { chainAdapter } from '../services/chainAdapter'
-import { createRoomRecord, getActiveRoomByHost, listLiveRooms, listWaitingRooms } from '../repositories/rooms'
+import { createRoomRecord, getActiveRoomByHost, listLiveRooms, listWaitingRooms, setRoomStatus } from '../repositories/rooms'
+import { redis } from '../db/redis'
 import { recoverRoom } from '../socket/handlers'
 import { prisma } from '../db/prisma'
 import { logger } from '../lib/logger'
@@ -72,25 +73,72 @@ roomRouter.get('/names', async (req, res) => {
 
 /**
  * GET /api/rooms/live
- * Rooms currently mid-game, for the arena hub's fast first paint and the nav
- * live-dot. Served from Postgres, so it costs no RPC — the hub still confirms
- * against the chain before rendering a Spectate button.
+ * Rooms currently mid-game, for the nav's live indicator.
+ *
+ * Postgres picks the candidates, but the chain decides. Serving the stored
+ * answer alone lit the indicator for room 208, which was `ended` on-chain and
+ * stranded at `active` in Postgres because the game-end path never cleared it —
+ * pointing players at an arena with nothing in it. A cache that can only drift
+ * one way is worse than no indicator at all.
+ *
+ * The candidate set is tiny (usually zero), so verifying costs 0-2 RPC calls,
+ * cached for CACHE_TTL_SECS so nav polling from many tabs doesn't multiply it.
+ * Rooms that have moved on get their stored status corrected here, which makes
+ * the drift self-healing instead of permanent.
+ *
+ * `players` is included so the nav can tell "a match is live" from "YOUR match
+ * is live" — the second is the one that pulls a wandering host back.
  *
  * Must be registered BEFORE `/:id` so "live" isn't parsed as a room id.
  */
+const LIVE_CACHE_KEY = 'rooms:live:v1'
+const LIVE_CACHE_TTL_SECS = 15
+const CHAIN_STATUS: Record<number, 'waiting' | 'starting' | 'active' | 'ended'> = {
+  0: 'waiting', 1: 'starting', 2: 'active', 3: 'ended',
+}
+
 roomRouter.get('/live', async (_req, res) => {
   try {
-    const rooms = await listLiveRooms()
-    res.json({
-      count: rooms.length,
-      rooms: rooms.map(r => ({
-        roomId:     r.roomId,
-        name:       r.name,
-        status:     r.status,
-        maxPlayers: r.maxPlayers,
-        stakeAmount: r.stakeAmount,
-      })),
-    })
+    const cached = await redis.get(LIVE_CACHE_KEY)
+    if (cached) return res.json(JSON.parse(cached))
+
+    const candidates = await listLiveRooms()
+    const live: Array<{
+      roomId: string
+      name: string | null
+      status: string
+      maxPlayers: number
+      stakeAmount: string
+      players: string[]
+    }> = []
+
+    for (const room of candidates) {
+      try {
+        const onChain = await chainAdapter.getRoom(BigInt(room.roomId))
+        const actual = CHAIN_STATUS[Number(onChain.status)]
+        if (actual === 'starting' || actual === 'active') {
+          live.push({
+            roomId:      room.roomId,
+            name:        room.name,
+            status:      actual,
+            maxPlayers:  room.maxPlayers,
+            stakeAmount: room.stakeAmount,
+            players:     (onChain.players as string[]).map(p => p.toLowerCase()),
+          })
+        } else if (actual && actual !== room.status) {
+          // Repair the row so the next poll doesn't pay for this lookup again.
+          await setRoomStatus(room.roomId, actual).catch(() => { /* best effort */ })
+          logger.info(`[rooms/live] corrected room ${room.roomId}: ${room.status} → ${actual}`)
+        }
+      } catch {
+        // RPC hiccup: leave the row alone and omit the room. Under-reporting is
+        // the safe direction — a missing cue beats one that leads nowhere.
+      }
+    }
+
+    const payload = { count: live.length, rooms: live }
+    await redis.set(LIVE_CACHE_KEY, JSON.stringify(payload), 'EX', LIVE_CACHE_TTL_SECS)
+    res.json(payload)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: message })
