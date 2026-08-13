@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RoundPhase } from '@/types/game'
-import { trackAudio, stopAllAudio } from '@/lib/audio-registry'
+import { stopAllAudio } from '@/lib/audio-registry'
 
 // ── Track manifest ────────────────────────────────────────────────────────────
 // Each looping track fades in/out as the phase changes.
@@ -30,48 +30,59 @@ export const GAME_OVER_TRACKS = {
 const FADE_DURATION_MS = 1500
 const BASE_VOLUME = 0.35
 
+/** Post-game bed. See the `ended` branch in the scene effect. */
+const ENDED_TRACK = LOOP_TRACKS.lobby
+const ENDED_VOLUME = BASE_VOLUME * 0.6
 
-// ── Gesture gate + the element pool ───────────────────────────────────────────
+// ── Web Audio ─────────────────────────────────────────────────────────────────
 //
-// Mobile browsers unlock audio PER ELEMENT, not per page. An element created
-// during a user gesture may play; one constructed three minutes later, with no
-// gesture since, has play() rejected — and that rejection is a silent promise
-// rejection we were swallowing.
+// This used HTMLAudioElement with `loop = true`. Two problems, both phone-only:
 //
-// The old code built `new Audio(src)` on every phase change, so on a phone the
-// first track (created near the tap that entered the room) played and looped
-// forever while every later phase was refused. Desktop has no such policy once
-// the page is unlocked, which is exactly why laptops were fine and phones were
-// not — same code, same phase data, different media policy.
+//   1. Elements unlock individually on mobile, so an element built mid-game with
+//      no gesture since had play() rejected — one track played all game.
+//   2. MP3 carries encoder padding, so every loop restart is an audible gap.
+//      `discussion-phase.mp3` is 6.3s against a 180s discussion phase: it
+//      restarts ~29 times, which is the stuttering that was reported. Desktop
+//      decoders paper over it; mobile ones do not.
 //
-// So the whole session shares two elements, both unlocked during the first real
-// gesture and then reused by swapping `src`. Nothing is ever constructed mid-game.
-//
-// It also fixes audio outliving the page: two permanent elements are always
-// registered with the audio registry, so backgrounding pauses them. Freshly
-// built elements could be created, orphaned, and left playing with nothing
-// holding a reference — and a fade-out that relied on setInterval never
-// completed once the browser throttled timers in a hidden tab.
+// Web Audio fixes both by construction. One AudioContext is unlocked once, and
+// looping a decoded AudioBuffer has no re-seek and no padding — it is sample
+// accurate, so a 6-second bed is genuinely seamless. Gain ramps are scheduled on
+// the audio clock rather than driven by setInterval, so a backgrounded tab
+// throttling timers can no longer strand a fade half-finished.
 
-let loopEl:  HTMLAudioElement | null = null
-let stingEl: HTMLAudioElement | null = null
+let ctx: AudioContext | null = null
+let loopGain: GainNode | null = null
+let loopSource: AudioBufferSourceNode | null = null
+let loopToken = 0
+const buffers = new Map<string, Promise<AudioBuffer>>()
+
 let hasGesture = false
 const gestureWaiters = new Set<() => void>()
 
-/** Play-then-pause during a gesture is what actually lifts the mobile block. */
-function unlock(el: HTMLAudioElement): void {
-  el.play().then(() => el.pause()).catch(() => {/* nothing to unlock on desktop */})
+function loadBuffer(src: string): Promise<AudioBuffer> {
+  const cached = buffers.get(src)
+  if (cached) return cached
+  // The in-flight promise is cached, not just the result, so a phase that
+  // changes twice quickly cannot start two downloads of the same track.
+  const p = fetch(src)
+    .then(r => r.arrayBuffer())
+    .then(b => ctx!.decodeAudioData(b))
+  buffers.set(src, p)
+  p.catch(() => buffers.delete(src))
+  return p
 }
 
-function buildPool() {
-  if (loopEl) return
-  loopEl = trackAudio(new Audio())
-  loopEl.loop = true
-  loopEl.volume = 0
-  stingEl = trackAudio(new Audio())
-  stingEl.volume = 0
-  unlock(loopEl)
-  unlock(stingEl)
+function buildContext() {
+  if (ctx) return
+  type WithWebkit = typeof globalThis & { webkitAudioContext?: typeof AudioContext }
+  const Ctor = window.AudioContext ?? (globalThis as WithWebkit).webkitAudioContext
+  if (!Ctor) return
+  ctx = new Ctor()
+  loopGain = ctx.createGain()
+  loopGain.gain.value = 0
+  loopGain.connect(ctx.destination)
+  void ctx.resume()
 }
 
 function armGestureListener() {
@@ -80,8 +91,7 @@ function armGestureListener() {
   const handler = () => {
     if (hasGesture) return
     hasGesture = true
-    // Must happen synchronously inside the gesture — a later tick is too late.
-    buildPool()
+    buildContext()   // must be inside the gesture on iOS
     for (const w of gestureWaiters) w()
     gestureWaiters.clear()
     for (const e of events) window.removeEventListener(e, handler)
@@ -101,106 +111,114 @@ function useHasGesture(): boolean {
   return ready
 }
 
+function rampGain(target: number) {
+  if (!ctx || !loopGain) return
+  const now = ctx.currentTime
+  loopGain.gain.cancelScheduledValues(now)
+  loopGain.gain.setValueAtTime(loopGain.gain.value, now)
+  loopGain.gain.linearRampToValueAtTime(target, now + FADE_DURATION_MS / 1000)
+}
+
+function stopLoop() {
+  if (loopSource) {
+    try { loopSource.stop() } catch { /* already stopped */ }
+    loopSource.disconnect()
+    loopSource = null
+  }
+}
+
+async function playLoop(src: string, target: number) {
+  if (!ctx || !loopGain) return
+  const token = ++loopToken
+  const buffer = await loadBuffer(src).catch(() => null)
+  // A newer scene arrived while this was decoding — drop it. Without the token
+  // a slow first load could start under whatever phase came next.
+  if (!buffer || token !== loopToken || !ctx || !loopGain) return
+  stopLoop()
+  const source = ctx.createBufferSource()
+  source.buffer = buffer
+  source.loop = true          // sample-accurate, no gap at the seam
+  source.connect(loopGain)
+  source.start()
+  loopSource = source
+  loopGain.gain.setValueAtTime(0, ctx.currentTime)
+  rampGain(target)
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
   const gestureReady = useHasGesture()
   const sceneRef = useRef<string | null>(null)
-  const fadeRef  = useRef<ReturnType<typeof setInterval> | null>(null)
+  const mutedRef = useRef(muted)
+  useEffect(() => { mutedRef.current = muted }, [muted])
 
-  const clearFade = useCallback(() => {
-    if (fadeRef.current) clearInterval(fadeRef.current)
-    fadeRef.current = null
-  }, [])
-
-  /** Ramp the shared loop element to `target`, then optionally stop it. */
-  const rampTo = useCallback((target: number, thenPause = false) => {
-    const el = loopEl
-    if (!el) return
-    clearFade()
-    const step = Math.max(Math.abs(target - el.volume) / (FADE_DURATION_MS / 50), 0.01)
-    fadeRef.current = setInterval(() => {
-      const diff = target - el.volume
-      if (Math.abs(diff) <= step) {
-        el.volume = target
-        clearFade()
-        if (thenPause) el.pause()
-        return
-      }
-      el.volume = Math.min(1, Math.max(0, el.volume + Math.sign(diff) * step))
-    }, 50)
-  }, [clearFade])
-
-  // ── Switch loop track when the scene changes ──────────────────────────────
   useEffect(() => {
-    if (!gestureReady || !loopEl) return
+    if (!gestureReady || !ctx) return
     if (sceneRef.current === scene) return
     sceneRef.current = scene
 
     const stingSrc = STING_TRACKS[scene as keyof typeof STING_TRACKS]
-    if (stingSrc && stingEl) {
-      stingEl.src = stingSrc
-      stingEl.volume = muted ? 0 : BASE_VOLUME + 0.15
-      stingEl.play().catch(() => {})
-    }
+    if (stingSrc) playSting(stingSrc, mutedRef.current)
 
-    const src = scene === 'ended' ? null : LOOP_TRACKS[scene] ?? null
-    if (!src) {
-      rampTo(0, true)
-      return
-    }
-
-    // Swap the source on the element that is already allowed to play. Assigning
-    // `src` resets playback, so this is a hard cut rather than a crossfade —
-    // one unlocked element that always works beats two that sometimes do.
-    clearFade()
-    loopEl.src = src
-    loopEl.volume = 0
-    loopEl.play().catch(() => {/* gesture expired — stays silent */})
-    if (!muted) rampTo(BASE_VOLUME)
+    // A results screen in dead silence reads as the sound having broken,
+    // especially after fifteen minutes of continuous audio. The game keeps a
+    // quiet bed under it — the lobby ambient at 60% — until the player leaves,
+    // which is what the state actually is: back at a menu, game over.
+    const src = scene === 'ended' ? ENDED_TRACK : LOOP_TRACKS[scene] ?? null
+    const target = scene === 'ended' ? ENDED_VOLUME : BASE_VOLUME
+    if (!src) { rampGain(0); return }
+    void playLoop(src, mutedRef.current ? 0 : target)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, gestureReady])
 
-  // ── Respond to mute toggle ────────────────────────────────────────────────
   useEffect(() => {
-    if (!loopEl) return
-    if (muted) {
-      clearFade()
-      loopEl.volume = 0
-      loopEl.pause()
-      return
-    }
-    if (sceneRef.current && sceneRef.current !== 'ended') {
-      loopEl.play().catch(() => {})
-      rampTo(BASE_VOLUME)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!ctx || !sceneRef.current) return
+    rampGain(muted ? 0 : (sceneRef.current === 'ended' ? ENDED_VOLUME : BASE_VOLUME))
   }, [muted])
 
-  // ── Cleanup on unmount ───────────────────────────────────────────────────
+  // Suspending the whole context is the reliable way to go quiet in the
+  // background — one switch for every node, and nothing left ringing because a
+  // throttled timer never reached the line that would have paused it.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!ctx) return
+      if (document.hidden) void ctx.suspend()
+      else if (sceneRef.current) void ctx.resume()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onVisibility)
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
-      clearFade()
-      // Hard stop, not a fade. A fade here relies on timers that a backgrounded
-      // browser throttles to a crawl, which is how audio survived leaving the
-      // page and kept playing behind everything else.
-      if (loopEl) { loopEl.pause(); loopEl.volume = 0 }
-      if (stingEl) { stingEl.pause(); stingEl.volume = 0 }
+      loopToken++          // cancel any decode still in flight
+      stopLoop()
+      if (ctx && loopGain) loopGain.gain.value = 0
       sceneRef.current = null
-      stopAllAudio()
+      stopAllAudio()       // arena creak/heartbeat still use HTMLAudioElement
     }
-  }, [clearFade])
+  }, [])
 }
 
 // ── One-shot helper (game-over stings, eliminations etc.) ────────────────────
-//
-// Reuses the shared sting element for the same unlock reason as the loop. A
-// second one-shot interrupts the first rather than layering, which is correct
-// here: these fire on eliminations and game-over, where the newest event is the
-// one worth hearing.
 export function playSting(src: string, muted: boolean, volume = BASE_VOLUME + 0.15) {
-  if (muted || !stingEl) return
-  stingEl.src = src
-  stingEl.volume = volume
-  stingEl.play().catch(() => {})
+  if (muted || !ctx) return
+  void loadBuffer(src).then(buffer => {
+    if (!ctx) return
+    const source = ctx.createBufferSource()
+    const gain = ctx.createGain()
+    gain.gain.value = volume
+    source.buffer = buffer
+    source.connect(gain)
+    gain.connect(ctx.destination)
+    // Self-disposing: one-shots used to be built as elements nobody held a
+    // reference to, which is how stings outlived the page that started them.
+    source.onended = () => { source.disconnect(); gain.disconnect() }
+    source.start()
+  }).catch(() => {/* missing or undecodable — silence is fine */})
 }
