@@ -31,6 +31,7 @@ export function BotControls({
   const [avail, setAvail] = useState<Availability | null>(null)
   const [count, setCount] = useState(1)
   const [adding, setAdding] = useState(false)
+  const [msgIsError, setMsgIsError] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   // Flash the free-bot counter when the pool changes under the host.
   const availJustChanged = useChangePulse(avail?.available)
@@ -72,9 +73,12 @@ export function BotControls({
         body: JSON.stringify({ roomId: roomId.toString(), count: effectiveCount }),
       })
       const j = (await r.json().catch(() => ({}))) as { queued?: number; message?: string }
-      setMsg(r.ok ? `Sending ${j.queued ?? effectiveCount} bot(s) — they'll join shortly.` : j.message ?? 'Could not add bots.')
+      const n = j.queued ?? effectiveCount
+      setMsgIsError(!r.ok)
+      setMsg(r.ok ? `Sending in ${n} bot${n === 1 ? '' : 's'} — they join in a few seconds.` : j.message ?? 'Could not add bots.')
       void load()
     } catch {
+      setMsgIsError(true)
       setMsg('Network error reaching the bot pool.')
     } finally {
       setAdding(false)
@@ -134,8 +138,27 @@ export function BotControls({
           </>
         )}
       </div>
-      {msg && (
-        <p className="mt-2 font-mono text-[11px]" style={{ color: '#8fa882' }}>
+      {/* Status, deliberately loud.
+          This was 11px in the same muted green as the body copy, and only
+          appeared once the request had already finished — so the host pressed
+          Add, saw nothing change for a few seconds, and pressed it again. It now
+          says what is happening WHILE it happens, and the outcome is coloured so
+          a failure cannot be mistaken for a success. */}
+      {adding && (
+        <p
+          className="toxic-pulse mt-2 rounded border px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider"
+          style={{ color: '#f5c518', borderColor: 'rgba(245,197,24,0.5)', backgroundColor: 'rgba(245,197,24,0.1)' }}
+        >
+          Sending in {effectiveCount} bot{effectiveCount === 1 ? '' : 's'}…
+        </p>
+      )}
+      {!adding && msg && (
+        <p
+          className="mt-2 rounded border px-3 py-2 font-mono text-xs leading-relaxed"
+          style={msgIsError
+            ? { color: '#e63329', borderColor: 'rgba(230,51,41,0.45)', backgroundColor: 'rgba(230,51,41,0.08)' }
+            : { color: '#84cc16', borderColor: 'rgba(107,142,35,0.45)', backgroundColor: 'rgba(107,142,35,0.08)' }}
+        >
           {msg}
         </p>
       )}

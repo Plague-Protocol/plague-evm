@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { RoundPhase } from '@/types/game'
-import { trackAudio, untrackAudio, stopAllAudio } from '@/lib/audio-registry'
+import { trackAudio, stopAllAudio } from '@/lib/audio-registry'
 
 // ── Track manifest ────────────────────────────────────────────────────────────
 // Each looping track fades in/out as the phase changes.
@@ -30,32 +30,60 @@ export const GAME_OVER_TRACKS = {
 const FADE_DURATION_MS = 1500
 const BASE_VOLUME = 0.35
 
-// ── Gesture gate ──────────────────────────────────────────────────────────────
-// Constructing `new Audio(src)` starts the download immediately, but browsers
-// refuse to play it until the user has interacted with the page — so on first
-// paint we were fetching ambient-lobby.mp3 (679 KB, the second-largest asset on
-// /lobby) purely to have `play()` rejected and the result discarded. On a Slow
-// 4G phone that is bandwidth taken directly from the LCP image.
-//
-// So no track is constructed until a real gesture has happened. Subscribers are
-// woken once, at which point the scene effect re-runs and starts audio that can
-// actually be heard.
 
+// ── Gesture gate + the element pool ───────────────────────────────────────────
+//
+// Mobile browsers unlock audio PER ELEMENT, not per page. An element created
+// during a user gesture may play; one constructed three minutes later, with no
+// gesture since, has play() rejected — and that rejection is a silent promise
+// rejection we were swallowing.
+//
+// The old code built `new Audio(src)` on every phase change, so on a phone the
+// first track (created near the tap that entered the room) played and looped
+// forever while every later phase was refused. Desktop has no such policy once
+// the page is unlocked, which is exactly why laptops were fine and phones were
+// not — same code, same phase data, different media policy.
+//
+// So the whole session shares two elements, both unlocked during the first real
+// gesture and then reused by swapping `src`. Nothing is ever constructed mid-game.
+//
+// It also fixes audio outliving the page: two permanent elements are always
+// registered with the audio registry, so backgrounding pauses them. Freshly
+// built elements could be created, orphaned, and left playing with nothing
+// holding a reference — and a fade-out that relied on setInterval never
+// completed once the browser throttled timers in a hidden tab.
+
+let loopEl:  HTMLAudioElement | null = null
+let stingEl: HTMLAudioElement | null = null
 let hasGesture = false
 const gestureWaiters = new Set<() => void>()
 
+/** Play-then-pause during a gesture is what actually lifts the mobile block. */
+function unlock(el: HTMLAudioElement): void {
+  el.play().then(() => el.pause()).catch(() => {/* nothing to unlock on desktop */})
+}
+
+function buildPool() {
+  if (loopEl) return
+  loopEl = trackAudio(new Audio())
+  loopEl.loop = true
+  loopEl.volume = 0
+  stingEl = trackAudio(new Audio())
+  stingEl.volume = 0
+  unlock(loopEl)
+  unlock(stingEl)
+}
+
 function armGestureListener() {
   if (typeof window === 'undefined' || hasGesture) return
-  const fire = () => {
-    if (hasGesture) return
-    hasGesture = true
-    for (const w of gestureWaiters) w()
-    gestureWaiters.clear()
-  }
-  // `once` on each: whichever lands first wins, the rest are cleaned up below.
   const events = ['pointerdown', 'keydown', 'touchstart'] as const
   const handler = () => {
-    fire()
+    if (hasGesture) return
+    hasGesture = true
+    // Must happen synchronously inside the gesture — a later tick is too late.
+    buildPool()
+    for (const w of gestureWaiters) w()
+    gestureWaiters.clear()
     for (const e of events) window.removeEventListener(e, handler)
   }
   for (const e of events) window.addEventListener(e, handler, { once: true, passive: true })
@@ -75,149 +103,104 @@ function useHasGesture(): boolean {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useSoundscape(
-  scene: RoundPhase | 'lobby',
-  muted: boolean,
-) {
+export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
   const gestureReady = useHasGesture()
-  const audioRef  = useRef<HTMLAudioElement | null>(null)
-  const sceneRef  = useRef<string | null>(null)
-  // Only the fade-IN is shared state now. Fade-outs belong to the track being
-  // retired and clean up after themselves, so nothing else can cancel one.
+  const sceneRef = useRef<string | null>(null)
+  const fadeRef  = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const fadingIn  = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const clearFades = useCallback(() => {
-    if (fadingIn.current) clearInterval(fadingIn.current)
+  const clearFade = useCallback(() => {
+    if (fadeRef.current) clearInterval(fadeRef.current)
+    fadeRef.current = null
   }, [])
 
-  /**
-   * Fade a track out and retire it.
-   *
-   * Owns its own interval rather than sharing `fadingOut.current`, and holds no
-   * reference to "the current track". The old version did both, which is what
-   * broke phase music: the swap ran as `fadeOut(current, startNew)` over 1500ms
-   * while `audioRef` was only reassigned inside `startNew`, so a second scene
-   * change during that window called `clearFades()`, killed the in-flight
-   * interval, and `startNew` never fired. The outgoing track stayed installed as
-   * the current one and the incoming track never started — every later phase
-   * then found the same stale element and faded it again, which is why one
-   * track played all game and stuttered doing it.
-   *
-   * Untracked immediately so the audio registry cannot resume a retired track
-   * when the app returns from the background.
-   */
-  const retire = useCallback((audio: HTMLAudioElement) => {
-    untrackAudio(audio)
-    const step = Math.max(audio.volume / (FADE_DURATION_MS / 50), 0.01)
-    const timer = setInterval(() => {
-      if (audio.volume > step) {
-        audio.volume = Math.max(0, audio.volume - step)
-      } else {
-        audio.volume = 0
-        audio.pause()
-        clearInterval(timer)
+  /** Ramp the shared loop element to `target`, then optionally stop it. */
+  const rampTo = useCallback((target: number, thenPause = false) => {
+    const el = loopEl
+    if (!el) return
+    clearFade()
+    const step = Math.max(Math.abs(target - el.volume) / (FADE_DURATION_MS / 50), 0.01)
+    fadeRef.current = setInterval(() => {
+      const diff = target - el.volume
+      if (Math.abs(diff) <= step) {
+        el.volume = target
+        clearFade()
+        if (thenPause) el.pause()
+        return
       }
+      el.volume = Math.min(1, Math.max(0, el.volume + Math.sign(diff) * step))
     }, 50)
-  }, [])
+  }, [clearFade])
 
-  const fadeIn = useCallback((audio: HTMLAudioElement) => {
-    clearFades()
-    audio.volume = 0
-    audio.play().catch(() => {/* autoplay blocked — user hasn't interacted yet */})
-    const target = muted ? 0 : BASE_VOLUME
-    fadingIn.current = setInterval(() => {
-      if (audio.volume < target - 0.01) {
-        audio.volume = Math.min(target, audio.volume + target / (FADE_DURATION_MS / 50))
-      } else {
-        audio.volume = target
-        clearInterval(fadingIn.current!)
-      }
-    }, 50)
-  }, [clearFades, muted])
-
-  // ── Switch loop track when scene changes ─────────────────────────────────
+  // ── Switch loop track when the scene changes ──────────────────────────────
   useEffect(() => {
-    // Nothing is fetched until the user has interacted; see the gesture gate.
-    // This effect re-runs when `gestureReady` flips, so the current scene's
-    // track starts at that moment rather than being skipped.
-    if (!gestureReady) return
-
-    const trackKey = scene === 'ended' ? null : scene
-    const src = trackKey ? LOOP_TRACKS[trackKey] ?? null : null
-
+    if (!gestureReady || !loopEl) return
     if (sceneRef.current === scene) return
     sceneRef.current = scene
 
-    // Play one-shot sting if applicable
     const stingSrc = STING_TRACKS[scene as keyof typeof STING_TRACKS]
-    if (stingSrc) {
-      const sting = trackAudio(new Audio(stingSrc))
-      sting.volume = muted ? 0 : BASE_VOLUME + 0.15
-      sting.play().catch(() => {})
+    if (stingSrc && stingEl) {
+      stingEl.src = stingSrc
+      stingEl.volume = muted ? 0 : BASE_VOLUME + 0.15
+      stingEl.play().catch(() => {})
     }
 
-    // Retire the outgoing track FIRST and unconditionally, so `audioRef` always
-    // holds the track belonging to the current scene. The incoming track no
-    // longer waits on the outgoing one's fade to finish, which is what made the
-    // swap losable — the two overlap for ~1.5s instead, which is a crossfade
-    // and sounds better than the gap it replaces.
-    const outgoing = audioRef.current
-    audioRef.current = null
-    if (outgoing) retire(outgoing)
+    const src = scene === 'ended' ? null : LOOP_TRACKS[scene] ?? null
+    if (!src) {
+      rampTo(0, true)
+      return
+    }
 
-    if (!src) return
-
-    const a = trackAudio(new Audio(src))
-    a.loop = true
-    a.volume = 0
-    audioRef.current = a
-    fadeIn(a)
+    // Swap the source on the element that is already allowed to play. Assigning
+    // `src` resets playback, so this is a hard cut rather than a crossfade —
+    // one unlocked element that always works beats two that sometimes do.
+    clearFade()
+    loopEl.src = src
+    loopEl.volume = 0
+    loopEl.play().catch(() => {/* gesture expired — stays silent */})
+    if (!muted) rampTo(BASE_VOLUME)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, gestureReady])
 
   // ── Respond to mute toggle ────────────────────────────────────────────────
-  //
-  // Mutes the element in place instead of retiring it. It used to fade out on
-  // mute and rebuild the track from `sceneRef` on unmute, which meant a second
-  // Audio for the same scene, the first left tracked and playable — pressing
-  // mute twice could leave two copies of one loop layered slightly apart.
-  //
-  // No fade on the way down: pressing mute should be immediate.
   useEffect(() => {
-    const a = audioRef.current
-    if (!a) return
+    if (!loopEl) return
     if (muted) {
-      clearFades()
-      a.volume = 0
-      a.pause()
+      clearFade()
+      loopEl.volume = 0
+      loopEl.pause()
       return
     }
-    a.play().catch(() => {/* gesture expired */})
-    fadeIn(a)
+    if (sceneRef.current && sceneRef.current !== 'ended') {
+      loopEl.play().catch(() => {})
+      rampTo(BASE_VOLUME)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [muted])
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      clearFades()
-      if (audioRef.current) {
-        audioRef.current.pause()
-        untrackAudio(audioRef.current)
-      }
-      // Kills any sting still ringing too. Pausing only the loop left one-shots
-      // playing after the player had already navigated away, since nothing held
-      // a reference to them.
+      clearFade()
+      // Hard stop, not a fade. A fade here relies on timers that a backgrounded
+      // browser throttles to a crawl, which is how audio survived leaving the
+      // page and kept playing behind everything else.
+      if (loopEl) { loopEl.pause(); loopEl.volume = 0 }
+      if (stingEl) { stingEl.pause(); stingEl.volume = 0 }
+      sceneRef.current = null
       stopAllAudio()
     }
-  }, [clearFades])
+  }, [clearFade])
 }
 
 // ── One-shot helper (game-over stings, eliminations etc.) ────────────────────
+//
+// Reuses the shared sting element for the same unlock reason as the loop. A
+// second one-shot interrupts the first rather than layering, which is correct
+// here: these fire on eliminations and game-over, where the newest event is the
+// one worth hearing.
 export function playSting(src: string, muted: boolean, volume = BASE_VOLUME + 0.15) {
-  if (muted) return
-  const a = trackAudio(new Audio(src))
-  a.volume = volume
-  a.play().catch(() => {})
+  if (muted || !stingEl) return
+  stingEl.src = src
+  stingEl.volume = volume
+  stingEl.play().catch(() => {})
 }
