@@ -1580,10 +1580,14 @@ function GamePageInner() { // NOSONAR
                     order-2  action panels (Shield)  ← this block
                     order-3  vote panel (phone only; desktop uses the sidebar)
                     order-4  containment board (the cam)
+                    order-5  live feed
+                    order-6  back to lobby
 
-                  Everything else keeps source order (0) and lands above them,
-                  which is correct: the waiting-room and host controls only
-                  render before a game is running.
+                  Anything unnumbered keeps order 0 and therefore sorts ABOVE all
+                  of these, so a new block in this column needs a number unless
+                  the top is genuinely where it belongs. Only the host controls
+                  are deliberately unnumbered — they render just while the room
+                  is waiting, and the top is right for them.
 
                   Applies on desktop too. It was gated behind `md:order-none` on
                   the assumption that a wide screen shows everything at once and
@@ -1664,8 +1668,12 @@ function GamePageInner() { // NOSONAR
               )}
 
               {/* Live Feed — Feed tab (mobile) / always (desktop) */}
+              {/* order-5 keeps the feed at the BOTTOM. Default order is 0, which
+                  sorts ABOVE everything numbered, so dropping `md:order-none`
+                  silently lifted it to the top of the desktop layout. It is a
+                  log — it belongs under the game, not over it. */}
               {showOnTab('feed') && (
-                <div className="rise-in rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.15)' }}>
+                <div className="rise-in order-5 rounded-lg border p-5" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.15)' }}>
                   <p className="font-mono text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#6b8e23' }}>Live Feed</p>
                   <ul
                     className="space-y-2 font-mono text-xs overflow-y-auto"
@@ -1765,7 +1773,7 @@ function GamePageInner() { // NOSONAR
               {showOnTab('feed') && (
                 <Link
                   href="/lobby"
-                  className="rise-in rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
+                  className="rise-in order-6 rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-[0.18em] transition-all hover:opacity-90"
                   style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)', color: '#6b8e23', display: 'block', animationDelay: '300ms' }}
                 >
                   ← Back to Lobby

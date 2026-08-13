@@ -548,7 +548,14 @@ export function useGameState(roomId: string | null, playerAddress: string | null
     const client = getContractClient()
     if (!client) return
     try {
-      setState(prev => ({ ...prev, isLoading: true }))
+      // Only "loading" when there is genuinely nothing to show. This used to
+      // flip on EVERY refresh, and refreshes are frequent — the post-transaction
+      // ladder alone fires three, plus the periodic sync and every socket nudge.
+      // Consumers render a placeholder while it is true, so the players panel
+      // swapped to "Loading players…" and back every few seconds all game.
+      //
+      // A refresh over data we already have is a background update, not a load.
+      setState(prev => (prev.room ? prev : { ...prev, isLoading: true }))
       const raw = await getRoomWithRetry(client, BigInt(rid))
       const room = mapRoom(raw)
 
