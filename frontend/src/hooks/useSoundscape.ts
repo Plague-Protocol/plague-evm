@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { RoundPhase } from '@/types/game'
-import { stopAllAudio } from '@/lib/audio-registry'
+import { stopAllAudio, trackAudio } from '@/lib/audio-registry'
 
 // ── Track manifest ────────────────────────────────────────────────────────────
 // Each looping track fades in/out as the phase changes.
@@ -101,6 +101,7 @@ function armGestureListener() {
   const handler = () => {
     if (hasGesture) return
     buildContext()   // must be created inside the gesture on iOS
+    unlockBed()      // elements unlock individually — this one needs the gesture too
     if (!ctx) return
 
     // The gesture only counts once the context is actually running. Anything
@@ -201,6 +202,102 @@ function killFadingSource() {
   fadingSource = null
 }
 
+// ── The ambient bed stays on an HTMLAudioElement, deliberately ───────────────
+//
+// Moving every loop to Web Audio (fe5c17f) fixed the discussion-phase stutter
+// and introduced a beep when an installed PWA is backgrounded on iOS: measured
+// at 375 Hz with harmonics past 12 kHz, and 48000/128 = 375 — the graph's last
+// render quantum, repeating. iOS freezes the page before visibilitychange or
+// pagehide can run, so the renderer stops while the output device keeps pulling
+// and the hardware loops whatever it last had. Three attempts to silence it from
+// those handlers failed for that reason: the handler never runs.
+//
+// A media element has no such failure mode — iOS owns its lifecycle and pauses
+// it cleanly on suspend, which is why this only started today.
+//
+// So the bed goes back to an element and the phase loops stay on Web Audio.
+// That split is not a compromise, it is what each track needs: the bed is
+// ambient-lobby.mp3 at 21.7s, whose loop seam is rare and unremarkable (it
+// shipped that way for months), while discussion-phase.mp3 is 6.3s against a
+// 180s phase — ~29 restarts, and the reason the migration happened at all.
+//
+// One persistent element, not one per scene: elements unlock individually on
+// mobile, so a fresh element built with no recent gesture has play() rejected.
+// This one is unlocked with the context on the first gesture and reused.
+let bedEl: HTMLAudioElement | null = null
+
+function getBed(): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null
+  if (!bedEl) {
+    bedEl = trackAudio(new Audio(ENDED_TRACK))
+    bedEl.loop = true
+    bedEl.preload = 'auto'
+  }
+  return bedEl
+}
+
+/**
+ * Unlock the bed inside a real gesture, the same way the context is built there.
+ *
+ * A muted play/pause is enough to mark the element as user-permitted, after
+ * which later play() calls succeed with no gesture in hand — the same trick
+ * primeArenaSounds uses for the door creak.
+ */
+function unlockBed() {
+  const el = getBed()
+  if (!el || !el.paused) return
+  const wasMuted = el.muted
+  el.muted = true
+  el.play()
+    .then(() => { el.pause(); el.muted = wasMuted })
+    .catch(() => { el.muted = wasMuted })
+}
+
+/**
+ * Ramp the bed's volume, since an element has no audio-clock automation.
+ *
+ * The Web Audio path faded over FADE_DURATION_MS and the bed has to match, or
+ * the lobby slams in at full level — which is both a worse entrance than the
+ * one it replaces and a discontinuity of its own. Driven by rAF, which is fine
+ * here: every caller is a live page mid-navigation, never a frozen one.
+ */
+let bedRamp = 0
+function rampBed(target: number, ms = FADE_DURATION_MS, onDone?: () => void) {
+  const el = getBed()
+  if (!el) return
+  const token = ++bedRamp
+  const from = el.volume
+  const to = Math.max(0, Math.min(1, target))
+  const t0 = performance.now()
+  const step = () => {
+    if (token !== bedRamp) return          // a newer ramp took over
+    const k = Math.min(1, (performance.now() - t0) / ms)
+    el.volume = from + (to - from) * k
+    if (k < 1) { requestAnimationFrame(step); return }
+    onDone?.()
+  }
+  requestAnimationFrame(step)
+}
+
+function playBed(target: number) {
+  const el = getBed()
+  if (!el) return
+  if (el.paused) {
+    el.volume = 0
+    el.play().catch(() => { /* no gesture yet — the listener retries */ })
+  }
+  rampBed(target)
+}
+
+function stopBed() {
+  const el = bedEl
+  if (!el || el.paused) return
+  rampBed(0, 250, () => {
+    el.pause()
+    try { el.currentTime = 0 } catch { /* not seekable yet */ }
+  })
+}
+
 async function playLoop(src: string, target: number) {
   if (!ctx || !loopGain) return
   const token = ++loopToken
@@ -242,32 +339,50 @@ export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
     // which is what the state actually is: back at a menu, game over.
     const src = scene === 'ended' ? ENDED_TRACK : LOOP_TRACKS[scene] ?? null
     const target = scene === 'ended' ? ENDED_VOLUME : BASE_VOLUME
+
+    // Lobby and post-game share the ambient bed, and both run on the element
+    // path — see the note above getBed(). These are the two screens the PWA is
+    // actually backgrounded from, so they are the two that must not leave a Web
+    // Audio source running.
+    if (src === ENDED_TRACK) {
+      fadeOutLoop()   // hand off: nothing of the Web Audio graph may stay live
+      playBed(mutedRef.current ? 0 : target)
+      return
+    }
+
+    stopBed()
     if (!src) { rampGain(0); return }
     void playLoop(src, mutedRef.current ? 0 : target)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, gestureReady])
 
   useEffect(() => {
-    if (!ctx || !sceneRef.current) return
-    rampGain(muted ? 0 : (sceneRef.current === 'ended' ? ENDED_VOLUME : BASE_VOLUME))
+    const s = sceneRef.current
+    if (!s) return
+    // The bed is an element, so muting it is a volume set, not a gain ramp.
+    if (s === 'lobby' || s === 'ended') {
+      playBed(muted ? 0 : (s === 'ended' ? ENDED_VOLUME : BASE_VOLUME))
+      return
+    }
+    if (!ctx) return
+    rampGain(muted ? 0 : BASE_VOLUME)
   }, [muted])
 
   // Suspending the whole context is the reliable way to go quiet in the
   // background — one switch for every node, and nothing left ringing because a
   // throttled timer never reached the line that would have paused it.
   //
-  // But suspending it *while it is still producing sound* is what caused the
-  // buzz heard after backgrounding the app on mobile: measured at a 375 Hz
-  // fundamental with harmonics past 12 kHz, and 48000/128 = 375 — one Web Audio
-  // render quantum, repeating. The graph stops being rendered while the output
-  // device keeps pulling, so the hardware loops the last block it was given
-  // until the audio session tears down.
+  // Do not expect this to prevent the 375 Hz backgrounding beep, and do not
+  // rebuild it trying to. Measurement showed iOS freezes an installed PWA
+  // before this handler runs at all: after the "fix" that zeroed the gain
+  // synchronously here shipped, the audio still faded over ~450ms of ordinary
+  // music before locking into the loop — which it could not have done if this
+  // code had executed. A scheduled ramp is worse still, since the automation is
+  // evaluated by the very render thread that is stalling.
   //
-  // Fix: ramp to silence first, so the block left looping is silence. The ramp
-  // is scheduled on the audio clock, which runs on the audio thread — it
-  // completes even though backgrounding freezes the main thread. The suspend
-  // itself is best-effort on a timer; if that never fires the context is
-  // already silent, which is the outcome that matters.
+  // The beep is avoided by not leaving a Web Audio source playing on the
+  // screens the app is backgrounded from (see getBed), not from here. This
+  // handler earns its keep on desktop and on tab-switching, where it does run.
   useEffect(() => {
     const silence = () => {
       if (!ctx) return
