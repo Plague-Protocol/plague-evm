@@ -1457,7 +1457,7 @@ function GamePageInner() { // NOSONAR
                   phone so "how long have I got" never needs a scroll. */}
               {showOnTab('play') && (
                 <div
-                  className="rise-in order-1 md:order-none rounded-lg border p-5"
+                  className="rise-in order-1 rounded-lg border p-5"
                   style={{ backgroundColor: phaseCardBackground, borderColor: `${phaseColor}4d` }}
                 >
                   {/* Round phase sequence indicator */}
@@ -1512,7 +1512,7 @@ function GamePageInner() { // NOSONAR
               {/* Containment Board (the cam) — sits below the action panels on a
                   phone, see the ordering note on the Action panels block. */}
               {showOnTab('play') && (
-                <article className="rise-in order-4 md:order-none rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
+                <article className="rise-in order-4 rounded-lg border p-6" style={{ backgroundColor: '#0a100a', borderColor: 'rgba(107,142,35,0.2)' }}>
                   <div className="flex items-center justify-between gap-4">
                     <h2 className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>Area 51</h2>
                     <span className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.18em]" style={{ borderColor: 'rgba(107,142,35,0.35)', color: '#6b8e23', backgroundColor: 'rgba(107,142,35,0.1)' }}>
@@ -1570,28 +1570,29 @@ function GamePageInner() { // NOSONAR
               )}
 
               {/* Action panels (Shield).
-                  ── Mobile ordering ──────────────────────────────────────────
-                  The parent is `flex flex-col`, so these blocks are reordered
-                  with `order-*` rather than moved in the source — the JSX stays
-                  grouped by what it is, not by where it happens to sit on a
-                  phone. Only the three that matter are numbered:
+                  ── Column ordering ──────────────────────────────────────────
+                  The parent is `flex flex-col` at every width, so these blocks
+                  are reordered with `order-*` rather than moved in the source —
+                  the JSX stays grouped by what it is, not by where it sits on
+                  screen. Only the four that matter are numbered:
 
                     order-1  phase card + timer
                     order-2  action panels (Shield)  ← this block
-                    order-3  vote panel
+                    order-3  vote panel (phone only; desktop uses the sidebar)
                     order-4  containment board (the cam)
 
                   Everything else keeps source order (0) and lands above them,
                   which is correct: the waiting-room and host controls only
                   render before a game is running.
 
-                  Reported from a real phone: Shield sat at the bottom of one tab
-                  and the vote panel below the fold on another, so players did
-                  not see either until their window had closed. `md:order-none`
-                  resets it — desktop shows every panel at once and never had the
-                  problem. */}
+                  Applies on desktop too. It was gated behind `md:order-none` on
+                  the assumption that a wide screen shows everything at once and
+                  so could not hide anything — but the cam is tall, and on a
+                  laptop it pushed Shield far enough down the column that players
+                  did not know the option existed. What you owe the game belongs
+                  above the thing you watch, at every width. */}
               {showOnTab('play') && (
-                <div className="order-2 md:order-none flex flex-col gap-6">
+                <div className="order-2 flex flex-col gap-6">
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>
