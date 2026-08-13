@@ -222,14 +222,21 @@ export function ArenaHub() {
         color: '#d4c9b2',
         backgroundImage: 'url(/images/bg-game.webp)',
         backgroundSize: 'cover',
-        backgroundPosition: 'center',
+        backgroundPosition: 'center top',
         backgroundAttachment: 'fixed',
       }}
     >
-      <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.9)' }} />
+      <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
 
-      <div className="relative mx-auto max-w-5xl px-4 py-4 sm:px-6">
-        <SiteNav currentPath="/game" />
+      {/* Container, padding and nav treatment all match the lobby/game/leaderboard
+          shell. Anything narrower reads as an inset page rather than the same site. */}
+      <div className="relative px-4 pb-10 sm:px-8" style={{ zIndex: 1 }}>
+        <div className="sticky top-0 z-50 -mx-4 px-4 pt-4 sm:-mx-8 sm:px-8 sm:pt-6">
+          <div className="mx-auto w-full max-w-6xl">
+            <SiteNav currentPath="/game" />
+          </div>
+        </div>
+        <div className="mx-auto w-full max-w-6xl">
 
         {/* Redirecting into your own room — don't flash the hub behind it. */}
         {myRoom ? (
@@ -376,9 +383,9 @@ export function ArenaHub() {
               </div>
             )}
 
-            <div className="h-10" />
           </>
         )}
+        </div>
       </div>
     </main>
   )

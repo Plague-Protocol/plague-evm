@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 import { SiteFooter } from '@/components/ui/site-footer'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
@@ -83,6 +84,14 @@ function isExpiredWaiting(room: RoomRow, now: number): boolean {
 function isVisibleRoom(room: RoomRow, now: number, myRoomId: bigint | null): boolean {
   if (room.status === 'ended') return false
   if (isExpiredWaiting(room, now) && room.id !== myRoomId) return false
+  // Matches already in progress belong to the Arena. The lobby is for getting
+  // into a game — joining, creating, funding — and a room you cannot join was
+  // only ever a "Spectate" button sitting in the middle of that flow. The two
+  // pages listed the same rooms for different purposes; now each owns one.
+  //
+  // Your own room is the exception and must stay: it is the host's way back in
+  // ("Enter the Dark"), and losing it would strand a creator who wandered off.
+  if ((room.status === 'active' || room.status === 'starting') && room.id !== myRoomId) return false
   return true
 }
 
@@ -772,6 +781,15 @@ export default function LobbyPage() {
          r.playerAddresses.some(p => p.toLowerCase() === addrLower))
     ) ?? null
   }, [rooms, address])
+
+  // Matches in progress that the list no longer shows. They still need a way
+  // to be found, or hiding them from the lobby just loses them.
+  const liveElsewhere = useMemo(
+    () => rooms.filter(r =>
+      (r.status === 'active' || r.status === 'starting') && r.id !== myActiveRoom?.id,
+    ).length,
+    [rooms, myActiveRoom],
+  )
 
   // ── Faucet / balance state ─────────────────────────────────────────────────
   const [cusdBalance, setCusdBalance]           = useState<string | null>(null)
@@ -1527,6 +1545,25 @@ export default function LobbyPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Matches in progress live in the Arena now — this is the only
+                  thing pointing at them from here, so it must always render
+                  when there are any. */}
+              {liveElsewhere > 0 && (
+                <Link
+                  href="/game"
+                  className="mt-3 flex items-center gap-2 rounded border px-3 py-2 font-mono text-[11px] leading-relaxed transition-all hover:brightness-125"
+                  style={{ borderColor: 'rgba(245,197,24,0.35)', backgroundColor: 'rgba(245,197,24,0.07)', color: '#f5c518' }}
+                >
+                  <span className="relative flex h-2 w-2 flex-shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-70" style={{ backgroundColor: '#f5c518', animationDuration: '2s' }} />
+                    <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: '#f5c518' }} />
+                  </span>
+                  <span>
+                    {liveElsewhere} match{liveElsewhere === 1 ? '' : 'es'} in progress — watch in the Arena →
+                  </span>
+                </Link>
+              )}
 
               {/* Discoverability: most visitors won't realize they can play solo. */}
               <div

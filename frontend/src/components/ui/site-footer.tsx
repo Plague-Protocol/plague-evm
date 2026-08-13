@@ -17,7 +17,7 @@ const columns: { heading: string; links: FooterLink[] }[] = [
     heading: 'The Outbreak',
     links: [
       { href: '/lobby',       label: 'Lobby' },
-      { href: '/game',        label: 'Match' },
+      { href: '/game',        label: 'Arena' },
       { href: '/leaderboard', label: 'Leaderboard' },
       { href: '/how-to-play', label: 'How to Play' },
     ],
