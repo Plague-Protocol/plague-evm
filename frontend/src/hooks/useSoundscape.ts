@@ -149,9 +149,6 @@ function stopLoop() {
 /** Milliseconds of ramp before the loop is cut. Short enough to read as "off". */
 const STOP_FADE_MS = 90
 
-/** Ramp before suspending on backgrounding. Shorter — the app is already gone. */
-const SUSPEND_FADE_MS = 60
-
 /**
  * Leave-the-page version of stopLoop: ramp to silence, *then* stop.
  *
@@ -274,15 +271,22 @@ export function useSoundscape(scene: RoundPhase | 'lobby', muted: boolean) {
   useEffect(() => {
     const silence = () => {
       if (!ctx) return
-      const now = ctx.currentTime
+      // Zero the gain SYNCHRONOUSLY, then suspend in the same turn.
+      //
+      // A scheduled ramp plus a delayed suspend was tried and measurably made
+      // this worse: iOS freezes the page at hide, so the timer never fired, the
+      // context was never suspended, and the graph sat repeating its last
+      // 128-frame quantum — measured at 2.7x the music's level for 470ms,
+      // against 1/5 of it for 370ms when the suspend was immediate.
+      //
+      // Nothing scheduled can be relied on here. An instantaneous zero risks a
+      // single-sample step, which is inaudible next to what it replaces, and it
+      // guarantees that whatever quantum the hardware ends up looping is silent.
       if (loopGain) {
-        loopGain.gain.cancelScheduledValues(now)
-        loopGain.gain.setValueAtTime(loopGain.gain.value, now)
-        loopGain.gain.linearRampToValueAtTime(0, now + SUSPEND_FADE_MS / 1000)
+        loopGain.gain.cancelScheduledValues(ctx.currentTime)
+        loopGain.gain.value = 0
       }
-      window.setTimeout(() => {
-        if (document.hidden) void ctx?.suspend()
-      }, SUSPEND_FADE_MS + 20)
+      void ctx.suspend()
     }
 
     const onVisibility = () => {
