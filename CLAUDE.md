@@ -224,6 +224,20 @@ verified to build clean with scripts skipped.
 
 ## Build / test / verify
 
+**All three mainnet contracts are verified on BOTH Blockscout and Celoscan** (solc
+0.8.28, optimizer on, 200 runs). Confirmed 2026-08-14 — do not re-run verification.
+
+⚠️ **Celoscan's V1 API (`api.celoscan.io`) is retired.** Every call returns
+`NOTOK / "You are using a deprecated V1 endpoint"`, which looks like a missing or
+bad API key and is why Celoscan verification was wrongly recorded as an open gap
+for five passes. Celo data now comes from **Etherscan API V2**, one key for 60+
+chains. Check verification with:
+
+```bash
+curl "https://api.etherscan.io/v2/api?chainid=42220&module=contract\
+&action=getsourcecode&address=<ADDR>&apikey=<KEY>"   # empty SourceCode = unverified
+```
+
 ```bash
 forge build
 forge test                       # 100/100 passing as of 2026-07-03
