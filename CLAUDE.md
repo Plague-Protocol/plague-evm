@@ -32,6 +32,14 @@ self-hosted box. Full stack + runbook: [`deploy/`](deploy/) (`docker-compose.yml
 
 - **Public API:** `https://api.zplague.xyz` (health: `/health` → `{"ok":true}`). Frontend sets `NEXT_PUBLIC_BACKEND_URL` to this.
 - **VPS:** `43.131.58.132`, user `ubuntu`, repo at `/opt/plague`; compose runs from `/opt/plague/deploy` (`docker compose up -d`).
+- ⚠ **Bandwidth is capped: 512 GB/month OUTBOUND**, resetting the 8th at 13:27
+  (Asia/Shanghai — the VPS clock). Exhausting it throttles public networking and
+  takes `api.zplague.xyz` down. Inbound is free, so deploys/`git pull` cost
+  nothing. The whole Plague stack burns **~0.75 GB/day**; anything sustained
+  above ~1 GB/day is a co-tenant process, not us — the box also hosts the
+  separate LiquidationBot, which hit 98% of egress on 2026-08-24. Attribution
+  method, the pm2-reboot trap, and the hourly `deploy/egress-watch.py` watchdog:
+  [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) §6.
 - **Gas:** every wallet (8 bot agents + backend signer `0xb895af9AA23451314601822B403E4e6f7456E950`) pays gas in **native CELO**, NOT USDm fee-currency. USDm = stakes/pot only. If a wallet runs out of CELO its txns fail.
 - **Bots:** 8 ERC-8004 agents. Self-play fires after a **randomized** idle gap
   (`SELF_PLAY_MIN_MS`..`SELF_PLAY_MAX_MS`, compose defaults 8–12h), capped at

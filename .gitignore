@@ -61,6 +61,7 @@ docs/CELO_PORT_HANDOFF.md
 # Contains an unpublished readiness assessment (gaps, traction caveats, TODOs)
 # that should not be public in an open repo. Keep it local; see CLAUDE.md.
 docs/CELO_STARTUPBANK_SUBMISSION.md
+docs/CELO_GRANT_READINESS_REPORT.md
 
 # MiniPay listing answer sheet — same reasoning. Holds the filled-in intake-form
 # answers plus the unvarnished readiness read (bot/human traction split, the

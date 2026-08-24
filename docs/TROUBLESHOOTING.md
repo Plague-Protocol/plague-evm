@@ -290,6 +290,104 @@ still rendered inside `WalletProvider` and that `supportedWallets` /
 
 ---
 
+## 6. Lighthouse traffic alarm ("TransferRemainingPercent <= 10.000%")
+
+**The plan meters OUTBOUND traffic only: 512 GB/month, resetting on the 8th at
+13:27.** Inbound is free — `git pull`, `docker compose build`, and npm installs
+cost nothing, so never skip a deploy to save traffic. When the package empties,
+Lighthouse throttles public networking, which takes `api.zplague.xyz` down with
+it. Console: Lighthouse → instance → **Usage and Monitoring** → Transfer.
+
+⚠ **Timezone trap.** The VPS, the alarm email, and the reset time are all
+**Asia/Shanghai (UTC+8)**. The console renders alarm timestamps in a *different*
+zone — the 2026-08-24 alarm showed `07:27` there and `14:27` in the email. Trust
+the VPS clock, or you will misjudge remaining headroom by ~2×.
+
+**Baseline: the whole stack burns ~0.75 GB/day.** Caddy's public egress is only
+~62 MB/day; most of the rest is the agents container's RPC to Alchemy
+(~0.43 GB/day). Sustained egress above ~1 GB/day is not Plague — attribute it
+before tuning anything.
+
+### Attribution: is it even ours?
+
+```bash
+# Whole-box egress rate. NOTE: `grep eth0` also matches veth names like
+# veth0d90c8c — always anchor with awk.
+ssh lighthouse 'g(){ awk "\$1==\"eth0:\"{print \$10}" /proc/net/dev; }; \
+  a=$(g); sleep 30; b=$(g); echo "$(( (b-a)/30 )) B/s"'
+
+# Per-container split (NET I/O is RX / TX from the container's view).
+# Counters reset on container restart — check `docker ps` ages before trusting.
+ssh lighthouse 'docker stats --no-stream --format "table {{.Name}}\t{{.NetIO}}"'
+
+# Everything Docker sends leaves via the compose bridge. Compare the bridge's
+# RX (containers → host) against eth0 TX: a large gap means a NON-Docker host
+# process is the source, and no amount of Plague tuning will help.
+ssh lighthouse 'tail -n +3 /proc/net/dev | \
+  awk "{printf \"%-16s RX %8.2f GB  TX %8.2f GB\n\", \$1, \$2/1e9, \$10/1e9}"'
+```
+
+### 2026-08-24 incident — it was a co-tenant, not Plague
+
+Alarm at 9.93% remaining (471.9 / 512 GB used, 14.6 days left in the cycle).
+eth0 had transmitted **658 GB in 47 days**; the compose bridge accounted for
+**28 GB** of it. The gap was `pm2` job `liquidation-monitor` (`/opt/liquidation-bot`,
+a separate repo sharing the box), burning **~40 GB/day — 98% of all egress**
+against Plague's 0.6.
+
+The cost was outbound *request bodies*, not responses: the bot sweeps Aave
+positions in 500-address Multicall3 batches, and its tracked set had grown to
+72,177 addresses (~26k hot+warm swept every scan). That inversion — TX 5.6× RX —
+is the signature to look for; a normal polling client is inbound-heavy.
+
+Stopping it took the box from 55% CPU / 0.605 MB/s to 4.4% / 0.009 MB/s.
+
+### 🚨 `pm2 stop` does NOT survive a reboot
+
+`pm2 save` writes `status: 'stopped'` into the dump, which looks like enough.
+It is not. `resurrect` (`lib/API/Startup.js`, pm2 7.0.3) builds its start list by
+filtering **only on whether the app name is already running** — it never reads
+`status`. On a fresh boot nothing is running, so every app in the dump is
+started, stopped or not. With `pm2-ubuntu.service` enabled, one reboot silently
+undoes the fix. Remove it from the dump instead:
+
+```bash
+ssh lighthouse 'pm2 delete liquidation-monitor && pm2 save --force'
+# verify the boot dump is empty
+ssh lighthouse 'python3 -c "import json;print(json.load(open(\"/home/ubuntu/.pm2/dump.pm2\")))"'
+# bring it back later (ecosystem file carries the full config)
+ssh lighthouse 'cd /opt/liquidation-bot/monitor && pm2 start ecosystem.config.cjs && pm2 save'
+```
+
+### The egress watchdog
+
+`deploy/egress-watch.py` runs hourly from the `ubuntu` crontab (`:17`) and pages
+the ops Telegram bot — same `TELEGRAM_BOT_TOKEN` / `OPS_ALERT_TELEGRAM_IDS` the
+backend watchdog uses. It exists because Tencent's own alarm only fires at 10%
+remaining, which at a runaway burn rate is a few hours of warning; this sees a
+rate change within the hour it starts.
+
+Alerts when remaining drops below 20 GB (critical below 8), when burn exceeds
+**2.5 GB/day** (the earliest signal that something new is running), or when the
+projected end-of-cycle total would exceed the plan. Handles reboots via
+`boot_id`, rolls the billing cycle over on the 8th, and measures burn from a
+48-hour sample ring. 6-hour alert cooldown. Log: `~/.egress-watch/watch.log`.
+
+State is anchored to the console's authoritative figure, so **re-seed it if the
+counter and the console ever disagree**:
+
+```bash
+ssh lighthouse 'SEED_USED_GB=<console value> \
+  /usr/bin/python3 /opt/plague/deploy/egress-watch.py --seed'
+```
+
+Once the alarm has tripped it stays tripped until the cycle resets — Tencent
+re-notifies on a percentage that cannot recover before the 8th. That is expected
+noise after the first alert; the watchdog is what tells you if it is actually
+getting worse.
+
+---
+
 ## Quick reference
 
 | What | Where |
@@ -301,3 +399,6 @@ still rendered inside `WalletProvider` and that `supportedWallets` /
 | Online presence | `GET /api/presence` |
 | Backend signer (pays phase-advance gas) | `0xb895af9AA23451314601822B403E4e6f7456E950` — needs native CELO |
 | Update one service | `cd /opt/plague && git pull && cd deploy && docker compose up -d --build <svc>` |
+| Traffic plan (OUTBOUND only) | 512 GB/month, resets the 8th 13:27 Asia/Shanghai — console → Lighthouse → instance → Usage and Monitoring |
+| Normal stack egress | ~0.75 GB/day (Caddy ~62 MB, agents ~0.43 GB) |
+| Egress watchdog | `deploy/egress-watch.py`, hourly cron `:17`, log `~/.egress-watch/watch.log` |
