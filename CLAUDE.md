@@ -42,15 +42,15 @@ self-hosted box. Full stack + runbook: [`deploy/`](deploy/) (`docker-compose.yml
   [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) §6.
 - **Gas:** every wallet (8 bot agents + backend signer `0xb895af9AA23451314601822B403E4e6f7456E950`) pays gas in **native CELO**, NOT USDm fee-currency. USDm = stakes/pot only. If a wallet runs out of CELO its txns fail.
 - **Bots:** 8 ERC-8004 agents. Self-play fires after a **randomized** idle gap
-  (`SELF_PLAY_MIN_MS`..`SELF_PLAY_MAX_MS`, compose defaults 8–12h), capped at
-  `SELF_PLAY_MAX_GAMES_PER_DAY` (3) per rolling 24h, played by a random subset of
-  the *funded* bots. Bot proofs persist on the `agentdata` docker volume (setup
+  (`SELF_PLAY_MIN_MS`..`SELF_PLAY_MAX_MS`, compose defaults 12–24h → 1–2
+  games/day), capped at `SELF_PLAY_MAX_GAMES_PER_DAY` (2) per rolling 24h,
+  played by a random subset of the *funded* bots. Bot proofs persist on the `agentdata` docker volume (setup
   runs once).
   - ⚠ `SELF_PLAY_IDLE_MS` is **vestigial** — still set in `docker-compose.yml`,
     but `runner.ts` never reads it. Tuning it does nothing; use MIN/MAX.
   - ⚠ Restarting the `agents` container **resets the idle clock**
     (`allIdleSince = Date.now()` at module load), so every deploy pushes the next
-    self-play game out by another full 8–12h. Bots going quiet right after a
+    self-play game out by another full 12–24h. Bots going quiet right after a
     deploy is expected, not a fault. Confirm with
     `docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' $(docker compose ps -q agents)`.
 - **Bot loss budget:** `BOT_DAILY_LOSS_BUDGET_WEI` (default 0.05 USDm/24h) stops

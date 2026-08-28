@@ -150,11 +150,11 @@ services:
       # gasLimit×maxFeePerGas ≈ 0.92 for the ZK commit (baseFeeMultiplier 2).
       MIN_GAME_CELO_WEI: ${MIN_GAME_CELO_WEI:-1500000000000000000}
       # Randomized self-play cadence: each game waits a fresh random gap in
-      # [MIN,MAX] (avg drives spend), capped per 24h. Defaults 8h–12h → 2–3
-      # games/day (MAX<12h guarantees the 2/day floor), 3/day ceiling.
-      SELF_PLAY_MIN_MS: ${SELF_PLAY_MIN_MS:-28800000}
-      SELF_PLAY_MAX_MS: ${SELF_PLAY_MAX_MS:-43200000}
-      SELF_PLAY_MAX_GAMES_PER_DAY: ${SELF_PLAY_MAX_GAMES_PER_DAY:-3}
+      # [MIN,MAX] (avg drives spend), capped per 24h. Defaults 12h–24h → 1–2
+      # games/day (MAX≤24h guarantees the 1/day floor), 2/day ceiling.
+      SELF_PLAY_MIN_MS: ${SELF_PLAY_MIN_MS:-43200000}
+      SELF_PLAY_MAX_MS: ${SELF_PLAY_MAX_MS:-86400000}
+      SELF_PLAY_MAX_GAMES_PER_DAY: ${SELF_PLAY_MAX_GAMES_PER_DAY:-2}
       # Daily USDm the pool may LOSE to humans before it stops joining staked
       # rooms (self-play exempt — bots only pay each other there). Topping the
       # bot wallets up re-marks the opening balance and releases the breaker.

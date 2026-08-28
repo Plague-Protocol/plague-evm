@@ -120,15 +120,15 @@ export const SELF_PLAY_DISABLED = (process.env.SELF_PLAY_DISABLED ?? 'false').to
 // now unused by the gate), each game waits a FRESH random interval drawn from
 // [SELF_PLAY_MIN_MS, SELF_PLAY_MAX_MS] so games don't fire on a predictable clock
 // (looks human). The AVERAGE of this range drives CELO spend — the spread only
-// hides the pattern. Defaults 8h–12h → a guaranteed 2–3 games/day (24÷12=2 floor,
-// 24÷8=3 ceiling), avg ~2.4/day. Keep MAX < 12h to guarantee the 2/day floor.
-export const SELF_PLAY_MIN_MS = Number(process.env.SELF_PLAY_MIN_MS ?? 8 * 60 * 60 * 1000)
-export const SELF_PLAY_MAX_MS = Number(process.env.SELF_PLAY_MAX_MS ?? 12 * 60 * 60 * 1000)
+// hides the pattern. Defaults 12h–24h → a guaranteed 1–2 games/day (24÷24=1 floor,
+// 24÷12=2 ceiling), avg ~1.5/day. Keep MAX ≤ 24h to guarantee the 1/day floor.
+export const SELF_PLAY_MIN_MS = Number(process.env.SELF_PLAY_MIN_MS ?? 12 * 60 * 60 * 1000)
+export const SELF_PLAY_MAX_MS = Number(process.env.SELF_PLAY_MAX_MS ?? 24 * 60 * 60 * 1000)
 
 // Hard ceiling on self-play games per rolling 24h. The random draws above can
 // occasionally cluster; this is the real budget guardrail so a cluster of short
-// gaps can't blow the CELO budget. Default 3 (avg cadence is ~2/day).
-export const SELF_PLAY_MAX_GAMES_PER_DAY = Number(process.env.SELF_PLAY_MAX_GAMES_PER_DAY ?? 3)
+// gaps can't blow the CELO budget. Default 2 (avg cadence is ~1.5/day).
+export const SELF_PLAY_MAX_GAMES_PER_DAY = Number(process.env.SELF_PLAY_MAX_GAMES_PER_DAY ?? 2)
 
 // Shared secret for the runner's calls to the backend bot-coordination API.
 export const BOT_RUNNER_SECRET = process.env.BOT_RUNNER_SECRET ?? ''
