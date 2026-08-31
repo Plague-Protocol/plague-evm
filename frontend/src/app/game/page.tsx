@@ -17,6 +17,8 @@ import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { PhaseCoach } from '@/components/game/PhaseCoach'
+import { useNarrative } from '@/hooks/useNarrative'
+import type { NarrativeSet } from '@/lib/narrative'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { ArenaHub } from '@/components/game/ArenaHub'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
@@ -31,45 +33,32 @@ export const dynamic = 'force-dynamic'
 
 // ── Phase display helpers ─────────────────────────────────────────────────────
 
-const PHASE_LABEL: Record<RoundPhase, string> = {
-  infection:  'INFECTION',
-  discussion: 'DISCUSS',
-  voting:     'VOTING',
-  reveal:     'ELIMINATION',
-  ended:      'ENDED',
-}
-
-const PHASE_COLOR: Record<RoundPhase, string> = {
-  infection:  '#e63329',
-  discussion: '#6b8e23',
-  voting:     '#f5c518',
-  reveal:     '#d4c9b2',
-  ended:      '#7d9a72',
-}
+// Phase names and colours live in lib/narrative.ts so a theme can rename them
+// ("VOTING" vs "THE JUDGEMENT"). Pre-game statuses below are theme-neutral.
 
 // A room only has a round (and therefore a phase) once it is `active`. Before
 // that `currentRound` is undefined and `phase` falls back to `ended` — which
 // rendered "ENDED" and "Game ended." on the phase card of a game that had not
 // started yet, reading to players as if they had walked in on a dead room.
 // These three resolve the pre-game statuses to their own label/colour instead.
-function getPhaseLabel(phase: RoundPhase, roomStatus?: string): string {
+function getPhaseLabel(n: NarrativeSet, phase: RoundPhase, roomStatus?: string): string {
   if (roomStatus === 'waiting')  return 'LOBBY'
   if (roomStatus === 'starting') return 'SETUP'
-  return PHASE_LABEL[phase]
+  return n.phaseLabels[phase]
 }
 
-function getPhaseColor(phase: RoundPhase, roomStatus?: string): string {
+function getPhaseColor(n: NarrativeSet, phase: RoundPhase, roomStatus?: string): string {
   if (roomStatus === 'waiting')  return '#7d9a72'
   if (roomStatus === 'starting') return '#f5c518'
-  return PHASE_COLOR[phase]
+  return n.phaseColors[phase]
 }
 
 /** Header badge text. Reads as a sentence, so it can't render "LOBBY phase". */
-function getPhaseBadgeText(phase: RoundPhase, roomStatus?: string): string {
+function getPhaseBadgeText(n: NarrativeSet, phase: RoundPhase, roomStatus?: string): string {
   if (roomStatus === 'waiting')  return 'Waiting for players'
   if (roomStatus === 'starting') return 'Setup — commit window'
   if (roomStatus === 'ended' || phase === 'ended') return 'Game ended'
-  return `${PHASE_LABEL[phase]} phase`
+  return `${n.phaseLabels[phase]} phase`
 }
 
 function formatCountdown(ms: number): string {
@@ -409,9 +398,12 @@ function GamePageInner() { // NOSONAR
   const headerTitle = getHeaderTitle(isLoading, round, room?.status)
   const phaseCardDescription = getPhaseDescription(phase, hasVoted, result, room?.status, localPlayer?.status === 'infected')
   const phaseCardBackground = getPhaseCardBackground(phase, room?.status)
-  const phaseLabel = getPhaseLabel(phase, room?.status)
-  const phaseColor = getPhaseColor(phase, room?.status)
-  const phaseBadgeText = getPhaseBadgeText(phase, room?.status)
+  const narrative = useNarrative()
+  const narrativeRef = useRef(narrative)
+  useEffect(() => { narrativeRef.current = narrative }, [narrative])
+  const phaseLabel = getPhaseLabel(narrative, phase, room?.status)
+  const phaseColor = getPhaseColor(narrative, phase, room?.status)
+  const phaseBadgeText = getPhaseBadgeText(narrative, phase, room?.status)
   const synchronizedFeed = [
     `System sync: Round ${round > 0 ? round : '-'} · ${phaseLabel} · Infected ${infectedCount}/${Math.max(activePlayers.length, 1)}`,
     ...feed,
@@ -485,10 +477,10 @@ function GamePageInner() { // NOSONAR
       setMoment({
         key: `infected:${roomId}:${Date.now()}`,
         data: {
-          label: 'You Are Infected',
-          color: '#e63329',
+          label: narrativeRef.current.moments.infected.label,
+          color: narrativeRef.current.phaseColors.infection,
           glyph: '☣',
-          sublabel: 'Hide it. Spread it. Survive the votes.',
+          sublabel: narrativeRef.current.moments.infected.sublabel,
           intense: true,
         },
       })
@@ -732,10 +724,10 @@ function GamePageInner() { // NOSONAR
       setMoment({
         key: `shield:${roomId}:${round}`,
         data: {
-          label: 'Shield Active',
-          color: '#6b8e23',
+          label: narrativeRef.current.moments.shield.label,
+          color: narrativeRef.current.phaseColors.discussion,
           glyph: '✚',
-          sublabel: `Round ${round} — innocence proven on-chain`,
+          sublabel: `Round ${round} — ${narrativeRef.current.moments.shield.sublabel}`,
         },
       })
       schedulePostTxRefresh()
@@ -1103,8 +1095,8 @@ function GamePageInner() { // NOSONAR
       <AmbientLayer urgent={votingUrgent} />
       <PhaseTransition
         phaseKey={`${round}:${phase}`}
-        label={PHASE_LABEL[phase]}
-        color={PHASE_COLOR[phase]}
+        label={narrative.phaseLabels[phase]}
+        color={narrative.phaseColors[phase]}
         sublabel={round > 0 ? `Round ${round}` : undefined}
         glyphKey={phase}
         enabled={room?.status === 'active' && phase !== 'ended'}
@@ -1479,7 +1471,7 @@ function GamePageInner() { // NOSONAR
                             <span
                               className="font-mono text-[9px] uppercase tracking-[0.12em]"
                               style={{
-                                color: isCurrent ? PHASE_COLOR[phase] : isPast ? '#2a3a24' : '#2a3a24',
+                                color: isCurrent ? narrative.phaseColors[phase] : isPast ? '#2a3a24' : '#2a3a24',
                                 fontWeight: isCurrent ? 700 : 400,
                                 textDecoration: isPast ? 'line-through' : 'none',
                               }}
