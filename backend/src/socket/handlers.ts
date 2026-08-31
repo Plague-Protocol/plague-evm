@@ -7,6 +7,7 @@ import { listExpiredWaitingRooms, setRoomStatus, setRoomStatusEnsuring, upsertGa
 import { keccak256, toBytes } from 'viem'
 import { redis } from '../db/redis'
 import { prisma } from '../db/prisma'
+import { isChatSilenced, isAnonymous } from '../lib/roomModifiers.js'
 
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
 type RawPlayer = Awaited<ReturnType<typeof chainAdapter.getPlayer>>
@@ -1048,6 +1049,12 @@ export function setupSocketHandlers(io: Server) {
             socket.emit('chat_error', { roomId, message: 'Chat is disabled during voting.' })
             return
           }
+          // Silent Round modifier. Enforced here rather than in the client
+          // because a client-side mute is not a rule, it is a suggestion.
+          if (isChatSilenced(roomId, Number(rawRoom.currentRound))) {
+            socket.emit('chat_error', { roomId, message: 'Silent Round — no chat this round. Read the votes.' })
+            return
+          }
         }
 
         if (rawRoom.status === 3) {
@@ -1072,6 +1079,13 @@ export function setupSocketHandlers(io: Server) {
         if (rec?.nickname) resolvedName = rec.nickname
       } catch {
         // DB hiccup — the join-order fallback above still matches the cards.
+      }
+
+      // No Names modifier. Applied last, after the nickname lookup, so a
+      // persistent identity never reaches the wire in the first place —
+      // stripping it client-side would still have shipped it to every player.
+      if (isAnonymous(roomId)) {
+        resolvedName = playerNum > 0 ? `Seat ${playerNum}` : 'Unknown'
       }
 
       const chatMsg = {

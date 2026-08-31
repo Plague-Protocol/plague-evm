@@ -17,6 +17,7 @@ import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { PhaseCoach } from '@/components/game/PhaseCoach'
+import { ModifierBanner } from '@/components/game/ModifierBanner'
 import { useNarrative } from '@/hooks/useNarrative'
 import type { NarrativeSet } from '@/lib/narrative'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
@@ -1102,6 +1103,9 @@ function GamePageInner() { // NOSONAR
         enabled={room?.status === 'active' && phase !== 'ended'}
       />
       <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
+      <div className="relative z-10 mx-auto w-full max-w-6xl px-4 pt-3">
+        <ModifierBanner roomId={roomId} round={round} />
+      </div>
       {/* Same coach marks the demo uses, and the same localStorage keys, so a
           player who learned Shield timing in the demo is not taught it twice.
           Gated on an active room: hints during setup would fire with nothing
