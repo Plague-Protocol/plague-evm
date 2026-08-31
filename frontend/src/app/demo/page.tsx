@@ -7,6 +7,8 @@ import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
+import { PhaseCoach } from '@/components/game/PhaseCoach'
+import { useNarrative } from '@/hooks/useNarrative'
 import { PlayerCard } from '@/components/game/PlayersGrid'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
@@ -127,25 +129,11 @@ const INITIAL_STATE: DemoState = {
 
 // ── Phase display (mirrors the real game page) ───────────────────────────────
 
-const DEMO_PHASE_LABEL: Record<DemoPhase, string> = {
-  welcome:    '',
-  starting:   'STARTING',
-  infection:  'INFECTION',
-  discussion: 'DISCUSS',
-  voting:     'VOTING',
-  reveal:     'ELIMINATION',
-  gameover:   '',
-}
-
-const DEMO_PHASE_COLOR: Record<DemoPhase, string> = {
-  welcome:    '#6b8e23',
-  starting:   '#6b8e23',
-  infection:  '#e63329',
-  discussion: '#6b8e23',
-  voting:     '#f5c518',
-  reveal:     '#d4c9b2',
-  gameover:   '#7d9a72',
-}
+// welcome/starting/gameover are demo-only staging states with no counterpart in
+// a real room. The four real phases come from lib/narrative.ts so the demo and
+// the live game never teach different words for the same thing.
+const DEMO_ONLY_LABEL = { welcome: '', starting: 'STARTING', gameover: '' } as const
+const DEMO_ONLY_COLOR = { welcome: '#6b8e23', starting: '#6b8e23', gameover: '#7d9a72' } as const
 
 // ── Random helpers ────────────────────────────────────────────────────────────
 
@@ -218,6 +206,21 @@ function getChatBlockedReason(state: DemoState): string | null {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DemoPage() {
+  const narrative = useNarrative()
+  const demoPhaseLabel: Record<DemoPhase, string> = {
+    ...DEMO_ONLY_LABEL,
+    infection:  narrative.phaseLabels.infection,
+    discussion: narrative.phaseLabels.discussion,
+    voting:     narrative.phaseLabels.voting,
+    reveal:     narrative.phaseLabels.reveal,
+  }
+  const demoPhaseColor: Record<DemoPhase, string> = {
+    ...DEMO_ONLY_COLOR,
+    infection:  narrative.phaseColors.infection,
+    discussion: narrative.phaseColors.discussion,
+    voting:     narrative.phaseColors.voting,
+    reveal:     narrative.phaseColors.reveal,
+  }
   const [demoCount, setDemoCount] = useState(0)
   const [state, setState] = useState<DemoState>(INITIAL_STATE)
   const [countdown, setCountdown] = useState(0)
@@ -878,13 +881,16 @@ export default function DemoPage() {
       <AmbientLayer />
       <PhaseTransition
         phaseKey={`${round}:${phase}`}
-        label={DEMO_PHASE_LABEL[phase]}
-        color={DEMO_PHASE_COLOR[phase]}
+        label={demoPhaseLabel[phase]}
+        color={demoPhaseColor[phase]}
         sublabel={round > 0 ? `Round ${round}` : undefined}
         glyphKey={phase}
-        enabled={phase !== 'gameover' && DEMO_PHASE_LABEL[phase] !== ''}
+        enabled={phase !== 'gameover' && demoPhaseLabel[phase] !== ''}
       />
       <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
+      {/* Just-in-time guidance. Sits after the overlays so it layers above the
+          table, but it is non-blocking and never eats a timed phase. */}
+      <PhaseCoach phase={phase} />
       {phase === 'gameover' && outcome && !gameOverSeen && (
         <GameOverOverlay
           outcome={outcome}
@@ -935,12 +941,12 @@ export default function DemoPage() {
                 <span
                   className="rounded border px-3 py-1 font-mono text-xs uppercase tracking-[0.2em]"
                   style={{
-                    borderColor: `${DEMO_PHASE_COLOR[phase]}44`,
-                    backgroundColor: `${DEMO_PHASE_COLOR[phase]}18`,
-                    color: DEMO_PHASE_COLOR[phase],
+                    borderColor: `${demoPhaseColor[phase]}44`,
+                    backgroundColor: `${demoPhaseColor[phase]}18`,
+                    color: demoPhaseColor[phase],
                   }}
                 >
-                  {DEMO_PHASE_LABEL[phase]}
+                  {demoPhaseLabel[phase]}
                 </span>
               )}
             </div>

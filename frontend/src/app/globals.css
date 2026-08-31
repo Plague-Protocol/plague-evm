@@ -32,6 +32,96 @@
   --glow-rust: 0 0 16px rgba(201, 122, 18, 0.4);
 }
 
+/* ── Themes ───────────────────────────────────────────────────────────────────
+   A theme is a palette swap and nothing else: every block below redefines the
+   SAME token set declared in :root, so components never branch on the active
+   theme and nothing has to be re-styled to add one.
+
+   Two hard rules:
+     1. NEVER redefine --font-* here. next/font sets those on <html>; a
+        redefinition silently falls back to system fonts (see the note above).
+     2. Keep each token's ROLE stable. --accent-bio is the primary action colour
+        and --accent-blood is danger, in every theme. Swapping their meaning
+        would make buttons read as warnings.
+
+   Applied via data-theme on <html>. See lib/theme.ts. */
+
+/* Hallow — late October. A public holiday, so no IP entanglement. */
+[data-theme='hallow'] {
+  --bg-primary: #0b0710;
+  --bg-secondary: #120b18;
+  --bg-tertiary: #1a1024;
+  --bg-card: #100a16;
+
+  --text-primary: #f0e0c8;
+  --text-secondary: #b89a7a;
+  --text-muted: #8a7560;
+
+  --accent-bio: #d97706;
+  --accent-toxic: #ffa41b;
+  --accent-blood: #b91c1c;
+  --accent-bone: #e8d5b0;
+  --accent-rust: #92400e;
+  --accent-mold: #7e4bc4;
+
+  --glow-bio: 0 0 20px rgba(217, 119, 6, 0.5);
+  --glow-toxic: 0 0 20px rgba(255, 164, 27, 0.6);
+  --glow-blood: 0 0 20px rgba(185, 28, 28, 0.5);
+  --glow-bone: 0 0 12px rgba(232, 213, 176, 0.3);
+  --glow-rust: 0 0 16px rgba(146, 64, 14, 0.4);
+}
+
+/* Redshift — the strain did not start here. Oxide dust, alien cyan. */
+[data-theme='redshift'] {
+  --bg-primary: #0d0705;
+  --bg-secondary: #150b08;
+  --bg-tertiary: #1d100b;
+  --bg-card: #120906;
+
+  --text-primary: #e8d5c0;
+  --text-secondary: #c49a7a;
+  --text-muted: #9a7a5e;
+
+  --accent-bio: #b45309;
+  --accent-toxic: #22d3ee;
+  --accent-blood: #dc2626;
+  --accent-bone: #e8dcc8;
+  --accent-rust: #7c2d12;
+  --accent-mold: #0e7490;
+
+  --glow-bio: 0 0 20px rgba(180, 83, 9, 0.5);
+  --glow-toxic: 0 0 20px rgba(34, 211, 238, 0.6);
+  --glow-blood: 0 0 20px rgba(220, 38, 38, 0.5);
+  --glow-bone: 0 0 12px rgba(232, 220, 200, 0.3);
+  --glow-rust: 0 0 16px rgba(124, 45, 18, 0.4);
+}
+
+/* Relic — something old, dug up. Bronze and verdigris; antiquity is public
+   domain by a couple of millennia. */
+[data-theme='relic'] {
+  --bg-primary: #0a0908;
+  --bg-secondary: #12100d;
+  --bg-tertiary: #1a1713;
+  --bg-card: #0f0d0a;
+
+  --text-primary: #e8dcc0;
+  --text-secondary: #b5a284;
+  --text-muted: #8a7a5e;
+
+  --accent-bio: #2d8f7f;
+  --accent-toxic: #5eead4;
+  --accent-blood: #a13d2d;
+  --accent-bone: #e8dcc0;
+  --accent-rust: #a06b2a;
+  --accent-mold: #6b7f5a;
+
+  --glow-bio: 0 0 20px rgba(45, 143, 127, 0.5);
+  --glow-toxic: 0 0 20px rgba(94, 234, 212, 0.6);
+  --glow-blood: 0 0 20px rgba(161, 61, 45, 0.5);
+  --glow-bone: 0 0 12px rgba(232, 220, 192, 0.3);
+  --glow-rust: 0 0 16px rgba(160, 107, 42, 0.4);
+}
+
 @layer base {
   * {
     box-sizing: border-box;

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Route } from 'next'
 import { SUPPORT_TELEGRAM_URL, SUPPORT_TELEGRAM_READY, SUPPORT_EMAIL } from '@/lib/support'
+import { ThemePicker } from '@/components/ui/theme-picker'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? ''
 const IS_TESTNET = process.env.NEXT_PUBLIC_NETWORK === 'testnet'
@@ -102,8 +103,12 @@ export function SiteFooter() {
           </div>
         </div>
 
+        <div className="mt-10 border-t pt-6" style={{ borderColor: 'rgba(107,142,35,0.1)' }}>
+          <ThemePicker />
+        </div>
+
         <div
-          className="mt-10 flex flex-col gap-2 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"
+          className="mt-6 flex flex-col gap-2 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"
           style={{ borderColor: 'rgba(107,142,35,0.1)' }}
         >
           <p className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: '#7d9a72' }}>

@@ -4,6 +4,7 @@ import { SiteNav } from '@/components/ui/site-nav'
 import { SiteFooter } from '@/components/ui/site-footer'
 import { HeroStats } from '@/components/ui/home-stats'
 import { NextWindowBanner } from '@/components/ui/next-window-banner'
+import { FirstRunWelcome } from '@/components/ui/first-run-welcome'
 
 const features = [
   {
@@ -77,6 +78,8 @@ export default function HomePage() {
           backgroundPosition: 'center top',
         }}
       >
+        <FirstRunWelcome />
+
         {/* Dark overlay */}
         <div
           className="pointer-events-none absolute inset-0"
