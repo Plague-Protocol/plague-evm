@@ -3,6 +3,7 @@ import { Oswald, VT323, Share_Tech_Mono, Eater, Nosifer } from 'next/font/google
 import Script from 'next/script'
 import { Providers } from '@/providers/providers'
 import './globals.css'
+import { THEME_BOOT_SCRIPT } from '@/lib/theme'
 
 // Decayed "eaten" display face — headers, player names, stats.
 const displayFont = Eater({
@@ -96,6 +97,14 @@ export default function RootLayout({
             has already seen the intro, so the veil must never flash for them —
             this is the standard pre-paint flag pattern, and it has to be inline
             and blocking to beat the renderer. */}
+        {/* Same pre-paint pattern as the veil flag below: the seasonal palette
+            must be on <html> before first paint, or the page renders in the
+            default colours and repaints on hydration — which reads as a flash
+            of the wrong season. */}
+        <script
+          id="theme-boot"
+          dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
+        />
         <script
           id="intro-veil-flag"
           dangerouslySetInnerHTML={{
