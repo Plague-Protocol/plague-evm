@@ -72,7 +72,7 @@ export function roomModifier(roomId: string): RoomModifier {
   return {
     kind: 'anonymous',
     label: 'No Names',
-    blurb: 'Nobody has a name this game. Reputation resets every round.',
+    blurb: 'Seat numbers only. You cannot tell who you have played before.',
   }
 }
 
