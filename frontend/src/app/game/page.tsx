@@ -16,6 +16,7 @@ import { checkChatMessage } from '@/lib/chatFilter'
 import { GameTabNav, type GameTab } from '@/components/game/GameTabNav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
+import { PhaseCoach } from '@/components/game/PhaseCoach'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { ArenaHub } from '@/components/game/ArenaHub'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
@@ -1109,6 +1110,11 @@ function GamePageInner() { // NOSONAR
         enabled={room?.status === 'active' && phase !== 'ended'}
       />
       <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
+      {/* Same coach marks the demo uses, and the same localStorage keys, so a
+          player who learned Shield timing in the demo is not taught it twice.
+          Gated on an active room: hints during setup would fire with nothing
+          on screen to apply them to. */}
+      <PhaseCoach phase={phase} enabled={room?.status === 'active' && phase !== 'ended'} />
       {result && !gameOverDismissed && (
         /* Aborted = refund, not winnings — a "pot per winner" counter and a
            winners roll-call would read as a result that never happened. */

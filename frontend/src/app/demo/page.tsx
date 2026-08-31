@@ -7,6 +7,7 @@ import { AmbientLayer } from '@/components/game/AmbientLayer'
 import { PhaseTransition } from '@/components/game/PhaseTransition'
 import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
+import { PhaseCoach } from '@/components/game/PhaseCoach'
 import { PlayerCard } from '@/components/game/PlayersGrid'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
@@ -885,6 +886,9 @@ export default function DemoPage() {
         enabled={phase !== 'gameover' && DEMO_PHASE_LABEL[phase] !== ''}
       />
       <MomentOverlay momentKey={moment?.key ?? null} moment={moment?.data ?? null} />
+      {/* Just-in-time guidance. Sits after the overlays so it layers above the
+          table, but it is non-blocking and never eats a timed phase. */}
+      <PhaseCoach phase={phase} />
       {phase === 'gameover' && outcome && !gameOverSeen && (
         <GameOverOverlay
           outcome={outcome}
