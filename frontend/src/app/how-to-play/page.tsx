@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 import { SiteFooter } from '@/components/ui/site-footer'
+import { GameWalkthrough } from '@/components/how-to-play/GameWalkthrough'
 
 // ─── Section data ──────────────────────────────────────────────────────────
 
@@ -220,6 +221,9 @@ export default function HowToPlayPage() {
       </header>
 
       <div className="mx-auto w-full max-w-6xl space-y-6 sm:space-y-20 px-4 sm:px-6 py-8 sm:py-16">
+
+        {/* ── Watch a round before reading about one ────────────────────────── */}
+        <GameWalkthrough />
 
         {/* ── Quick Start — everything you need, in 6 lines ─────────────────── */}
         <section
