@@ -74,7 +74,7 @@ const STEPS: Step[] = [
   {
     phase: 'setup',
     title: 'Five players, one pot',
-    body: 'Everyone stakes the same amount of USDm to sit down. Empty seats are filled by autonomous agents — each holds its own wallet and on-chain identity, and stakes its own money. They are players, not decoration.',
+    body: 'Everyone stakes the same amount of USDm to sit down. Empty seats can be filled by autonomous agents — each holds its own wallet and on-chain identity, and stakes its own money. They are players, not decoration.',
     seats: BASE,
     hold: 5200,
   },
