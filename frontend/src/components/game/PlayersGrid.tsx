@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { useAgentIds, agentScanUrl } from '@/hooks/useAgentIds'
+import { useAgentAddresses } from '@/hooks/useAgentIds'
 
 // ── Presentational card ───────────────────────────────────────────────────────
 
@@ -32,15 +32,15 @@ export interface PlayerCardProps {
   readonly onClick?: () => void
   readonly title?: string
   readonly index?: number
-  /** ERC-8004 agent id, when this player is a registered on-chain agent. */
-  readonly agentId?: string
+  /** True when this player holds an ERC-8004 on-chain agent identity. */
+  readonly isAgent?: boolean
   readonly children?: React.ReactNode
 }
 
 export function PlayerCard({
   name, style, isMe = false, selected = false, eliminated = false,
   justEliminated = false, votedByMe = false, clickable = false, onClick, title, index = 0,
-  agentId, children,
+  isAgent = false, children,
 }: PlayerCardProps) {
   const reduced = useReducedMotion()
 
@@ -78,13 +78,13 @@ export function PlayerCard({
       {/* Registered on-chain agent. A span rather than a link because this card
           is already a button and nesting interactive elements is invalid — the
           id is shown in full so it can be looked up on 8004scan directly. */}
-      {agentId && (
+      {isAgent && (
         <span
           className="mt-0.5 block truncate font-mono text-[9px] normal-case tracking-normal"
           style={{ color: 'var(--accent-toxic)' }}
-          title={`Autonomous agent — verify at ${agentScanUrl(agentId)}`}
+          title="Autonomous agent — holds an ERC-8004 identity on Celo"
         >
-          ⬡ agent #{agentId}
+          ⬡ agent
         </span>
       )}
       {children}
@@ -184,7 +184,7 @@ export function PlayersGrid({ players, localAddress, canVote, selectedVote, myVo
 
   // Resolved from the ERC-8004 registry, so the badge below is a claim anyone
   // can check on 8004scan rather than one this app is asserting.
-  const agentIds = useAgentIds(players.map(p => p.walletAddress))
+  const agentAddrs = useAgentAddresses(players.map(p => p.walletAddress))
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -204,7 +204,7 @@ export function PlayersGrid({ players, localAddress, canVote, selectedVote, myVo
             justEliminated={justEliminated.has(addrLower)}
             votedByMe={(myVotedTarget ?? '').toLowerCase() === addrLower}
             clickable={canVote && !p.isEliminated}
-            agentId={agentIds[addrLower]}
+            isAgent={agentAddrs.has(addrLower)}
             onClick={() => canVote && onToggleVote(p.walletAddress)}
           />
         )

@@ -913,45 +913,54 @@ export async function readNativeBalance(
 /** ERC-8004 Identity Registry, Celo mainnet. */
 export const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432' as const
 
+/**
+ * The registry is an ERC-721 but NOT enumerable, and exposes no
+ * agentOf/agentIdOf getter — both revert on mainnet (verified against
+ * 0x8004…a432). So there is no on-chain address → agentId lookup.
+ *
+ * balanceOf answers the question that actually matters here — does this player
+ * hold an agent identity — and it answers it for ANY address, not just our own
+ * bots, which is what makes the badge meaningful when a third-party agent sits
+ * down.
+ */
 const IDENTITY_ABI = [{
-  name: 'agentIdOf', type: 'function', stateMutability: 'view',
+  name: 'balanceOf', type: 'function', stateMutability: 'view',
   inputs: [{ name: 'owner', type: 'address' }],
   outputs: [{ type: 'uint256' }],
 }] as const
 
 /**
- * ERC-8004 agent ids for a set of addresses, keyed by lowercased address.
- * Addresses with no registration are omitted.
+ * Lowercased addresses that hold an ERC-8004 agent identity.
  *
  * This is what lets the game show that a player is a verifiable autonomous
- * agent rather than asking anyone to take our word for it — the id resolves on
- * 8004scan independently of us.
+ * agent rather than asking anyone to take our word for it — the same call
+ * resolves for anyone, independently of us.
  *
- * The registry is mainnet-only, so testnet returns empty rather than throwing.
+ * Registry is mainnet-only, so testnet returns empty rather than throwing.
  * Reads go through sharedReadClient, whose multicall batching folds these into
  * one request — a per-player round trip was what made the lobby's unbatched
  * eth_calls a page-weight problem before.
  */
-export async function readAgentIds(
+export async function readAgentAddresses(
   accounts: readonly `0x${string}`[],
   network: 'testnet' | 'mainnet',
-): Promise<Record<string, string>> {
-  if (network !== 'mainnet' || accounts.length === 0) return {}
+): Promise<Set<string>> {
+  if (network !== 'mainnet' || accounts.length === 0) return new Set()
   const pc = sharedReadClient(CHAINS[network])
 
   const results = await Promise.all(accounts.map(async addr => {
     try {
-      const id = await pc.readContract({
+      const bal = await pc.readContract({
         address: IDENTITY_REGISTRY, abi: IDENTITY_ABI,
-        functionName: 'agentIdOf', args: [addr],
+        functionName: 'balanceOf', args: [addr],
       })
-      return id && id > 0n ? ([addr.toLowerCase(), id.toString()] as const) : null
+      return bal > 0n ? addr.toLowerCase() : null
     } catch {
-      // An unregistered address or an RPC hiccup both mean "no badge". Never
-      // let an identity lookup break the roster.
+      // No identity and a failed read both mean "no badge". Never let an
+      // identity lookup break the roster.
       return null
     }
   }))
 
-  return Object.fromEntries(results.filter((r): r is readonly [string, string] => r !== null))
+  return new Set(results.filter((r): r is string => r !== null))
 }
