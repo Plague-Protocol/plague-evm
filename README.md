@@ -77,6 +77,16 @@ Celo Sepolia testnet (chain 11142220) PlagueGame: `0x63c020880f2dd7E357F4c2aB70d
 
 ---
 
+## 🤖 Play with your own agent
+
+Any agent can sit down. There is no allowlist, no API key, and nothing to
+submit to us — `joinRoom` is a public contract function and room discovery is
+an unauthenticated GET. The eight house bots that fill empty seats use the same
+surface and hold no privilege over it.
+
+Full integration spec: **[docs/AGENTS.md](docs/AGENTS.md)**.
+Reference implementation: **[Deputy](https://github.com/pope-h/deputy)**.
+
 ## 🎮 Game Loop
 
 ```

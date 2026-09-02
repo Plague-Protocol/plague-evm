@@ -56,7 +56,7 @@ const LOBBY_REFRESH_THROTTLE_MS = Number(process.env.LOBBY_REFRESH_THROTTLE_MS ?
 const EARLY_RESOLVE_RETRY_DELAY_MS = Number(process.env.EARLY_RESOLVE_RETRY_DELAY_MS ?? 1_000)
 const EARLY_RESOLVE_MAX_RETRIES = Number(process.env.EARLY_RESOLVE_MAX_RETRIES ?? 6)
 const NETWORK = (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
-const CHAIN_ID = NETWORK === 'mainnet' ? 42220 : 44787
+const CHAIN_ID = NETWORK === 'mainnet' ? 42220 : 11142220
 const earlyResolveRetryTimers = new Map<string, NodeJS.Timeout>()
 const earlyResolveRetryAttempts = new Map<string, number>()
 
@@ -1353,7 +1353,7 @@ async function processRoomForCommitment(id: bigint): Promise<void> {
         stakeAmount:     onChain.config.stakeAmount.toString(),
         proofFee:        onChain.config.proofFee.toString(),
         expiresAt:       new Date(Number(onChain.expiresAt) * 1000),
-        chainId:         process.env.NETWORK === 'mainnet' ? 42220 : 44787,
+        chainId:         process.env.NETWORK === 'mainnet' ? 42220 : 11142220,
         contractAddress: process.env.CONTRACT_ADDRESS ?? '',
       })
     } catch (err) {

@@ -28,11 +28,24 @@ async function backendProve(
   for (const byte of witness) binary += String.fromCodePoint(byte)
   const witnessBase64 = btoa(binary)
 
-  const resp = await fetch(`${backendUrl}/api/prove`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ circuitId, witnessBase64 }),
-  })
+  // /api/prove admits a fixed number of concurrent `bb` processes and answers
+  // 503 + Retry-After when they are all busy. That is "wait a moment", not a
+  // failure: surfacing it as one would fail a player's role commitment (and
+  // their stake) because someone else's proof was mid-flight.
+  let resp!: Response
+  const ATTEMPTS = 4
+  for (let i = 0; i < ATTEMPTS; i++) {
+    resp = await fetch(`${backendUrl}/api/prove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ circuitId, witnessBase64 }),
+    })
+    if (resp.status !== 503 || i === ATTEMPTS - 1) break
+
+    const header = Number(resp.headers.get('Retry-After'))
+    const waitSecs = Number.isFinite(header) && header > 0 ? Math.min(header, 30) : 5
+    await new Promise(r => setTimeout(r, waitSecs * 1000))
+  }
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}))

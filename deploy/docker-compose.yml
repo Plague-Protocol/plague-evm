@@ -83,6 +83,15 @@ services:
       RPC_RETRY_COUNT: "2"
       RPC_RETRY_DELAY_MS: "300"
       RPC_HEALTH_MONITOR_ENABLED: "true"
+      # /api/prove is public and unauthenticated by design (a third-party agent
+      # has no credential to present), but each call forks a native `bb` process
+      # on a 2-core box that also serves the lobby and socket layer. Cap the
+      # concurrency; the rest queue and get 503 + Retry-After past MAX_QUEUED.
+      # Named here on purpose: compose uses an explicit environment map, so a
+      # var set only in deploy/.env is silently ignored.
+      PROVE_MAX_CONCURRENT: "${PROVE_MAX_CONCURRENT:-2}"
+      PROVE_MAX_QUEUED: "${PROVE_MAX_QUEUED:-12}"
+      PROVE_QUEUE_TIMEOUT_MS: "${PROVE_QUEUE_TIMEOUT_MS:-45000}"
       RPC_HEALTH_CHECK_INTERVAL_MS: "30000"
       ROLE_COMMIT_TIMEOUT_MS: "120000"
       ELIMINATION_PHASE_DURATION_MS: "6000"

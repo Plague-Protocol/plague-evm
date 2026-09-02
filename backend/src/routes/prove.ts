@@ -28,6 +28,7 @@ import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { Noir } from '@noir-lang/noir_js'
 import { logger } from '../lib/logger'
+import { withProofSlot, ProofBusyError } from '../lib/proofQueue'
 
 const execAsync = promisify(exec)
 
@@ -104,10 +105,12 @@ proveRouter.post('/', async (req, res) => {
     let bbStdout = ''
     let bbStderr = ''
     try {
-      const result = await execAsync(cmd, { timeout: 120_000 })
+      // Admission-controlled: `bb` is CPU-bound and this endpoint is public.
+      const result = await withProofSlot(() => execAsync(cmd, { timeout: 120_000 }))
       bbStdout = result.stdout
       bbStderr = result.stderr
     } catch (execErr) {
+      if (execErr instanceof ProofBusyError) throw execErr
       // exec errors carry stdout/stderr on the error object
       const e = execErr as { stdout?: string; stderr?: string; message?: string }
       bbStdout = e.stdout ?? ''
@@ -125,6 +128,12 @@ proveRouter.post('/', async (req, res) => {
 
     res.json({ proofHex: '0x' + proofBytes.toString('hex') })
   } catch (err) {
+    if (err instanceof ProofBusyError) {
+      // Retryable, and distinct from a bad request: the proof would have
+      // succeeded, the box just has no core free right now.
+      res.setHeader('Retry-After', String(err.retryAfterSecs))
+      return res.status(503).json({ error: 'Proof service busy', retryAfterSecs: err.retryAfterSecs })
+    }
     const msg = err instanceof Error ? err.message : String(err)
     logger.error('bb prove: failed', { circuitId: parseResult.data.circuitId, error: msg })
     res.status(500).json({ error: 'Proof generation failed', detail: msg })
@@ -197,8 +206,9 @@ proveRouter.post('/role-commitment', async (req, res) => {
     const cmd = `"${bb}" prove -s ultra_honk -t evm --write_vk -b "${circuitPath}" -w "${witnessPath}" -o "${tmpDir}"`
 
     try {
-      await execAsync(cmd, { timeout: 120_000 })
+      await withProofSlot(() => execAsync(cmd, { timeout: 120_000 }))
     } catch (execErr) {
+      if (execErr instanceof ProofBusyError) throw execErr
       const e = execErr as { stdout?: string; stderr?: string }
       throw new Error(`bb prove failed.\nstdout: ${e.stdout ?? ''}\nstderr: ${e.stderr ?? ''}`)
     }
@@ -206,6 +216,10 @@ proveRouter.post('/role-commitment', async (req, res) => {
     const proofBytes = await readFile(join(tmpDir, 'proof'))
     res.json({ proofHex: '0x' + proofBytes.toString('hex') })
   } catch (err) {
+    if (err instanceof ProofBusyError) {
+      res.setHeader('Retry-After', String(err.retryAfterSecs))
+      return res.status(503).json({ error: 'Proof service busy', retryAfterSecs: err.retryAfterSecs })
+    }
     const msg = err instanceof Error ? err.message : String(err)
     logger.error('role-commitment prove: failed', { error: msg })
     res.status(500).json({ error: 'Proof generation failed', detail: msg })

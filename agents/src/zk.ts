@@ -62,14 +62,10 @@ export async function generateRoleProof(
 ): Promise<RoleProofResult> {
   const commitment = await computeCommitment(role, secret)
 
-  const resp = await fetch(`${backendUrl}/api/prove/role-commitment`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      role:       toField(role),
-      secret:     toField(secret),
-      commitment,
-    }),
+  const resp = await proveWithRetry(`${backendUrl}/api/prove/role-commitment`, {
+    role:       toField(role),
+    secret:     toField(secret),
+    commitment,
   })
 
   if (!resp.ok) {
@@ -84,3 +80,32 @@ export async function generateRoleProof(
   }
 }
 
+/**
+ * POST a proof request, waiting out a saturated prover.
+ *
+ * /api/prove admits a fixed number of concurrent `bb` processes and answers
+ * 503 + Retry-After when they are all busy (backend/src/lib/proofQueue.ts).
+ * That is a "come back shortly", not a failure — and a bot that treats it as
+ * one forfeits the round over a few seconds of queueing. Everything else is
+ * returned as-is for the caller to handle.
+ */
+async function proveWithRetry(
+  url: string,
+  payload: unknown,
+  attempts = 4,
+): Promise<Response> {
+  let resp!: Response
+  for (let i = 0; i < attempts; i++) {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (resp.status !== 503 || i === attempts - 1) return resp
+
+    const header = Number(resp.headers.get('Retry-After'))
+    const waitSecs = Number.isFinite(header) && header > 0 ? Math.min(header, 30) : 5
+    await new Promise(r => setTimeout(r, waitSecs * 1000))
+  }
+  return resp
+}

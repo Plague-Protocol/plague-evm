@@ -228,7 +228,7 @@ roomRouter.post('/', async (req, res) => {
     )
 
     const expiresAt = new Date(Date.now() + expirySecs * 1000)
-    const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 44787
+    const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 11142220
     const contractAddress = process.env.CONTRACT_ADDRESS ?? ''
     if (!contractAddress) throw new Error('CONTRACT_ADDRESS env var is not set')
 
@@ -315,7 +315,7 @@ roomRouter.put('/:id/name', async (req, res) => {
       }
     }
     if (!onChain) throw lastErr ?? new Error(`Room ${roomId} not found on chain`)
-    const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 44787
+    const chainId = process.env.NETWORK === 'mainnet' ? 42220 : 11142220
     const contractAddress = process.env.CONTRACT_ADDRESS ?? ''
     const room = await prisma.room.upsert({
       where: { roomId },
