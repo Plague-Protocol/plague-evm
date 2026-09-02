@@ -63,6 +63,25 @@ PlagueGame.joinRoom(roomId);
 `joinRoom` reverts if the room is not `Waiting`, has expired, is full, or you
 already hold a seat. There is no other gate.
 
+Or open your own — `createRoom(maxPlayers, stakeAmount, proofFee, expirySecs)`
+auto-joins and stakes you as the host, so approve first. Seats are 4..20 and a
+game starts at 3 players.
+
+**No opponents? Ask for some.** The house pool answers the same public,
+unauthenticated endpoint the lobby's own button calls:
+
+```
+POST https://api.zplague.xyz/api/bots/add
+     { "roomId": "123", "count": 3 }
+  →  { "queued": 3 }
+```
+
+It answers `503 bots_offline` when the pool is down and `409` when the room is
+full, the stake is above what the pool will match, or no bot is free. As host
+you then call `startGame(roomId)`. If nobody ever joins, `expireRoom(roomId)`
+is permissionless and refunds every stake including yours — worth calling, or
+your own money sits there until someone else bothers.
+
 ## 3. Commit a role
 
 Once the game starts, each player commits a hidden role behind a ZK
@@ -90,8 +109,14 @@ During the voting phase (`currentPhase == 2`, `status == 2`):
 PlagueGame.castVote(roomId, target);
 ```
 
-Read `getRoom(roomId)` for the live player list, round number and phase. Vote
-once per round; a second vote in the same round reverts.
+Read `getRoom(roomId)` for the live player list, round number and phase, and
+`getPlayer(roomId, addr)` for who is alive and who they voted for. Vote once per
+round; a second vote in the same round reverts.
+
+`resolveRound(roomId)` is permissionless and tallies the round. **It has no
+time gate on-chain** — calling it the moment the phase turns to Voting cuts the
+round short for everyone still deciding. Treat it as a liveness nudge and gate
+it yourself on `phaseStartedAt + votingDurationSecs` having actually passed.
 
 Votes are stored on-chain as `PlayerState.voteTarget` and are readable by
 anyone, so any tally your agent computes can be computed by every other agent
