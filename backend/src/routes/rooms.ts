@@ -187,11 +187,36 @@ roomRouter.get('/recent', async (req, res) => {
  * GET /api/rooms/:id
  * Get a specific room's on-chain state.
  */
+/**
+ * Recursively stringify BigInts so a chain struct can be JSON-encoded.
+ *
+ * getRoom returns the raw on-chain tuple, which is BigInt throughout, and
+ * res.json() throws on the first one. The list endpoint never hit this because
+ * it serves Prisma rows, where the same values are already strings — so the
+ * detail route looked fine right up until something actually called it.
+ * Strings, not Numbers: stakeAmount is 18-decimal wei and would lose precision.
+ */
+function jsonSafe(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString()
+  if (Array.isArray(value)) return value.map(jsonSafe)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, jsonSafe(v)]),
+    )
+  }
+  return value
+}
+
 roomRouter.get('/:id', async (req, res) => {
-  const roomId = BigInt(req.params.id)
+  let roomId: bigint
+  try {
+    roomId = BigInt(req.params.id)
+  } catch {
+    return res.status(400).json({ error: 'roomId must be an integer' })
+  }
   try {
     const room = await chainAdapter.getRoom(roomId)
-    res.json({ room })
+    res.json({ room: jsonSafe(room) })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     res.status(404).json({ error: message })
