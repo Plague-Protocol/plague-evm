@@ -608,12 +608,53 @@ export function startRoomExpiryMonitor(io: Server, intervalMs = 15_000): NodeJS.
   }, intervalMs)
 }
 
+/**
+ * Break the empty-set latch.
+ *
+ * `watchAll` runs only while `liveRoomIds` is non-empty, and the set is filled
+ * by `PlayerJoined` events that same watcher delivers. Start empty — a restart
+ * that happens to land when no game is running — and nothing can ever put the
+ * first room in: no watching, no events, no rooms, forever. Games then go
+ * unrecorded until someone loads the leaderboard and triggers its backfill,
+ * which is why history has arrived in bursts.
+ *
+ * Recovery only scans the newest rooms rather than re-enumerating every room
+ * ever created: a room that could revive the watcher is by definition recent,
+ * and the full scan costs one RPC call per room.
+ */
+const RECOVERY_INTERVAL_MS = 60_000
+const RECOVERY_WINDOW = 25
+
+async function recoverLiveRoomIds(): Promise<void> {
+  if (liveRoomIds.size > 0) return // watcher is armed; nothing to recover
+  try {
+    const count = await chainAdapter.getRoomCount()
+    const floor = count > BigInt(RECOVERY_WINDOW) ? count - BigInt(RECOVERY_WINDOW) : 1n
+    for (let id = count; id >= floor; id--) {
+      try {
+        const room = await chainAdapter.getRoom(id)
+        if (Number(room.status) !== 3) liveRoomIds.add(id)
+      } catch {
+        // skip unreadable rooms
+      }
+    }
+    if (liveRoomIds.size > 0) {
+      logger.info(`[live-rooms] recovered ${liveRoomIds.size} live room(s) — watcher re-armed`)
+    }
+  } catch (err) {
+    logger.warn(`[live-rooms] recovery failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 export function setupSocketHandlers(io: Server) {
   // Map (roomId -> playerAddressLower -> socketId) for private events.
   const playerSockets = new Map<string, Map<string, string>>()
 
   // Populate liveRoomIds once at startup (fire-and-forget).
   void initLiveRoomIds()
+  // ...and keep checking, because the startup scan can legitimately find
+  // nothing and the watcher cannot recover from that on its own.
+  setInterval(() => { void recoverLiveRoomIds() }, RECOVERY_INTERVAL_MS)
 
   // Start a single chain watcher for the whole server process.
   // It will broadcast public events to the room, and route private events using playerSockets.
