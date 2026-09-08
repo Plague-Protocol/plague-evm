@@ -30,7 +30,7 @@ import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
 import {
   assignStations, stationAnchor, interiorPoint, compoundShape, wallSegment,
-  wallOutward, clampInside, clampOutside, isInside, depthAt, type Corners,
+  wallOutward, clampInside, clampOutside, isInside, depthAt, wallBand, type Corners,
 } from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
@@ -858,9 +858,11 @@ const HORDE_SIZE = 16
  * just outside it is drawn straight up across the planks and reads as being
  * inside the compound. Nothing else fixes that: occluding it with the boards
  * only hides its legs and leaves a torso in the yard. It has to stand a whole
- * body clear. NEAR_Y in barricadeStations.ts is sized to leave room for this.
+ * body clear — a walker is about 31px tall at the near scale, so 26 was still
+ * leaving its head inside the planks. NEAR_Y and FAR_Y in barricadeStations.ts
+ * are sized to leave room for this.
  */
-const SOUTH_CLEAR = 26
+const SOUTH_CLEAR = 34
 
 /** Somewhere outside the walls for a walker to head for. */
 function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: number, collapsed = false) {
@@ -1027,11 +1029,6 @@ function drawHorde(
  *   ash boards  splintered: a push got through, damaged but still standing
  *   red         collapsed at parity, the game is over
  */
-
-/** Half-thickness of the boarding at a given depth. Near walls are heavier. */
-function wallBand(d: number): number {
-  return 9 + d * 12
-}
 
 /**
  * How far inside the wall CENTRELINE a body has to stay.

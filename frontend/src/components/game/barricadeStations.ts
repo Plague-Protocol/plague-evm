@@ -45,7 +45,7 @@ const NEAR_INSET_X = 0.20
  *  perspective, so it stays generous. */
 const FAR_INSET_X = 0.36
 /** Where the far and near walls sit in the usable vertical band. */
-const FAR_Y = 0.30
+const FAR_Y = 0.22
 /**
  * The near wall stops well short of the bottom edge.
  *
@@ -60,7 +60,7 @@ const FAR_Y = 0.30
  * the boards it is supposed to be outside of. ~60px, which 0.78 buys on a
  * 400px cam with room to spare and on a 240px one with none.
  */
-const NEAR_Y = 0.78
+const NEAR_Y = 0.74
 
 export interface Corners {
   /** Far-left, far-right, near-right, near-left — clockwise from the back. */
@@ -85,6 +85,18 @@ export function compoundShape(w: number, h: number, padTop: number, padBottom: n
 /** 0 at the far wall, 1 at the near wall — the depth every other size keys off. */
 export function depthAt(y: number, c: Corners): number {
   return Math.min(1, Math.max(0, (y - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)))
+}
+
+/**
+ * Half-thickness of the boarding at a given depth. Near walls are heavier.
+ *
+ * Geometry, not decoration, which is why it lives here rather than with the
+ * drawing code: where a defender can stand, where the horde has to stay, and
+ * how wide the planks are drawn all have to agree, and they only agree if they
+ * are reading the same number.
+ */
+export function wallBand(d: number): number {
+  return 9 + d * 12
 }
 
 export interface Segment { x1: number; y1: number; x2: number; y2: number }
@@ -128,13 +140,20 @@ export function stationAnchor(station: number, c: Corners): StationAnchor {
   const out = wallOutward(station, c)
   const mx = (s.x1 + s.x2) / 2
   const my = (s.y1 + s.y2) / 2
-  // A full body-length back from the boards. The first pass used a small inset
-  // and figures ended up drawn ON the wall, which read as standing on top of
-  // the barricade rather than behind it. The floor rose again when the walls
-  // became real boarding rather than a stroked line: the timber is up to ~21px
-  // of half-thickness on the near side, so anything less than this puts a
-  // defender inside the wall it is defending.
-  const inset = Math.max(38, Math.min(60, (c.nl.y - c.fl.y) * 0.3))
+  // 🚨 MEASURED FROM THE BOARDING, NOT FROM THE COMPOUND'S SIZE.
+  //
+  // This was a fraction of the compound's depth clamped to 38–60px, which is a
+  // number picked when the walls were stroked lines and had no thickness worth
+  // measuring. It has no relationship to where the planks actually end, so it
+  // was far too generous on the north and south walls in particular: defenders
+  // stood most of a body-length out in the yard from a wall they were meant to
+  // be holding, which reads as loitering near it rather than bracing against
+  // it.
+  //
+  // The timber's own half-thickness plus enough room for a body to stand and
+  // brace. That puts them right up against the boards on every side, and it
+  // stays correct if the boarding is ever redrawn thicker.
+  const inset = wallBand(depthAt(my, c)) + 15
   return { x: mx - out.dx * inset, y: my - out.dy * inset }
 }
 
