@@ -16,8 +16,8 @@
  * infected — which no client may know.
  */
 
-export const STATIONS = ['North Door', 'East Window', 'Roof Hatch'] as const
-export type StationId = 0 | 1 | 2
+export const STATIONS = ['North Wall', 'East Wall', 'South Wall', 'West Wall'] as const
+export type StationId = 0 | 1 | 2 | 3
 
 export type BarricadeAction =
   | { kind: 'hold' }

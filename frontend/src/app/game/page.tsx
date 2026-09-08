@@ -377,6 +377,19 @@ function GamePageInner() { // NOSONAR
   const round       = currentRound?.number ?? 0
   /** Shields can only be activated during Discussion — see PlagueGame.submitInnocenceProof. */
   const shieldWindowOpen = phase === 'discussion'
+
+  // Round-opening containment sweep — see the LATCH note at the useEffect below.
+  const sweepArmed = phase === 'infection' && room?.status === 'active' && round > 0
+    ? `${roomId}:${round}`
+    : null
+  const activePlayers = room?.players?.filter(p => !p.isEliminated) ?? []
+  const totalPlayers  = room?.players?.length ?? 0
+  const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
+  // Infected majority reached, but the room hasn't ended yet — the contract
+  // only settles this at the next infection assignment. Drives the "outbreak
+  // decided" banner so the gap doesn't look like a broken rule.
+  const outbreakDecided =
+    room?.status === 'active' && infectedCount > activePlayers.length - infectedCount
   // What the quarantine cam draws. The barricade and the cam used to be two
   // panels describing the same room and disagreeing about its geometry — the
   // cam showed figures wandering an open chamber while the panel insisted you
@@ -392,22 +405,16 @@ function GamePageInner() { // NOSONAR
         // both fire instead of the second being swallowed as "no change".
         resultKey: barricade.state.outcomes.length,
         held: lastPush?.held ?? null,
-        resultStation: lastPush?.station ?? null,
+        // Every wall a push has already got through this round stays splintered
+        // for the rest of it — damage should accumulate visibly, not reset.
+        brokenWalls: barricade.state.outcomes.filter(o => !o.held).map(o => o.station),
+        infectedCount,
+        // The endgame the HUD already reports as a line of text. Drawing it is
+        // the point: the most dramatic moment in the game was a sentence.
+        collapsed: outbreakDecided,
       }
     : null
 
-  // Round-opening containment sweep — see the LATCH note at the useEffect below.
-  const sweepArmed = phase === 'infection' && room?.status === 'active' && round > 0
-    ? `${roomId}:${round}`
-    : null
-  const activePlayers = room?.players?.filter(p => !p.isEliminated) ?? []
-  const totalPlayers  = room?.players?.length ?? 0
-  const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
-  // Infected majority reached, but the room hasn't ended yet — the contract
-  // only settles this at the next infection assignment. Drives the "outbreak
-  // decided" banner so the gap doesn't look like a broken rule.
-  const outbreakDecided =
-    room?.status === 'active' && infectedCount > activePlayers.length - infectedCount
   const potCUSD       = room ? formatToken(Number(room.stakeAmount) * totalPlayers) : '—'
   const hasVoted      = Boolean(optimisticVotedFor || localPlayer?.hasVotedThisRound)
   const myVotedTarget = optimisticVotedFor ?? localPlayer?.voteTarget

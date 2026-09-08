@@ -28,7 +28,9 @@
 import { useEffect, useRef } from 'react'
 import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
-import { assignStations, stationAnchor, stationWallY } from './barricadeStations'
+import {
+  assignStations, stationAnchor, compoundRect, wallSegment, wallOutward, type Rect,
+} from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
 
@@ -130,15 +132,33 @@ function perspectiveScale(y: number, h: number): number {
   return 0.72 + 0.5 * Math.min(1, Math.max(0, t))
 }
 
-function bodyColor(b: Body): string {
+/**
+ * 🚨 Inside the compound, everyone looks the same.
+ *
+ * `uniform` is set while the barricade is live. It forces every figure except
+ * the local player's own to render as a survivor regardless of what the
+ * director privately thinks it is.
+ *
+ * This is not cosmetic. Station occupancy is TRUTHFUL in aggregate and players
+ * announce their walls in chat; a visible infected tell would combine with
+ * those two facts to cut the suspect pool without anyone saying anything true.
+ * See the header of barricadeStations.ts for the full argument.
+ *
+ * It costs nothing to enforce, because no infection or elimination cue can fire
+ * during Discussion — infections are assigned in the Infection phase and
+ * eliminations resolve in Reveal. During Discussion the cam has nothing to
+ * narrate except the barricade.
+ */
+function bodyColor(b: Body, uniform: boolean): string {
   if (!b.alive && b.fallT >= 1) return COLOR_DEAD
+  if (uniform && !b.isMe) return COLOR_HUMAN
   if (b.kind === 'zombie') return COLOR_ZOMBIE
   return b.isMe ? COLOR_HUMAN_ME : COLOR_HUMAN
 }
 
-function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean) {
+function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean, uniform: boolean) {
   const s = perspectiveScale(b.y, h)
-  const zombie = b.kind === 'zombie'
+  const zombie = b.kind === 'zombie' && !(uniform && !b.isMe)
 
   // ground shadow
   ctx.save()
@@ -152,7 +172,7 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   ctx.translate(b.x + Math.sin(t * 40) * 3 * b.staggerT, b.y)
   if (b.fallT > 0) ctx.rotate(-b.facing * b.fallT * (Math.PI / 2) * 0.96)
 
-  let color = bodyColor(b)
+  let color = bodyColor(b, uniform)
   if (flash) color = Math.floor(t / 0.06) % 2 === 0 ? '#ffffff' : '#f5c518'
   if (b.isMe && b.alive) {
     ctx.shadowColor = zombie ? 'rgba(230,51,41,0.8)' : 'rgba(107,142,35,0.9)'
@@ -281,6 +301,150 @@ function drawBolt(ctx: CanvasRenderingContext2D, b: Body, h: number) {
   ctx.restore()
 }
 
+/**
+ * The world outside the walls: a treeline, fog, and the horde.
+ *
+ * Deliberately ambient. These are NOT player figures — they are the plague, and
+ * drawing them costs nothing in secrecy because the infected COUNT is already
+ * public on the HUD. The mass scales with it, so a room losing ground can see
+ * itself losing ground.
+ *
+ * Positions come from a cheap hash of the index rather than stored state: the
+ * treeline must not reshuffle every frame, and a hundred persistent particles
+ * is more bookkeeping than a backdrop deserves.
+ */
+function drawOutside(
+  ctx: CanvasRenderingContext2D, w: number, h: number, rect: Rect, t: number, bar: BarricadeView,
+) {
+  // Treeline — a dark band of trunks along the top, thinning downward. Parallax
+  // is deliberately tiny: the eye reads depth from relative motion long before
+  // it reads it from perspective.
+  ctx.save()
+  ctx.fillStyle = 'rgba(10,18,10,0.85)'
+  ctx.fillRect(0, 0, w, rect.y * 0.72)
+  for (let i = 0; i < 26; i++) {
+    const n = (Math.sin(i * 12.9898) * 43758.5453) % 1
+    const x = ((n + 1) % 1) * w
+    const th = rect.y * (0.26 + ((Math.sin(i * 78.233) * 4375.85) % 1 + 1) % 1 * 0.5)
+    const sway = Math.sin(t * 0.5 + i) * 1.2
+    ctx.fillStyle = i % 3 === 0 ? 'rgba(18,30,16,0.95)' : 'rgba(12,22,12,0.9)'
+    ctx.beginPath()
+    ctx.moveTo(x - 5 + sway, rect.y * 0.72)
+    ctx.lineTo(x + sway, rect.y * 0.72 - th)
+    ctx.lineTo(x + 5 + sway, rect.y * 0.72)
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.restore()
+
+  // The horde. Sized to the public infected count and clamped so a big room
+  // does not turn the margin into soup.
+  const hordeCount = Math.min(34, 8 + bar.infectedCount * 5)
+  ctx.save()
+  for (let i = 0; i < hordeCount; i++) {
+    // Bias toward the threatened wall — the point of the whole picture is that
+    // you can SEE where the pressure is building before the push lands.
+    const massing = bar.threatened !== null && i % 3 !== 0
+    let x: number
+    let y: number
+    if (massing && bar.threatened !== null) {
+      const seg = wallSegment(bar.threatened, rect)
+      const out = wallOutward(bar.threatened)
+      const k = ((Math.sin(i * 91.7) * 4375.85) % 1 + 1) % 1
+      const depth = 10 + (((Math.sin(i * 33.1) * 1275.3) % 1 + 1) % 1) * 26
+      x = seg.x1 + (seg.x2 - seg.x1) * k + out.dx * depth + Math.sin(t * 3 + i) * 2
+      y = seg.y1 + (seg.y2 - seg.y1) * k + out.dy * depth + Math.cos(t * 2.6 + i) * 2
+    } else {
+      const a = (((Math.sin(i * 57.3) * 4375.85) % 1 + 1) % 1) * Math.PI * 2
+      const r = Math.max(rect.w, rect.h) * (0.62 + (((Math.sin(i * 12.4) * 937.1) % 1 + 1) % 1) * 0.3)
+      x = rect.x + rect.w / 2 + Math.cos(a) * r + Math.sin(t * 0.7 + i) * 4
+      y = rect.y + rect.h / 2 + Math.sin(a) * r * 0.6 + Math.cos(t * 0.6 + i) * 3
+    }
+    if (x < -20 || x > w + 20 || y < 0 || y > h + 20) continue
+    ctx.fillStyle = 'rgba(143,191,63,0.5)'
+    ctx.beginPath()
+    ctx.arc(x, y, 2.6, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+/**
+ * The four walls.
+ *
+ * Three states, and they have to be distinguishable at a glance on a phone:
+ * intact, straining (the wall under attack — shuddering, red bleeding through
+ * the boards), and splintered (a push got through this round). A fourth,
+ * `collapsed`, is the endgame: the walls come down and the horde is inside.
+ */
+function drawWalls(ctx: CanvasRenderingContext2D, rect: Rect, t: number, bar: BarricadeView) {
+  for (let i = 0; i < 4; i++) {
+    const seg = wallSegment(i, rect)
+    const out = wallOutward(i)
+    const straining = bar.threatened === i
+    const broken = bar.brokenWalls.includes(i)
+    const gone = bar.collapsed
+
+    ctx.save()
+    // The boards straining, not the camera — a shaking viewport reads as a bug.
+    if (straining && !gone) ctx.translate(out.dx * Math.sin(t * 30) * 1.8, out.dy * Math.sin(t * 30) * 1.8)
+
+    if (gone) {
+      // Collapsed: fragments, no line. There is no wall any more.
+      ctx.strokeStyle = 'rgba(230,51,41,0.5)'
+      ctx.lineWidth = 3
+      for (let k = 0; k < 5; k++) {
+        const a = k / 5
+        const bx = seg.x1 + (seg.x2 - seg.x1) * a
+        const by = seg.y1 + (seg.y2 - seg.y1) * a
+        ctx.beginPath()
+        ctx.moveTo(bx, by)
+        ctx.lineTo(bx + (seg.x2 - seg.x1) * 0.08, by + (seg.y2 - seg.y1) * 0.08 + 4)
+        ctx.stroke()
+      }
+      ctx.restore()
+      continue
+    }
+
+    ctx.strokeStyle = broken
+      ? 'rgba(230,51,41,0.85)'
+      : straining
+        ? 'rgba(245,197,24,0.95)'
+        : 'rgba(107,142,35,0.6)'
+    ctx.lineWidth = broken ? 2 : 4
+    ctx.lineCap = 'round'
+
+    if (broken) {
+      // A gap punched clean through the middle: legible on a small screen in a
+      // way that a change of colour alone is not.
+      for (const [a, b] of [[0, 0.34], [0.66, 1]]) {
+        ctx.beginPath()
+        ctx.moveTo(seg.x1 + (seg.x2 - seg.x1) * a, seg.y1 + (seg.y2 - seg.y1) * a)
+        ctx.lineTo(seg.x1 + (seg.x2 - seg.x1) * b, seg.y1 + (seg.y2 - seg.y1) * b)
+        ctx.stroke()
+      }
+    } else {
+      ctx.beginPath()
+      ctx.moveTo(seg.x1, seg.y1)
+      ctx.lineTo(seg.x2, seg.y2)
+      ctx.stroke()
+    }
+
+    // Pressure bleeding through the boards from outside.
+    if (straining) {
+      const pulse = 0.35 + 0.3 * Math.sin(t * 7)
+      ctx.strokeStyle = `rgba(230,51,41,${pulse.toFixed(3)})`
+      ctx.lineWidth = 10
+      ctx.globalAlpha = 0.5
+      ctx.beginPath()
+      ctx.moveTo(seg.x1 + out.dx * 5, seg.y1 + out.dy * 5)
+      ctx.lineTo(seg.x2 + out.dx * 5, seg.y2 + out.dy * 5)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+}
+
 function drawScene(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -310,57 +474,21 @@ function drawScene(
   ctx.stroke()
   ctx.restore()
 
-  // ── The barricade, hard against the far wall ────────────────────────────────
-  // Drawn BEFORE the figures so depth-sorting puts defenders in front of the
-  // thing they are holding. The threatened station is the only urgent element
-  // on screen, and only for the eight seconds of its warning.
+  // ── The compound ────────────────────────────────────────────────────────────
+  // Drawn before the figures so depth-sorting puts defenders in front of the
+  // boards they are holding. Everything outside the walls is the world the
+  // walls exist to keep out — without it, a barricade is a fence.
   if (bar) {
-    const wallY = stationWallY(PAD_TOP)
-    for (let i = 0; i < bar.occupancy.length; i++) {
-      const anchor = stationAnchor(i, w, h, PAD_TOP, PAD_BOTTOM)
-      const threatened = bar.threatened === i
-      const broke = bar.held === false && bar.resultStation === i
-      const halfW = 34
-
-      ctx.save()
-      // Shudder while under attack — the boards straining, not the camera.
-      if (threatened) ctx.translate(Math.sin(t * 34) * 1.6, Math.sin(t * 51) * 0.9)
-
-      // Planks. A broken station loses two of its three boards and the rest
-      // hang crooked, so the state is readable at a glance with no legend.
-      const planks = broke ? 1 : 3
-      ctx.strokeStyle = broke
-        ? 'rgba(230,51,41,0.85)'
-        : threatened
-          ? 'rgba(245,197,24,0.9)'
-          : 'rgba(107,142,35,0.55)'
-      ctx.lineWidth = 3
-      ctx.lineCap = 'round'
-      for (let k = 0; k < planks; k++) {
-        const yy = wallY + k * 5
-        const tilt = broke ? 4 : 0
-        ctx.beginPath()
-        ctx.moveTo(anchor.x - halfW, yy + (broke ? tilt : 0))
-        ctx.lineTo(anchor.x + halfW, yy - (broke ? tilt : 0))
-        ctx.stroke()
-      }
-
-      // Pressure from outside: a glow bleeding through the boards.
-      if (threatened) {
-        const pulse = 0.35 + 0.3 * Math.sin(t * 7)
-        const g = ctx.createLinearGradient(0, wallY - 16, 0, wallY + 18)
-        g.addColorStop(0, `rgba(230,51,41,${(pulse * 0.7).toFixed(3)})`)
-        g.addColorStop(1, 'rgba(230,51,41,0)')
-        ctx.fillStyle = g
-        ctx.fillRect(anchor.x - halfW - 8, wallY - 16, (halfW + 8) * 2, 34)
-      }
-      ctx.restore()
-    }
+    const rect = compoundRect(w, h, PAD_TOP, PAD_BOTTOM)
+    drawOutside(ctx, w, h, rect, t, bar)
+    drawWalls(ctx, rect, t, bar)
   }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
   for (const b of [...bodies].sort((a, c) => a.y - c.y)) {
-    drawFigure(ctx, b, t, h, b === flashBody, myShield)
+    // `uniform` while the compound stands: identical survivors inside, and the
+    // only truthful figure is your own.
+    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar !== null)
   }
   if (flashBody) drawBolt(ctx, flashBody, h)
 
@@ -392,8 +520,17 @@ export interface BarricadeView {
   readonly resultKey: number
   /** Whether the most recent push held. */
   readonly held: boolean | null
-  /** Station the most recent push hit. */
-  readonly resultStation: number | null
+  /** Walls a push has already got through this round — they stay splintered. */
+  readonly brokenWalls: readonly number[]
+  /** Public infected count; sizes the horde. Already on the HUD, so no leak. */
+  readonly infectedCount: number
+  /**
+   * The endgame, not a scare: infected outnumber clean, the walls come down and
+   * the horde is inside. Distinct from a broken wall on purpose — a push that
+   * gets through has to stay survivable or there is no round-to-round tension,
+   * and this lands harder for having survived three of those.
+   */
+  readonly collapsed: boolean
 }
 
 export interface OutbreakSceneProps {
@@ -500,7 +637,7 @@ export function OutbreakScene({
       if (bar && b.alive && breachTRef.current <= 0) {
         const station = stationOfBodyRef.current.get(b.id)
         if (station !== undefined) {
-          const anchor = stationAnchor(station, w, h, PAD_TOP, PAD_BOTTOM)
+          const anchor = stationAnchor(station, compoundRect(w, h, PAD_TOP, PAD_BOTTOM))
           b.tx = Math.min(Math.max(anchor.x + rand(-26, 26), PAD_X), Math.max(PAD_X, w - PAD_X))
           b.ty = Math.min(Math.max(anchor.y + rand(-16, 16), PAD_TOP), Math.max(PAD_TOP, h - PAD_BOTTOM))
           return

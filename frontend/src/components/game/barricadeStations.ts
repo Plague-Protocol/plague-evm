@@ -1,97 +1,121 @@
 /**
- * barricadeStations.ts — where the barricade lives inside the quarantine cam.
+ * barricadeStations.ts — the compound: four walls, an inside, and an outside.
  *
- * WHY THE CAM AND THE BARRICADE HAD TO MERGE
+ * WHY THE CAM AND THE BARRICADE ARE ONE THING
  * They shipped as two panels describing the same room and disagreeing about it.
- * The cam is a diorama of one open chamber where figures wander freely; the
- * barricade said you were posted at one of three fixed stations. Your figure
- * drifted around aimlessly while a panel beside it insisted you were holding the
- * East Window. They could not be reconciled by tuning, because they were
- * different geometry — so the cam becomes the barricade instead.
+ * The cam was a diorama of an open chamber where figures wandered freely; the
+ * barricade said you were posted at a fixed station. No tuning reconciles that,
+ * because it is different geometry — so the cam became the barricade.
  *
- * That also fixes the harder half of the problem. The rules were not legible
- * from the panel; they are legible from the picture. Nobody needs the hold
- * threshold explained once they can see four bodies at a window and the window
- * holding.
+ * The enclosure is the second half of that fix. Three marks on a back wall are
+ * a fence: nothing is coming, so holding them means nothing. Four walls with a
+ * horde pressing from outside make the stakes visible without a word of
+ * explanation, and four walls cannot be covered by five players, so where you
+ * stand is finally a decision with a cost.
  *
- * 🚨 ANONYMITY IS PRESERVED, AND THE MECHANISM MATTERS.
- * OutbreakDirector guarantees that only YOUR figure tells your truth — every
- * other figure's identity is per-client fiction, so two players' screens can
- * never be correlated to deanonymize anyone. Placing figures at stations must
- * not break that.
+ * 🚨 EVERYONE INSIDE LOOKS THE SAME. THIS IS LOad-BEARING.
+ * The cam places figures TRUTHFULLY in aggregate — station occupancy is real —
+ * and players announce their positions in chat constantly. Add any visible mark
+ * on infected figures and those three facts combine: a wall shows three bodies,
+ * three players claimed that wall, one body is marked, and the suspect pool just
+ * went from five to three with nobody having said anything true. Two rounds of
+ * that and the game is solved by watching instead of reasoning.
  *
- * It does not, because the server publishes COUNTS, not names. This module
- * places your figure at your real station and then distributes anonymous
- * figures to match the published occupancy. The picture is therefore truthful
- * in aggregate — the wall you can see thinning really is thinning — and says
- * nothing about who anyone is.
+ * So inside the compound there are no marks, no colours, no tells. The dread is
+ * that the figures are indistinguishable and one of them is lying. The only
+ * truthful figure on any screen is the local player's own, which reveals
+ * nothing to anyone else — the guarantee OutbreakDirector already makes.
  *
- * Identities surface in exactly one place, and only because the rules say so:
- * a station that BREAKS names everyone who was standing there.
+ * The zombies stay outside, where being visibly zombies costs nothing.
  */
 
-/** Station anchors sit along the FAR wall — the horde comes from outside, and
- *  depth-sorting then draws defenders in front of the thing they are holding. */
-const STATION_XS = [0.22, 0.5, 0.78] as const
-/** Fraction of the usable depth at which defenders stand. Not flush against the
- *  wall: figures need room to brace, and a body flat on the boards reads as
- *  scenery rather than a person. */
-const STAND_DEPTH = 0.26
+/** Fraction of the canvas the compound occupies. The margin is the outside
+ *  world — treeline, fog, and the horde — and it has to be wide enough to read
+ *  as somewhere rather than as a border. */
+const INSET_X = 0.19
+const INSET_TOP = 0.3
+const INSET_BOTTOM = 0.13
+
+export interface Rect { x: number; y: number; w: number; h: number }
+
+/** The compound's footprint in canvas pixels. */
+export function compoundRect(w: number, h: number, padTop: number, padBottom: number): Rect {
+  const top = padTop + (h - padTop - padBottom) * INSET_TOP
+  const bottom = h - padBottom - (h - padTop - padBottom) * INSET_BOTTOM
+  return { x: w * INSET_X, y: top, w: w * (1 - INSET_X * 2), h: Math.max(24, bottom - top) }
+}
 
 export interface StationAnchor { x: number; y: number }
 
-export function stationAnchor(
-  station: number, w: number, h: number, padTop: number, padBottom: number,
-): StationAnchor {
-  const usable = Math.max(1, h - padTop - padBottom)
-  return {
-    x: w * (STATION_XS[station] ?? 0.5),
-    y: padTop + usable * STAND_DEPTH,
+/**
+ * Where defenders of a given wall stand: just inside it, not flush against it.
+ * A figure pressed into the boards reads as scenery; a figure standing off them
+ * reads as someone bracing.
+ */
+export function stationAnchor(station: number, rect: Rect): StationAnchor {
+  const inset = Math.min(26, rect.h * 0.22)
+  switch (station) {
+    case 0: return { x: rect.x + rect.w / 2, y: rect.y + inset }              // North
+    case 1: return { x: rect.x + rect.w - inset, y: rect.y + rect.h / 2 }     // East
+    case 2: return { x: rect.x + rect.w / 2, y: rect.y + rect.h - inset }     // South
+    default: return { x: rect.x + inset, y: rect.y + rect.h / 2 }             // West
   }
 }
 
-/** Where the barricade itself is drawn: hard against the far wall. */
-export function stationWallY(padTop: number): number {
-  return padTop - 6
+/** The wall segment itself, as a line, for drawing and for pressure effects. */
+export function wallSegment(station: number, rect: Rect): { x1: number; y1: number; x2: number; y2: number } {
+  const { x, y, w, h } = rect
+  switch (station) {
+    case 0: return { x1: x, y1: y, x2: x + w, y2: y }
+    case 1: return { x1: x + w, y1: y, x2: x + w, y2: y + h }
+    case 2: return { x1: x, y1: y + h, x2: x + w, y2: y + h }
+    default: return { x1: x, y1: y, x2: x, y2: y + h }
+  }
+}
+
+/** Outward-facing normal, so the horde masses on the correct side of a wall. */
+export function wallOutward(station: number): { dx: number; dy: number } {
+  switch (station) {
+    case 0: return { dx: 0, dy: -1 }
+    case 1: return { dx: 1, dy: 0 }
+    case 2: return { dx: 0, dy: 1 }
+    default: return { dx: -1, dy: 0 }
+  }
 }
 
 export interface AssignInput {
-  /** Body ids currently alive, in stable order. */
   readonly ids: readonly number[]
-  /** Body id that is the local player, or null when spectating. */
   readonly myId: number | null
-  /** The local player's REAL station — the one truthful placement. */
+  /** The local player's REAL wall — the one truthful placement. */
   readonly myStation: number | null
-  /** Server-published headcount per station. */
-  readonly occupancy: readonly number[];
+  /** Server-published headcount per wall. Counts only, never names. */
+  readonly occupancy: readonly number[]
   /** Previous assignment, so figures do not teleport between frames. */
   readonly previous: ReadonlyMap<number, number>
 }
 
 /**
- * Assigns each living figure to a station so the per-station totals match
- * `occupancy` exactly.
+ * Assigns each living figure to a wall so the per-wall totals match `occupancy`
+ * exactly.
  *
- * Stability is the point of `previous`: recomputing freely every time the
- * server speaks would have figures swapping walls for no visible reason, which
- * reads as a bug and also destroys the one thing this is for — watching a wall
- * thin out. Existing placements are kept wherever the counts still allow, and
- * only the surplus is moved.
+ * Stability is what `previous` is for. Recomputing freely every time the server
+ * spoke would have figures swapping walls for no visible reason, which reads as
+ * a bug and destroys the one thing this is for — watching a wall thin out.
  */
 export function assignStations(input: AssignInput): Map<number, number> {
   const { ids, myId, myStation, occupancy, previous } = input
-  const stations = occupancy.length || 3
+  const stations = occupancy.length || 4
   const remaining = Array.from({ length: stations }, (_, i) => occupancy[i] ?? 0)
   const out = new Map<number, number>()
 
-  // 1. The local player first and unconditionally — their placement is the only
-  //    truthful one on this screen, so it is never traded away to satisfy a count.
+  // 1. The local player first and unconditionally: theirs is the only truthful
+  //    placement on this screen, so it is never traded away to satisfy a count.
   if (myId !== null && myStation !== null && ids.includes(myId)) {
     out.set(myId, myStation)
     remaining[myStation] = Math.max(0, remaining[myStation] - 1)
   }
 
-  // 2. Everyone already standing somewhere that still has room stays put.
+  // 2. Anyone already standing somewhere that still has room stays put.
   for (const id of ids) {
     if (out.has(id)) continue
     const prev = previous.get(id)
@@ -101,15 +125,15 @@ export function assignStations(input: AssignInput): Map<number, number> {
     }
   }
 
-  // 3. Whoever is left fills the gaps, in order, so the totals come out exact.
+  // 3. The rest fill the gaps in order, so the totals come out exact.
   let cursor = 0
   for (const id of ids) {
     if (out.has(id)) continue
     while (cursor < stations && remaining[cursor] <= 0) cursor++
-    // Counts can under-cover the roster for a frame or two — a figure the
-    // director has not retired yet, a snapshot in flight. Park the remainder
-    // rather than dropping them off the board.
-    const station = cursor < stations ? cursor : (stations - 1)
+    // Counts can under-cover the roster for a frame — a figure the director has
+    // not retired yet, a snapshot in flight. Park the remainder rather than
+    // dropping anyone off the board.
+    const station = cursor < stations ? cursor : stations - 1
     out.set(id, station)
     if (cursor < stations) remaining[cursor]--
   }

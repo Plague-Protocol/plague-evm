@@ -389,7 +389,7 @@ export default function DemoPage() {
   /** Headcount per station. Counts only, exactly like the server's — the cam
    *  places anonymous figures from this and never learns who is who. */
   const demoOccupancy = useCallback((st: DemoState, roomKey: string): number[] => {
-    const counts = [0, 0, 0]
+    const counts = [0, 0, 0, 0]
     for (const p of st.players.filter(x => !x.eliminated)) {
       const seat = st.players.indexOf(p)
       const intent = p.isYou ? myBarricadeChoice : botIntentsRef.current.get(p.id) ?? { kind: 'hold' as const }
@@ -1227,7 +1227,9 @@ export default function DemoPage() {
                       })(),
                       resultKey: barricade.outcomes.length,
                       held: barricade.outcomes[barricade.outcomes.length - 1]?.held ?? null,
-                      resultStation: barricade.outcomes[barricade.outcomes.length - 1]?.station ?? null,
+                      brokenWalls: barricade.outcomes.filter(o => !o.held).map(o => o.station),
+                      infectedCount: infectedAlive,
+                      collapsed: infectedAlive > alivePlayers.length - infectedAlive,
                     } : null}
                     className="mb-4"
                     totalPlayers={players.length}

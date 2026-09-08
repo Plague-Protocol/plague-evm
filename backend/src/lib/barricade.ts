@@ -46,10 +46,22 @@
  * A station that HOLDS reveals only a count, never a name.
  */
 
-/** Stations are fixed and few: the whole thing has to stay glanceable, because
- *  the chat argument is the real game and this must not steal eyes from it. */
-export const STATIONS = ['North Door', 'East Window', 'Roof Hatch'] as const
-export type StationId = 0 | 1 | 2
+/**
+ * The four walls of the compound.
+ *
+ * FOUR, not three, and the number is doing work. A room of five cannot hold
+ * four walls at the hold threshold — something is always left open, and which
+ * something is the argument. Three stations were coverable by accident, so most
+ * pushes held whatever anyone chose, and a choice with no consequence is not a
+ * choice. This is the difference between a minigame that means something and a
+ * fence.
+ *
+ * Named as walls rather than as features ("Roof Hatch") because the cam draws a
+ * compound with a wall on each side: the label has to match the picture, and the
+ * picture is the thing that makes the rules legible.
+ */
+export const STATIONS = ['North Wall', 'East Wall', 'South Wall', 'West Wall'] as const
+export type StationId = 0 | 1 | 2 | 3
 
 /**
  * ── THE ARC ──────────────────────────────────────────────────────────────────

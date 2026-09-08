@@ -239,14 +239,14 @@ describe('barricade', () => {
     it('counts every body exactly once', () => {
       const players = Array.from({ length: 7 }, (_, i) => ({ address: `0x${i}`, seatIndex: i }))
       const counts = occupancy(ROOM, 4, players, new Map())
-      expect(counts).toHaveLength(3)
+      expect(counts).toHaveLength(STATIONS.length)
       expect(counts.reduce((a, b) => a + b, 0)).toBe(7)
     })
 
     it('follows a player who moved', () => {
       const players = [{ address: '0xa', seatIndex: 0 }]
       const home = assignedStation(ROOM, 4, 0)
-      const away = ((home + 1) % 3) as 0 | 1 | 2
+      const away = ((home + 1) % STATIONS.length) as StationId
       const counts = occupancy(ROOM, 4, players,
         new Map([['0xa', { kind: 'move', station: away }]]))
       expect(counts[away]).toBe(1)

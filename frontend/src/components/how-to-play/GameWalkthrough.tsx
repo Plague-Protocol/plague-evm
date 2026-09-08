@@ -79,6 +79,16 @@ const STEPS: Step[] = [
     hold: 5200,
   },
   {
+    // Sits immediately after the setup step because that step explains what a
+    // table IS and then leaves the reader with nowhere to go. Someone who has
+    // just understood the game should not have to hunt for the button.
+    phase: 'setup',
+    title: 'Host a table, or take a seat',
+    body: 'Open the Lobby. Create a room to host — you pick the stake and the number of seats, then start the game once enough players have joined. Or join any room already listed and wait for its host to start. Either way you approve the stake once, and short-handed tables can be filled with agents.',
+    seats: BASE,
+    hold: 5600,
+  },
+  {
     phase: 'infection',
     title: 'Someone is infected — quietly',
     body: 'One player is secretly infected. Only they are told. Everyone else sees an ordinary table, which is exactly the problem.',
