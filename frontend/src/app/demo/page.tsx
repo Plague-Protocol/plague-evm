@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { SiteNav } from '@/components/ui/site-nav'
 import { AmbientLayer } from '@/components/game/AmbientLayer'
@@ -476,7 +476,7 @@ export default function DemoPage() {
     // pushes this round's level calls for.
     const count = levelForRound(stateRef.current.round).pushes
     const fractions = Array.from({ length: count }, (_, i) =>
-      count <= 1 ? 0.25 : 0.25 + (0.82 - 0.25) * (i / (count - 1)))
+      count <= 1 ? 0.45 : 0.25 + (0.82 - 0.25) * (i / (count - 1)))
     fractions.forEach((f, push) => {
       const at = windowSecs * 1_000 * f
       schedule(Math.max(0, at - 8_000), () => {
@@ -961,6 +961,36 @@ export default function DemoPage() {
   let sceneOutcome: 'clean_win' | 'infected_win' | 'max_rounds_draw' | null = null
   if (outcome === 'clean_win' || outcome === 'infected_win') sceneOutcome = outcome
   else if (outcome) sceneOutcome = 'max_rounds_draw'
+
+  // 🚨 MEMOIZED. The scene reads a new object here as "the board changed" and
+  // re-aims every figure; a fresh literal on every render did that dozens of
+  // times a second, so the room twitched in place instead of walking anywhere.
+  // Same reasoning, same shape, as the live game page.
+  const youSeat = players.findIndex(p => p.isYou)
+  const youEliminated = you.eliminated
+  const barricadeChoiceStation = myBarricadeChoice.kind === 'move' ? myBarricadeChoice.station : null
+  const demoBarricadeView = useMemo(() => {
+    // The compound stands for the whole game INCLUDING the finish. It used to
+    // vanish at game over, which dropped the scene back to figures in an empty
+    // void for the one moment the player is looking hardest.
+    const running = phase === 'discussion' && !!barricade
+    const myStation = !running || !barricade || youEliminated || youSeat < 0
+      ? null
+      // The wall they actually chose, not the one they were assigned —
+      // otherwise tapping a wall moves nothing.
+      : barricadeChoiceStation ?? assignedStation(barricade.roomId, barricade.round, youSeat)
+    return {
+      active: running,
+      occupancy: running ? barricade?.occupancy ?? [] : [],
+      threatened: running ? barricade?.next?.station ?? null : null,
+      myStation,
+      resultKey: barricade?.outcomes.length ?? 0,
+      held: barricade?.outcomes[barricade.outcomes.length - 1]?.held ?? null,
+      brokenWalls: running ? barricade?.outcomes.filter(o => !o.held).map(o => o.station) ?? [] : [],
+      infectedCount: infectedAlive,
+      collapsed: infectedAlive > alivePlayers.length - infectedAlive,
+    }
+  }, [phase, barricade, youSeat, youEliminated, barricadeChoiceStation, infectedAlive, alivePlayers.length])
   const youVoted = Boolean(votes[YOU_ID])
   const canVote = phase === 'voting' && !you.eliminated && !youVoted
   const youShielded = you.shieldRound === round && round > 0
@@ -1215,31 +1245,7 @@ export default function DemoPage() {
                     <span className="font-mono text-xs rounded border px-2 py-0.5" style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}>{alivePlayers.length} alive</span>
                   </div>
                   <OutbreakScene
-                    barricade={phase !== 'gameover' ? (() => {
-                      // The compound stands for the whole game; only the
-                      // barricade MECHANIC is Discussion-only.
-                      const running = phase === 'discussion' && !!barricade
-                      return {
-                      active: running,
-                      occupancy: running ? barricade?.occupancy ?? [] : [],
-                      threatened: running ? barricade?.next?.station ?? null : null,
-                      myStation: !running ? null : (() => {
-                        const you = players.find(p => p.isYou)
-                        const seat = you ? players.indexOf(you) : -1
-                        if (!you || you.eliminated || seat < 0 || !barricade) return null
-                        // The wall they actually chose, not the one they were
-                        // assigned — otherwise tapping a wall moves nothing.
-                        return myBarricadeChoice.kind === 'move'
-                          ? myBarricadeChoice.station
-                          : assignedStation(barricade.roomId, barricade.round, seat)
-                      })(),
-                      resultKey: barricade?.outcomes.length ?? 0,
-                      held: barricade?.outcomes[barricade.outcomes.length - 1]?.held ?? null,
-                      brokenWalls: running ? barricade?.outcomes.filter(o => !o.held).map(o => o.station) ?? [] : [],
-                      infectedCount: infectedAlive,
-                      collapsed: infectedAlive > alivePlayers.length - infectedAlive,
-                      }
-                    })() : null}
+                    barricade={demoBarricadeView}
                     className="mb-4"
                     totalPlayers={players.length}
                     aliveCount={alivePlayers.length}
@@ -1261,7 +1267,7 @@ export default function DemoPage() {
                             : null}
                           myChoice={myBarricadeChoice}
                           canSabotage={!!you && !you.eliminated && you.status === 'infected'}
-                          disabled={!you || you.eliminated || !barricade.next}
+                          disabled={!you || you.eliminated}
                           nameOf={id => players.find(p => p.id === id)?.name ?? id}
                           onChoose={setMyBarricadeChoice}
                         />

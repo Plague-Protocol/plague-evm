@@ -133,7 +133,10 @@ export function BarricadeBoard({
           the cam above is already showing where everyone is standing, and a
           second, smaller, less accurate picture beside it only invites the eye
           to check whether they agree. */}
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      {/* Two columns for four walls. Three left a lone button orphaned on a
+          second row, which read as an afterthought rather than as the fourth
+          side of a square. */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
         {STATIONS.map((label, i) => {
           const station = i as StationId
           const isHere = here === station

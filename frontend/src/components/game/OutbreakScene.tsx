@@ -30,7 +30,7 @@ import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
 import {
   assignStations, stationAnchor, interiorPoint, compoundShape, wallSegment,
-  wallOutward, clampInside, depthAt, type Corners,
+  wallOutward, clampInside, clampOutside, isInside, depthAt, type Corners,
 } from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
@@ -70,6 +70,24 @@ const BREACH_SECS = 2.4
  */
 const SPRINT_SPEED = 92
 const SPRINT_SECS = 2.6
+/**
+ * How long a figure braces at a wall after being sent there, before drifting
+ * back into the yard.
+ *
+ * 🚨 A POST IS SOMETHING YOU DO, NOT SOMEWHERE YOU LIVE.
+ * Figures used to be pinned to their station for the whole of Discussion, which
+ * produced the single worst bug in play-testing: the room stood frozen in four
+ * clumps against the boards for three minutes, and — combined with the wall
+ * buttons being disabled outside a push warning — a player's own figure looked
+ * welded in place and unresponsive to every tap.
+ *
+ * So the yard is the default. Everyone mills about inside; answering a wall is
+ * a sprint out to it, a brace, and a walk back. The one thing that overrides it
+ * is an incoming push, when the people assigned to the threatened wall go and
+ * stand on it — which is the only moment the placement is carrying information
+ * anyway, and now the only moment anyone is standing anywhere.
+ */
+const POST_SECS = 7
 
 const COLOR_HUMAN = '#93a883'
 const COLOR_HUMAN_ME = '#d6e6a3'
@@ -101,6 +119,8 @@ interface Body {
   staggerT: number
   /** Seconds of sprint left — set when this figure is sent to a new wall. */
   sprintT: number
+  /** Seconds of bracing left at a wall before drifting back into the yard. */
+  postT: number
   transformT: number
   shieldT: number
 }
@@ -134,6 +154,7 @@ function makeBody(fig: Figure, w: number, h: number): Body {
     fleeT: 0,
     staggerT: 0,
     sprintT: 0,
+    postT: 0,
     transformT: 0,
     shieldT: 0,
   }
@@ -341,8 +362,8 @@ function noise(i: number, salt = 1): number {
  * height — the per-frame cost is now one drawImage.
  *
  * The sway is gone with it, deliberately. Trees that shift are a per-frame cost
- * for something nobody looks at, and the drifting fog (still live, still cheap)
- * already supplies the motion the backdrop needs.
+ * for something nobody looks at, and the braziers and the horde already supply
+ * all the motion the scene needs — from things, rather than from weather.
  */
 function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null
@@ -365,16 +386,82 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
   // to the east, south and west were holding back nothing. Trees are scattered
   // across the whole canvas and then anything that lands INSIDE the compound is
   // dropped, which fills the margin evenly without hand-placing four bands.
+  //
+  // 🚨 THEY HAVE TRUNKS AND THEY ARE NOT BLACK.
+  // The first version was a flat near-black triangle with a 2 px stub for a
+  // trunk, at 85–95% opacity over an almost-black sky: the treeline was
+  // technically present and visually absent, so the compound still read as
+  // sitting in a void. Trunks are now proportional and lit, and the canopy is
+  // three stacked tiers in real greens with a rim on the lamplit side. Night
+  // does not mean invisible — it means low-key with a light source.
   const tree = (x: number, baseY: number, th: number, halfW: number, far: boolean) => {
-    ctx.fillStyle = far ? 'rgba(22,38,26,0.85)' : 'rgba(14,26,17,0.95)'
-    ctx.beginPath()
-    ctx.moveTo(x - halfW, baseY)
-    ctx.lineTo(x, baseY - th)
-    ctx.lineTo(x + halfW, baseY)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = 'rgba(10,16,10,0.9)'
-    ctx.fillRect(x - 1.2, baseY - 2, 2.4, 6)
+    const trunkH = th * 0.3
+    const trunkW = Math.max(1.6, halfW * 0.3)
+
+    ctx.fillStyle = far ? 'rgba(46,36,26,0.95)' : 'rgba(64,48,32,1)'
+    ctx.fillRect(x - trunkW / 2, baseY - trunkH, trunkW, trunkH)
+
+    const body = far ? '#20402b' : '#2c5535'
+    const rim = far ? '#2b5638' : '#3d7046'
+    const canopyH = th - trunkH
+    for (let k = 2; k >= 0; k--) {
+      // Bottom tier widest, top tier smallest — a fir, not a cone.
+      const frac = 1 - k * 0.26
+      const tierBase = baseY - trunkH - canopyH * (k * 0.28)
+      const tierTop = tierBase - canopyH * 0.56
+      const hw = halfW * frac
+      ctx.fillStyle = body
+      ctx.beginPath()
+      ctx.moveTo(x - hw, tierBase)
+      ctx.lineTo(x, tierTop)
+      ctx.lineTo(x + hw, tierBase)
+      ctx.closePath()
+      ctx.fill()
+      // Lamplight catches the compound-facing edge.
+      ctx.strokeStyle = rim
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(x, tierTop)
+      ctx.lineTo(x + hw, tierBase)
+      ctx.stroke()
+    }
+  }
+
+  /** Undergrowth: rocks, fallen logs, stumps. Cheap, and they are what stop the
+   *  ground outside reading as an empty mat with trees standing on it. */
+  const prop = (x: number, y: number, kind: number, d: number) => {
+    const s = 0.6 + d * 0.9
+    ctx.save()
+    ctx.translate(x, y)
+    if (kind === 0) {
+      // Boulder
+      ctx.fillStyle = 'rgba(72,76,68,0.95)'
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 7 * s, 4.4 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = 'rgba(104,110,96,0.75)'
+      ctx.beginPath()
+      ctx.ellipse(-1.6 * s, -1.4 * s, 3.4 * s, 1.8 * s, -0.4, 0, Math.PI * 2)
+      ctx.fill()
+    } else if (kind === 1) {
+      // Fallen log
+      ctx.rotate(-0.22)
+      ctx.fillStyle = 'rgba(58,44,30,0.95)'
+      ctx.fillRect(-11 * s, -2.6 * s, 22 * s, 5.2 * s)
+      ctx.fillStyle = 'rgba(86,66,44,0.85)'
+      ctx.beginPath()
+      ctx.ellipse(11 * s, 0, 1.7 * s, 2.6 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+    } else {
+      // Stump
+      ctx.fillStyle = 'rgba(54,42,28,0.95)'
+      ctx.fillRect(-4 * s, -6 * s, 8 * s, 6 * s)
+      ctx.fillStyle = 'rgba(88,68,44,0.9)'
+      ctx.beginPath()
+      ctx.ellipse(0, -6 * s, 4 * s, 1.8 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
   }
 
   // Back ranks, above the compound — kept dense so the horizon reads as woods.
@@ -390,20 +477,28 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
 
   // Flanks and foreground. Sized by depth so trees nearer the camera are bigger,
   // which is what stops the sides reading as wallpaper.
-  const inside = (x: number, y: number) => {
-    if (y < c.fl.y || y > c.nl.y) return false
-    const k = (y - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)
-    return x > c.fl.x + (c.nl.x - c.fl.x) * k && x < c.fr.x + (c.nr.x - c.fr.x) * k
+  const clear = (x: number, y: number, skirt: number) => {
+    if (isInside(x, y, c)) return false
+    return !(isInside(x - skirt, y, c) || isInside(x + skirt, y, c)
+      || isInside(x, y - skirt * 0.8, c) || isInside(x, y + skirt * 0.8, c))
   }
   for (let i = 0; i < 54; i++) {
     const x = noise(i, 31) * (w + 80) - 40
     const y = c.fl.y + noise(i, 37) * (h - c.fl.y + 30)
     // A generous skirt around the walls: trees must not appear to grow out of
     // the barricade itself.
-    if (inside(x, y) || (inside(x - 26, y) && inside(x + 26, y))) continue
-    if (inside(x - 20, y) || inside(x + 20, y) || inside(x, y - 16) || inside(x, y + 16)) continue
+    if (!clear(x, y, 22)) continue
     const d = 0.45 + ((y - c.fl.y) / Math.max(1, h - c.fl.y)) * 0.9
     tree(x, y, (26 + noise(i, 41) * 34) * d, (5 + noise(i, 43) * 4) * d, false)
+  }
+
+  // Ground clutter, drawn after the trees so it sits at their feet.
+  for (let i = 0; i < 26; i++) {
+    const x = noise(i, 83) * (w + 60) - 30
+    const y = c.fl.y * 0.86 + noise(i, 89) * (h - c.fl.y * 0.86)
+    if (!clear(x, y, 16)) continue
+    const d = Math.min(1, Math.max(0, (y - c.fl.y) / Math.max(1, h - c.fl.y)))
+    prop(x, y, Math.floor(noise(i, 97) * 3), d)
   }
 
   // Lamplight on the compound floor. Static too, so it is baked in here rather
@@ -432,85 +527,70 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
 }
 
 /**
- * One fog puff, drawn once and blitted wherever it is needed.
+ * The world outside, blitted from the cache.
  *
- * Five radial gradients per frame is a small cost repeated 60 times a second
- * for a soft grey blob. As a sprite it becomes five drawImage calls.
+ * There used to be drifting ground fog here. It is gone: it washed grey over
+ * the treeline — the one part of the scene that most needed to be legible —
+ * and a lit compound in a clear night is a sharper picture than a murky one.
+ * The motion it was providing now comes from the braziers and the horde, both
+ * of which are things rather than atmosphere.
  */
-function renderFogSprite(r: number, dpr: number): HTMLCanvasElement | null {
-  if (typeof document === 'undefined') return null
-  const off = document.createElement('canvas')
-  off.width = off.height = Math.max(1, Math.floor(r * 2 * dpr))
-  const ctx = off.getContext('2d')
-  if (!ctx) return null
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  const g = ctx.createRadialGradient(r, r, 0, r, r, r)
-  g.addColorStop(0, 'rgba(120,150,120,0.05)')
-  g.addColorStop(1, 'rgba(120,150,120,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, r * 2, r * 2)
-  return off
-}
-
 function drawOutside(
-  ctx: CanvasRenderingContext2D, w: number, h: number, c: Corners, t: number,
+  ctx: CanvasRenderingContext2D, w: number, h: number,
   backdrop: HTMLCanvasElement | null,
-  fog: HTMLCanvasElement | null,
 ) {
-  if (backdrop) {
-    ctx.drawImage(backdrop, 0, 0, w, h)
-  }
-
-  // Ground fog drifting across the treeline base — cheap, and it does more for
-  // "outside at night" than any amount of extra geometry.
-  if (fog) {
-    const r = fog.width / 2
-    for (let i = 0; i < 5; i++) {
-      const y = c.fl.y * (0.78 + i * 0.05)
-      const drift = ((t * (6 + i * 3) + i * 200) % (w + 300)) - 150
-      ctx.drawImage(fog, drift - r / 2, y - r / 2, r, r)
-    }
-  }
+  if (backdrop) ctx.drawImage(backdrop, 0, 0, w, h)
 }
 
 /**
  * A zombie outside the walls.
  *
- * Drawn as a body rather than a dot. The first version used 2.6px circles and
- * play-testing read them, correctly, as debris — a horde has to be made of
- * things with arms if the walls are going to mean anything. Deliberately
- * cruder than the survivors inside: hunched, arms out, no face.
+ * 🚨 (x, y) IS THE GROUND UNDER ITS FEET, AND THE FEET STAY ON IT.
+ * The previous version translated the WHOLE body — feet included — by a
+ * vertical lurch, so every walker bobbed a couple of pixels off the floor
+ * sixty times a second while its shadow sat still. That is exactly the recipe
+ * for reading as floating, which is what play-testing reported twice. The
+ * lurch now moves the hips; the feet are planted at y and the shadow is drawn
+ * at y, so contact is unambiguous.
+ *
+ * 🚨 SAME SIZE AS THE SURVIVORS INSIDE.
+ * It is built to the same proportions as drawFigure's zombie pose and takes
+ * the same perspectiveScale, so a walker and a person at the same depth are
+ * the same height. They were previously about half scale, which made the
+ * compound look like it was being besieged by insects and made the horde read
+ * as texture rather than as a threat.
  */
 function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, phase: number) {
-  const lurch = Math.sin(phase) * 1.4
-
-  // Contact shadow. Without one these read as floating: a stick figure on a
-  // dark field has nothing to say where the ground is, and the eye reports it
-  // as hovering. The shadow stays on the ground line while the body lurches
-  // above it, which is also what sells the walk.
+  // Contact shadow, on the ground line and staying there.
   ctx.save()
   ctx.beginPath()
-  ctx.ellipse(x, y + 4.6 * s, 4.2 * s, 1.5 * s, 0, 0, Math.PI * 2)
-  ctx.fillStyle = 'rgba(0,0,0,0.45)'
+  ctx.ellipse(x, y, 6 * s, 2.1 * s, 0, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'
   ctx.fill()
   ctx.restore()
 
+  const stride = Math.sin(phase) * 3.4 * s
+  const bob = Math.abs(Math.sin(phase)) * 1.1 * s      // hips rise on the step
+  const hipY = -11 * s + bob
+  const shoulderY = hipY - 8 * s
+  const headY = shoulderY - 3.4 * s
+
   ctx.save()
-  ctx.translate(x, y + lurch)
-  ctx.strokeStyle = 'rgba(143,191,63,0.62)'
-  ctx.fillStyle = 'rgba(143,191,63,0.62)'
-  ctx.lineWidth = 1.6 * s
+  ctx.translate(x, y)
+  ctx.strokeStyle = 'rgba(150,196,74,0.78)'
+  ctx.fillStyle = 'rgba(150,196,74,0.78)'
+  ctx.lineWidth = 1.9 * s
   ctx.lineCap = 'round'
   ctx.beginPath()
-  ctx.moveTo(0, 0); ctx.lineTo(-2.2 * s, 4.5 * s)   // legs
-  ctx.moveTo(0, 0); ctx.lineTo(2.2 * s, 4.5 * s)
-  ctx.moveTo(0, 0); ctx.lineTo(0, -5.5 * s)          // spine
+  ctx.moveTo(0, hipY); ctx.lineTo(stride, 0)           // legs land ON the ground
+  ctx.moveTo(0, hipY); ctx.lineTo(-stride, 0)
+  ctx.moveTo(0, hipY); ctx.lineTo(1.6 * s, shoulderY)  // hunched spine
   // Arms reaching forward — the whole silhouette of the thing.
-  ctx.moveTo(0, -4 * s); ctx.lineTo(4.6 * s, -3 * s + Math.sin(phase * 1.3) * 1.2)
-  ctx.moveTo(0, -4 * s); ctx.lineTo(4.2 * s, -1.2 * s - Math.sin(phase * 1.1) * 1.2)
+  ctx.moveTo(1.6 * s, shoulderY); ctx.lineTo(8.4 * s, shoulderY + 2 * s + Math.sin(phase * 1.3) * 1.4 * s)
+  ctx.moveTo(1.6 * s, shoulderY); ctx.lineTo(7.8 * s, shoulderY + 4.6 * s - Math.sin(phase * 1.1) * 1.4 * s)
   ctx.stroke()
   ctx.beginPath()
-  ctx.arc(0, -7 * s, 1.9 * s, 0, Math.PI * 2)
+  ctx.arc(3.4 * s, headY, 3.2 * s, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
 }
@@ -642,6 +722,17 @@ interface Walker {
 }
 
 const HORDE_SPEED = 13
+/**
+ * How many walkers.
+ *
+ * Was forty. At forty, drawn at survivor scale, the treeline was a solid mat of
+ * bodies and the wall-pressure signal never dropped — every wall had someone
+ * leaning on it at all times, so every wall shuddered all game and none of it
+ * meant anything. Sixteen legible figures beat forty specks, and it leaves the
+ * ground between them visible, which is what makes a group arriving at one wall
+ * read as an event.
+ */
+const HORDE_SIZE = 16
 
 /** Somewhere outside the walls for a walker to head for. */
 function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: number) {
@@ -703,6 +794,14 @@ function stepHorde(walkers: Walker[], c: Corners, dt: number, threatened: number
       wk.x += (dx / d) * step
       wk.y += (dy / d) * step
     }
+    // 🚨 The inside is a SAFE ZONE. Targets were already outside, but a walker
+    // crossing from the north side to the south simply walked through the
+    // courtyard to get there. Clamping the position — not just the destination
+    // — is what actually keeps them out, and it turns a straight line through
+    // the compound into a shamble along the outside of the boards.
+    const p = clampOutside(wk.x, wk.y, c)
+    wk.x = p.x
+    wk.y = p.y
     wk.phase += dt * 3.4
   }
 }
@@ -726,13 +825,15 @@ function wallPressure(walkers: readonly Walker[], c: Corners): number[] {
   return counts
 }
 
-function drawHorde(ctx: CanvasRenderingContext2D, walkers: readonly Walker[], c: Corners) {
+function drawHorde(ctx: CanvasRenderingContext2D, walkers: readonly Walker[], h: number) {
   // Depth-sorted: drawn in array order, a walker behind the compound could
   // paint over one standing in front of it.
   const order = [...walkers].sort((a, b) => a.y - b.y)
   for (const wk of order) {
-    const d = depthAt(wk.y, c)
-    drawWalker(ctx, wk.x, wk.y, 0.85 + d * 0.7, wk.phase)
+    // The SAME scale function the survivors use, so a walker and a person at
+    // the same depth are the same height. They ran on their own curve before
+    // and came out around half size.
+    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase)
   }
 }
 
@@ -766,7 +867,14 @@ function drawWalls(
 
     // Shake is CAUSED by the crowd, not drawn alongside it: it builds as they
     // arrive and eases as they wander off, so the picture explains itself.
-    const crowd = Math.min(1, (pressure[i] ?? 0) / 7)
+    //
+    // 🚨 ONLY THE WALL UNDER A PUSH. A wandering horde always has somebody
+    // leaning on something, so keying the shudder purely off proximity had all
+    // four walls vibrating for the entire game — which is how a signal becomes
+    // wallpaper. A wall shakes when the horde is ON it, in the sense the rules
+    // mean: a push is coming here. The crowd count still decides HOW hard, so
+    // the shudder builds as they gather rather than snapping on.
+    const crowd = straining ? Math.min(1, (pressure[i] ?? 0) / 5) : 0
 
     ctx.save()
     // The boards strain, not the camera — a shaking viewport reads as a bug.
@@ -857,7 +965,6 @@ function drawScene(
   myShield: boolean,
   bar: BarricadeView | null,
   backdrop: HTMLCanvasElement | null,
-  fog: HTMLCanvasElement | null,
   glow: HTMLCanvasElement | null,
   walkers: readonly Walker[],
 ) {
@@ -886,14 +993,14 @@ function drawScene(
   // walls exist to keep out — without it, a barricade is a fence.
   if (bar) {
     const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
-    drawOutside(ctx, w, h, c, t, backdrop, fog)
+    drawOutside(ctx, w, h, backdrop)
     // The lamps gutter out when the walls come down — the compound stops being
     // a place anyone is keeping lit.
     const lamp = bar.collapsed ? 0.12 : 1
     // Pools first: light lies ON the ground, under the boards and the bodies.
     drawLampPools(ctx, c, t, glow, lamp)
     // Horde next: they are outside, so the boards occlude them.
-    drawHorde(ctx, walkers, c)
+    drawHorde(ctx, walkers, h)
     drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
     // Posts last of the compound layer, so they stand in front of their wall.
     drawLampPosts(ctx, c, t, lamp)
@@ -901,11 +1008,22 @@ function drawScene(
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
   for (const b of [...bodies].sort((a, c) => a.y - c.y)) {
-    // `uniform` only while the barricade is RUNNING. That is when placement is
-    // truthful and therefore when a visible tell would combine with chat claims
-    // to narrow the suspect pool. Outside Discussion nobody is posted anywhere,
-    // so the infection and elimination cues can read normally.
-    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar?.active === true)
+    // 🚨 NOBODY INSIDE THE COMPOUND IS DRAWN AS A ZOMBIE. EVER.
+    //
+    // This used to be gated on the barricade MECHANIC running, i.e. Discussion
+    // only, so in Infection, Voting and Reveal the cam quietly reverted to
+    // drawing infected players as hunched red-eyed zombies standing among the
+    // survivors. Two things wrong with that. It leaked — the placement is
+    // truthful in aggregate and players announce their walls in chat, which is
+    // the exact combination the uniform rule exists to prevent. And it made
+    // the picture incoherent, because the whole premise of a compound is that
+    // the zombies are the ones OUTSIDE it.
+    //
+    // The rule is now the simplest one available: if there is a compound,
+    // everyone in it is a survivor. Zombies exist, they are the horde at the
+    // boards. The cues still narrate an infection — the bolt still strikes,
+    // the flash still lands — they just stop naming a shape for it.
+    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar !== null)
   }
   if (flashBody) drawBolt(ctx, flashBody, h)
 
@@ -998,10 +1116,10 @@ export function OutbreakScene({
   const reformRef = useRef(false)
   /** Figures whose wall changed — they sprint to it on the next frame. */
   const sprintersRef = useRef<Set<number>>(new Set())
+  /** Last wall a warning named, so a new threat scrambles the room exactly once. */
+  const lastThreatRef = useRef<number | null>(null)
   /** Cached sky + treeline. Rebuilt on resize only — see renderBackdrop. */
   const backdropRef = useRef<HTMLCanvasElement | null>(null)
-  /** One fog puff, blitted five times per frame instead of five gradients. */
-  const fogRef = useRef<HTMLCanvasElement | null>(null)
   /** The horde. Stateful so they walk rather than blink between positions. */
   const hordeRef = useRef<Walker[]>([])
   /** Brazier light pool, tinted per frame rather than re-created. */
@@ -1043,15 +1161,15 @@ export function OutbreakScene({
       canvas.height = Math.max(1, Math.floor(h * dpr))
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       backdropRef.current = renderBackdrop(w, h, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dpr)
-      fogRef.current ??= renderFogSprite(130, dpr)
       glowRef.current ??= renderGlowSprite(96, dpr)
       // Seed the horde where it will already be walking, so a resize does not
       // make them appear from nowhere.
       if (hordeRef.current.length === 0) {
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
-        hordeRef.current = Array.from({ length: 40 }, (_, i) => {
+        hordeRef.current = Array.from({ length: HORDE_SIZE }, (_, i) => {
           const t0 = hordeTarget(c, null, noise(i, 61), noise(i, 67))
-          return { x: t0.x, y: t0.y, tx: t0.x, ty: t0.y, phase: i, retargetIn: noise(i, 71) * 4 }
+          const p0 = clampOutside(t0.x, t0.y, c)
+          return { x: p0.x, y: p0.y, tx: p0.x, ty: p0.y, phase: i, retargetIn: noise(i, 71) * 4 }
         })
       }
       for (const b of bodiesRef.current) {
@@ -1065,7 +1183,7 @@ export function OutbreakScene({
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, fogRef.current, glowRef.current, hordeRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, glowRef.current, hordeRef.current)
     }
     renderRef.current = render
 
@@ -1089,13 +1207,19 @@ export function OutbreakScene({
       // with enough jitter that a wall reads as a crowd of people rather than a
       // row of pegs. A breach overrides it — nobody holds a broken window.
       const bar = barricadeRef.current
-      if (bar && b.alive && breachTRef.current <= 0) {
+      if (bar && b.alive) {
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
         const station = stationOfBodyRef.current.get(b.id)
+        // A figure goes to a wall for exactly two reasons: the horde is coming
+        // for that wall, or its player just sent it there. Otherwise it is in
+        // the yard with everyone else. See POST_SECS. A breach clears the
+        // boards outright — nobody holds a broken window — and scatters the
+        // room into the yard, which is inside the walls rather than the old
+        // canvas-wide scatter that pressed everyone into the boards.
+        const posted = breachTRef.current <= 0 && station !== undefined
+          && (bar.threatened === station || b.postT > 0)
 
-        // Nobody posted — mill about in the middle, clear of the boards. This
-        // is every phase except Discussion, and the gaps between pushes.
-        if (station === undefined) {
+        if (!posted) {
           const q = interiorPoint(c, Math.random(), Math.random())
           const pi = clampInside(q.x, q.y, c, 16)
           b.tx = pi.x
@@ -1103,13 +1227,13 @@ export function OutbreakScene({
           return
         }
         {
-          const anchor = stationAnchor(station, c)
+          const anchor = stationAnchor(station as number, c)
           // Jitter, then clamp INSIDE the walls. Bodies used to be bounded by
           // the canvas, so they walked straight through a barricade and stood
           // in the forest — which made nonsense of the whole picture.
           // Spread along the wall, barely across it: a line of defenders, not a
           // cloud that drifts into the boards.
-          const seg = wallSegment(station, c)
+          const seg = wallSegment(station as number, c)
           const len = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1
           const ax = (seg.x2 - seg.x1) / len
           const ay = (seg.y2 - seg.y1) / len
@@ -1342,7 +1466,17 @@ export function OutbreakScene({
         const sprinters = sprintersRef.current
         for (const b of bodiesRef.current) {
           b.pauseUntil = 0
-          if (sprinters.has(b.id)) b.sprintT = SPRINT_SECS
+          if (sprinters.has(b.id)) {
+            // Sent somewhere: run there, then brace for a while before the yard
+            // pulls them back. This is the movement that answers a tap, so it
+            // has to start on the very next frame.
+            b.sprintT = SPRINT_SECS
+            b.postT = POST_SECS
+          }
+          // Re-aim NOW rather than when the current stroll happens to finish.
+          // Without this a figure kept walking to wherever it was already
+          // headed — up to a few seconds of looking like it ignored you.
+          retarget(b)
         }
         sprintersRef.current = new Set()
       }
@@ -1364,6 +1498,7 @@ export function OutbreakScene({
       for (const b of bodiesRef.current) {
         b.staggerT = Math.max(0, b.staggerT - dt * 2.2)
         b.sprintT = Math.max(0, b.sprintT - dt)
+        b.postT = Math.max(0, b.postT - dt)
         b.transformT = Math.max(0, b.transformT - dt / 0.7)
         b.shieldT = Math.max(0, b.shieldT - dt / 0.9)
         b.fleeT = Math.max(0, b.fleeT - dt)
@@ -1372,12 +1507,14 @@ export function OutbreakScene({
         if (settleRef.current !== null) { b.gait = Math.max(0, b.gait - dt * 4); continue }
         // Clean figures break away before a zombie can reach them — checked
         // ahead of the idle pause so panic always beats standing still.
-        // No fleeing while the compound stands. Figures are rendered uniformly
-        // during the barricade but their internal kind is unchanged, so this
-        // had survivors bolting from figures that LOOK human — scattering the
-        // formation and, with the old canvas-wide bounds, pushing them out
-        // through the walls. They are holding a line, not running from it.
-        if (!barricadeRef.current?.active && b.kind === 'human' && fleeStep(b, dt)) {
+        // No fleeing WHILE THE COMPOUND STANDS — in any phase, not just while
+        // the barricade mechanic is running. Everyone inside is rendered as a
+        // survivor but their internal kind is unchanged, so this had people
+        // bolting from figures that LOOK human: unexplained panic, a scattered
+        // yard, and (before the walls bounded them) survivors shoved out into
+        // the forest. Fleeing belongs to the open-chamber scene that plays
+        // before a game starts, where there is no compound and no uniform.
+        if (!barricadeRef.current && b.kind === 'human' && fleeStep(b, dt)) {
           b.gait = Math.min(1, b.gait + dt * 6)
           continue
         }
@@ -1450,6 +1587,7 @@ export function OutbreakScene({
       // than leaving them frozen at walls that no longer mean anything.
       stationOfBodyRef.current = new Map()
       breachTRef.current = 0
+      lastThreatRef.current = null
       return
     }
     const alive = bodiesRef.current.filter(b => b.alive)
@@ -1467,6 +1605,14 @@ export function OutbreakScene({
     // decision, and would hide the one movement that carries information.
     const moved = new Set<number>()
     for (const [id, st] of next) if (before.get(id) !== st) moved.add(id)
+    // A warning going up is the other reason to run: everyone assigned to the
+    // threatened wall breaks for it, and eight seconds is not enough to get
+    // there at a stroll. Keyed on the threat CHANGING so this fires once per
+    // push rather than on every frame the warning is live.
+    if (barricade.threatened !== null && barricade.threatened !== lastThreatRef.current) {
+      for (const [id, st] of next) if (st === barricade.threatened) moved.add(id)
+    }
+    lastThreatRef.current = barricade.threatened
     stationOfBodyRef.current = next
     sprintersRef.current = moved
 

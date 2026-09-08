@@ -157,6 +157,50 @@ export function clampInside(x: number, y: number, c: Corners, margin = 10): { x:
   return { x: Math.min(right, Math.max(left, x)), y: cy }
 }
 
+/** True when a point lies within the compound walls. */
+export function isInside(x: number, y: number, c: Corners): boolean {
+  if (y < c.fl.y || y > c.nl.y) return false
+  const t = (y - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)
+  return x > c.fl.x + (c.nl.x - c.fl.x) * t && x < c.fr.x + (c.nr.x - c.fr.x) * t
+}
+
+/**
+ * Pushes a point OUT of the compound — the mirror of clampInside, and the
+ * reason the inside is a safe zone.
+ *
+ * The horde walked in a straight line toward its target, and a walker on the
+ * north side heading for a point on the south side simply strolled through the
+ * courtyard. Play-testing read that, correctly, as zombies inside the
+ * barricade, which makes nonsense of the barricade.
+ *
+ * Applied every frame rather than only at target-selection, because it is the
+ * PATH that trespasses, not the destination. The visible consequence is that a
+ * walker crossing to the far side slides along the outside of the boards
+ * instead of through them — which is what something looking for a way in
+ * actually looks like.
+ */
+export function clampOutside(x: number, y: number, c: Corners, margin = 14): { x: number; y: number } {
+  if (!isInside(x, y, c)) return { x, y }
+  let best = { x, y }
+  let bestD = Infinity
+  for (let i = 0; i < 4; i++) {
+    const s = wallSegment(i, c)
+    const dx = s.x2 - s.x1
+    const dy = s.y2 - s.y1
+    const len2 = dx * dx + dy * dy || 1
+    const t = Math.max(0, Math.min(1, ((x - s.x1) * dx + (y - s.y1) * dy) / len2))
+    const px = s.x1 + dx * t
+    const py = s.y1 + dy * t
+    const d = Math.hypot(x - px, y - py)
+    if (d < bestD) {
+      bestD = d
+      const out = wallOutward(i, c)
+      best = { x: px + out.dx * margin, y: py + out.dy * margin }
+    }
+  }
+  return best
+}
+
 export interface AssignInput {
   readonly ids: readonly number[]
   readonly myId: number | null

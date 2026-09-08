@@ -4,8 +4,8 @@
  * WHAT IT IS
  * Discussion runs for 180 seconds and used to contain a chat box and nothing
  * else. The barricade fills that window with something physical whose output is
- * ARGUMENT, not elimination: three times per round the horde pushes one station,
- * and the room finds out whether it held.
+ * ARGUMENT, not elimination: the horde comes for one wall, and the room finds
+ * out whether it held.
  *
  * 🚨 THE RULE THAT KEEPS THIS A DEDUCTION GAME
  * The barricade NEVER eliminates anyone and never touches the pot. It produces
@@ -67,7 +67,7 @@ export type StationId = 0 | 1 | 2 | 3
  * ── THE ARC ──────────────────────────────────────────────────────────────────
  *
  * Difficulty escalates with the round, and this is the part that makes the
- * barricade worth having. Fixed at three pushes and a threshold of two, players
+ * barricade worth having. Fixed at one push and a threshold of two, players
  * learn by round three that it basically always holds and stop caring — the
  * minigame becomes wallpaper exactly when the game is supposed to be tightening.
  *
@@ -104,10 +104,24 @@ export type StationId = 0 | 1 | 2 | 3
  * more chances something is under-defended, and a room of five still cannot
  * cover four walls. See the ambiguity test in barricade.test.ts.
  */
+/**
+ * 🚨 A PUSH IS AN EVENT, NOT A METRONOME.
+ *
+ * This shipped at 3/4/5 pushes per round and play-testing was blunt about it:
+ * the walls were shaking more or less continuously, so a push stopped being
+ * something that HAPPENED and became the ambient condition of the room. The
+ * whole value of the barricade is that it interrupts the conversation and then
+ * gets argued about — an interruption every forty seconds interrupts nothing,
+ * and there is no quiet for it to land against.
+ *
+ * One push in the early rounds. The round is mostly talk, as it should be, and
+ * the horde arriving is a moment. Escalation still happens by pushes rather
+ * than by the threshold (see below), it just starts from a much quieter floor.
+ */
 const LEVELS = [
-  { from: 1, pushes: 3, threshold: 2, label: 'Contained' },
-  { from: 3, pushes: 4, threshold: 2, label: 'Spreading' },
-  { from: 6, pushes: 5, threshold: 2, label: 'Overrun' },
+  { from: 1, pushes: 1, threshold: 2, label: 'Contained' },
+  { from: 3, pushes: 2, threshold: 2, label: 'Spreading' },
+  { from: 6, pushes: 3, threshold: 2, label: 'Overrun' },
 ] as const
 
 export interface BarricadeLevel {
@@ -181,12 +195,17 @@ export function targetStation(roomId: string, round: number, push: number): Stat
  */
 const FIRST_PUSH_AT = 0.25
 const LAST_PUSH_AT  = 0.82
+/** Where a single push lands when the level only sends one. */
+const LONE_PUSH_AT  = 0.45
 
 export function pushAtMs(discussionMs: number, push: number, round = 1): number {
   const count = levelForRound(round).pushes
   const span = LAST_PUSH_AT - FIRST_PUSH_AT
+  // A lone push sits past the middle of the window rather than at the top of
+  // it: the room gets to talk first, and there is still most of a minute left
+  // to argue about what the wall did.
   const frac = count <= 1
-    ? FIRST_PUSH_AT
+    ? LONE_PUSH_AT
     : FIRST_PUSH_AT + span * (Math.min(push, count - 1) / (count - 1))
   return Math.round(discussionMs * frac)
 }

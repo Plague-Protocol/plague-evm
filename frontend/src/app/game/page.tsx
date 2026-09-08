@@ -3,7 +3,7 @@
 import { SiteNav } from '@/components/ui/site-nav'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
+import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useGameState } from '@/hooks/useGameState'
 import { useWallet } from '@/hooks/useWallet'
 import { useSoundscape, GAME_OVER_TRACKS, playSting } from '@/hooks/useSoundscape'
@@ -401,29 +401,38 @@ function GamePageInner() { // NOSONAR
   // empty chamber the rest of the time reads as two different games; the place
   // should persist and only what happens in it should change by phase.
   const barricadeRunning = !!barricade.state && phase === 'discussion'
-  const barricadeView = room?.status === 'active'
+  const barricadeState = barricade.state
+  const barricadeMyStation = barricade.myStation
+  const roomStatus = room?.status
+  // 🚨 MEMOIZED, AND IT MATTERS.
+  // The scene treats a new object here as "the board changed" and re-aims every
+  // figure. A fresh literal on every render meant that happened dozens of times
+  // a second, so the room twitched between destinations and never actually
+  // walked anywhere.
+  const barricadeView = useMemo(() => roomStatus === 'active' || roomStatus === 'ended'
     ? {
         active: barricadeRunning,
         // Empty outside Discussion, so figures mill about inside rather than
         // posting at walls nobody is defending.
-        occupancy: barricadeRunning ? barricade.state?.occupancy ?? [] : [],
-        threatened: barricadeRunning ? barricade.state?.next?.station ?? null : null,
+        occupancy: barricadeRunning ? barricadeState?.occupancy ?? [] : [],
+        threatened: barricadeRunning ? barricadeState?.next?.station ?? null : null,
         // Keyed on how many pushes have resolved, so two consecutive breaches
         // both fire instead of the second being swallowed as "no change".
-        myStation: barricadeRunning ? barricade.myStation : null,
-        resultKey: barricade.state?.outcomes.length ?? 0,
+        myStation: barricadeRunning ? barricadeMyStation : null,
+        resultKey: barricadeState?.outcomes.length ?? 0,
         held: lastPush?.held ?? null,
         // Every wall a push has already got through this round stays splintered
         // for the rest of it — damage should accumulate visibly, not reset.
         brokenWalls: barricadeRunning
-          ? (barricade.state?.outcomes.filter(o => !o.held).map(o => o.station) ?? [])
+          ? (barricadeState?.outcomes.filter(o => !o.held).map(o => o.station) ?? [])
           : [],
         infectedCount,
         // The endgame the HUD already reports as a line of text. Drawing it is
         // the point: the most dramatic moment in the game was a sentence.
         collapsed: outbreakDecided,
       }
-    : null
+    : null,
+    [roomStatus, barricadeRunning, barricadeState, barricadeMyStation, lastPush, infectedCount, outbreakDecided])
 
   const potCUSD       = room ? formatToken(Number(room.stakeAmount) * totalPlayers) : '—'
   const hasVoted      = Boolean(optimisticVotedFor || localPlayer?.hasVotedThisRound)
@@ -1718,14 +1727,20 @@ function GamePageInner() { // NOSONAR
                 <div className="order-2 flex flex-col gap-6">
                   {/* The barricade sits ABOVE Shield on purpose. It is the only
                       thing in Discussion with a deadline attached, and an 8 s
-                      warning that has scrolled off screen is not a warning. */}
+                      warning that has scrolled off screen is not a warning.
+
+                      `disabled` no longer gates on state.next — an armed push.
+                      A warning is only live for eight seconds, so the board was
+                      inert for most of Discussion: you tapped a wall, nothing
+                      moved, and the honest read was that the control was
+                      broken. Choosing where to stand is legal all round. */}
                   {phase === 'discussion' && barricade.state && (
                     <BarricadeBoard
                       state={barricade.state}
                       myStation={localPlayer?.isEliminated ? null : barricade.assignedStation}
                       myChoice={barricade.choice}
                       canSabotage={!!localPlayer && !localPlayer.isEliminated && localPlayer.status === 'infected'}
-                      disabled={!localPlayer || localPlayer.isEliminated || !barricade.state.next}
+                      disabled={!localPlayer || localPlayer.isEliminated}
                       nameOf={addr => room?.players?.find(
                         p => p.walletAddress.toLowerCase() === addr.toLowerCase(),
                       )?.displayName ?? `${addr.slice(0, 6)}…`}

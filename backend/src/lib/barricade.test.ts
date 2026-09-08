@@ -203,6 +203,30 @@ describe('barricade', () => {
       }
     })
 
+    // A push has to be an EVENT. This shipped at 3/4/5 pushes per round and
+    // play-testing reported the walls shaking more or less continuously, at
+    // which point a push is not an interruption to the conversation — it is
+    // the conversation's background noise, and there is no quiet for it to
+    // land against.
+    it('sends at most three pushes, ever, and starts from one', () => {
+      expect(levelForRound(1).pushes).toBe(1)
+      for (let r = 1; r <= 20; r++) {
+        expect(levelForRound(r).pushes).toBeLessThanOrEqual(3)
+        expect(levelForRound(r).pushes).toBeGreaterThanOrEqual(1)
+      }
+    })
+
+    // A lone push must not land at the very top of the window: the room should
+    // get to talk first, and there has to be time left to argue about the
+    // result before voting opens.
+    it('places a single push inside the window with room on both sides', () => {
+      const window = 180_000
+      const at = pushAtMs(window, 0, 1)
+      expect(levelForRound(1).pushes).toBe(1)
+      expect(at).toBeGreaterThan(window * 0.3)
+      expect(at).toBeLessThan(window * 0.7)
+    })
+
     it('still cannot cover every wall, at any level', () => {
       // Four walls at a threshold of 2 needs eight bodies to be safe
       // everywhere. A room never has that many, so something is always open.

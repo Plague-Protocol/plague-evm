@@ -71,9 +71,9 @@ export interface BarricadeState {
  * ⚠ Must stay in step with LEVELS in backend/src/lib/barricade.ts.
  */
 const LEVELS = [
-  { from: 1, pushes: 3, threshold: 2, label: 'Contained' },
-  { from: 3, pushes: 4, threshold: 2, label: 'Spreading' },
-  { from: 6, pushes: 5, threshold: 2, label: 'Overrun' },
+  { from: 1, pushes: 1, threshold: 2, label: 'Contained' },
+  { from: 3, pushes: 2, threshold: 2, label: 'Spreading' },
+  { from: 6, pushes: 3, threshold: 2, label: 'Overrun' },
 ] as const
 
 export interface BarricadeLevel {

@@ -14,9 +14,10 @@
  * One snapshot at the top of the round is therefore both cheaper AND correct,
  * and it makes action submission pure in-memory work.
  *
- * 🚨 EGRESS. A round broadcasts about seven frames total (open, then a warning
- * and a result per push). There is no per-action echo and no ticking — the
- * countdown is a timestamp the client animates locally. Same discipline as
+ * 🚨 EGRESS. A round broadcasts a handful of frames total (open, then a warning
+ * and a result per push — one push in the early rounds, three at worst). There
+ * is no per-action echo and no ticking — the countdown is a timestamp the client
+ * animates locally. Same discipline as
  * lib/presence.ts, for the same 512 GB/month reason.
  */
 
@@ -108,10 +109,20 @@ export function stopRoom(roomId: string): void {
  * the captured roster is ignored, and a `sabotage` from a clean player is
  * downgraded during resolution rather than rejected here (rejecting it would
  * leak whether the sender is infected).
+ *
+ * 🚨 ACCEPTED FOR THE WHOLE ROUND, NOT ONLY DURING A WARNING.
+ * This used to require `run.next` — an armed push — and the client mirrored that
+ * by disabling the wall buttons. Since a warning is only live for the eight
+ * seconds before a push, the board was inert for most of Discussion: players
+ * tapped a wall, nothing moved, and the honest read was that the control was
+ * broken. Intent is now recorded whenever it is expressed and simply carried to
+ * whichever push comes next, which is also the more truthful model — deciding
+ * where to stand is not something you should only be allowed to do under
+ * pressure.
  */
 export function submitAction(roomId: string, address: string, action: BarricadeAction): boolean {
   const run = runs.get(roomId)
-  if (!run || !run.next) return false
+  if (!run) return false
   const addr = address.toLowerCase()
   if (!run.roster.some(r => r.address.toLowerCase() === addr)) return false
   if (action.kind === 'move' && !(action.station >= 0 && action.station < STATIONS.length)) return false
@@ -165,7 +176,7 @@ export function startRound(io: Server, roomId: string, round: number, discussion
   stopRoom(roomId)
 
   if (!Number.isFinite(discussionMs) || discussionMs < 20_000) {
-    // Too short to fit three pushes and still leave room to argue about them.
+    // Too short to fit a push and still leave room to argue about it.
     return
   }
 
