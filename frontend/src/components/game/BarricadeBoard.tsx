@@ -117,6 +117,18 @@ export function BarricadeBoard({
         )}
       </AnimatePresence>
 
+      {/* The instruction, always present. Play-testing found players did not
+          know they could move, or when — the buttons looked like status
+          readouts rather than controls. It says what to do, and during a
+          warning it says it urgently. */}
+      <p className="mt-2 font-mono text-[10px] leading-snug" style={{ color: incoming ? BONE : MOSS }}>
+        {myStation === null
+          ? 'You are not on the wall this round.'
+          : incoming
+            ? <>Tap a wall to run there before it hits — or stay and hold.</>
+            : <>Tap any wall to move there. Staying put holds your own.</>}
+      </p>
+
       {/* Controls. Deliberately a row of labelled buttons rather than a diagram:
           the cam above is already showing where everyone is standing, and a
           second, smaller, less accurate picture beside it only invites the eye
@@ -141,9 +153,11 @@ export function BarricadeBoard({
               }}
             >
               {label}
-              {station === myStation && (
-                <span className="mt-0.5 block text-[9px] normal-case" style={{ color: MOSS }}>your post</span>
-              )}
+              <span className="mt-0.5 block text-[9px] normal-case" style={{ color: MOSS }}>
+                {isHere
+                  ? (station === myStation ? 'holding · your post' : 'holding here')
+                  : station === myStation ? 'your post · tap to return' : 'tap to move'}
+              </span>
             </button>
           )
         })}
@@ -172,9 +186,9 @@ export function BarricadeBoard({
         </p>
       ) : (
         <p className="mt-2 font-mono text-[10px] leading-snug" style={{ color: MOSS }}>
-          Watch the cam — you are the figure marked YOU. Holding your post is a
-          normal play and most of the room does it. A station needs{' '}
-          <b style={{ color: BONE }}>{state.threshold}</b> bodies to hold.
+          You are the figure marked YOU on the cam. A wall needs{' '}
+          <b style={{ color: BONE }}>{state.threshold}</b> bodies to hold, and
+          four walls cannot all be covered — something is always left open.
         </p>
       )}
 

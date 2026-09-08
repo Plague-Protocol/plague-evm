@@ -29,7 +29,8 @@ import { useEffect, useRef } from 'react'
 import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
 import {
-  assignStations, stationAnchor, compoundRect, wallSegment, wallOutward, type Rect,
+  assignStations, stationAnchor, compoundShape, wallSegment, wallOutward,
+  clampInside, depthAt, type Corners,
 } from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
@@ -301,148 +302,249 @@ function drawBolt(ctx: CanvasRenderingContext2D, b: Body, h: number) {
   ctx.restore()
 }
 
+/** Stable pseudo-random in [0,1) from an integer — the treeline and the horde
+ *  must not reshuffle every frame, and persistent particles are more
+ *  bookkeeping than a backdrop deserves. */
+function noise(i: number, salt = 1): number {
+  return ((Math.sin(i * 12.9898 * salt + salt * 78.233) * 43758.5453) % 1 + 1) % 1
+}
+
 /**
- * The world outside the walls: a treeline, fog, and the horde.
+ * The world outside the walls: night forest, ground fog, and the horde.
  *
- * Deliberately ambient. These are NOT player figures — they are the plague, and
- * drawing them costs nothing in secrecy because the infected COUNT is already
- * public on the HUD. The mass scales with it, so a room losing ground can see
- * itself losing ground.
- *
- * Positions come from a cheap hash of the index rather than stored state: the
- * treeline must not reshuffle every frame, and a hundred persistent particles
- * is more bookkeeping than a backdrop deserves.
+ * The first version drew this almost black on black and it was invisible, which
+ * defeated the point — the walls only read as protection when you can see what
+ * they are keeping out. Trunks are now lit from the compound's own lamplight,
+ * so the treeline is legible without competing with the figures.
  */
 function drawOutside(
-  ctx: CanvasRenderingContext2D, w: number, h: number, rect: Rect, t: number, bar: BarricadeView,
+  ctx: CanvasRenderingContext2D, w: number, h: number, c: Corners, t: number,
 ) {
-  // Treeline — a dark band of trunks along the top, thinning downward. Parallax
-  // is deliberately tiny: the eye reads depth from relative motion long before
-  // it reads it from perspective.
-  ctx.save()
-  ctx.fillStyle = 'rgba(10,18,10,0.85)'
-  ctx.fillRect(0, 0, w, rect.y * 0.72)
-  for (let i = 0; i < 26; i++) {
-    const n = (Math.sin(i * 12.9898) * 43758.5453) % 1
-    const x = ((n + 1) % 1) * w
-    const th = rect.y * (0.26 + ((Math.sin(i * 78.233) * 4375.85) % 1 + 1) % 1 * 0.5)
-    const sway = Math.sin(t * 0.5 + i) * 1.2
-    ctx.fillStyle = i % 3 === 0 ? 'rgba(18,30,16,0.95)' : 'rgba(12,22,12,0.9)'
-    ctx.beginPath()
-    ctx.moveTo(x - 5 + sway, rect.y * 0.72)
-    ctx.lineTo(x + sway, rect.y * 0.72 - th)
-    ctx.lineTo(x + 5 + sway, rect.y * 0.72)
-    ctx.closePath()
-    ctx.fill()
-  }
-  ctx.restore()
+  // Night sky behind the trees, warming very slightly toward the compound.
+  const sky = ctx.createLinearGradient(0, 0, 0, c.fl.y + 20)
+  sky.addColorStop(0, '#050a06')
+  sky.addColorStop(1, '#0b1410')
+  ctx.fillStyle = sky
+  ctx.fillRect(0, 0, w, c.fl.y + 20)
 
-  // The horde. Sized to the public infected count and clamped so a big room
-  // does not turn the margin into soup.
-  const hordeCount = Math.min(34, 8 + bar.infectedCount * 5)
-  ctx.save()
-  for (let i = 0; i < hordeCount; i++) {
-    // Bias toward the threatened wall — the point of the whole picture is that
-    // you can SEE where the pressure is building before the push lands.
-    const massing = bar.threatened !== null && i % 3 !== 0
-    let x: number
-    let y: number
-    if (massing && bar.threatened !== null) {
-      const seg = wallSegment(bar.threatened, rect)
-      const out = wallOutward(bar.threatened)
-      const k = ((Math.sin(i * 91.7) * 4375.85) % 1 + 1) % 1
-      const depth = 10 + (((Math.sin(i * 33.1) * 1275.3) % 1 + 1) % 1) * 26
-      x = seg.x1 + (seg.x2 - seg.x1) * k + out.dx * depth + Math.sin(t * 3 + i) * 2
-      y = seg.y1 + (seg.y2 - seg.y1) * k + out.dy * depth + Math.cos(t * 2.6 + i) * 2
-    } else {
-      const a = (((Math.sin(i * 57.3) * 4375.85) % 1 + 1) % 1) * Math.PI * 2
-      const r = Math.max(rect.w, rect.h) * (0.62 + (((Math.sin(i * 12.4) * 937.1) % 1 + 1) % 1) * 0.3)
-      x = rect.x + rect.w / 2 + Math.cos(a) * r + Math.sin(t * 0.7 + i) * 4
-      y = rect.y + rect.h / 2 + Math.sin(a) * r * 0.6 + Math.cos(t * 0.6 + i) * 3
+  // Treeline: two ranks, the far one dimmer and thinner, for depth.
+  for (const rank of [0, 1] as const) {
+    const baseY = c.fl.y * (rank === 0 ? 0.72 : 0.94)
+    const count = rank === 0 ? 22 : 16
+    for (let i = 0; i < count; i++) {
+      const x = noise(i + rank * 50) * (w + 60) - 30
+      const th = c.fl.y * (rank === 0 ? 0.34 : 0.5) * (0.6 + noise(i, 3) * 0.7)
+      const halfW = (rank === 0 ? 5 : 8) * (0.7 + noise(i, 7) * 0.6)
+      const sway = Math.sin(t * 0.4 + i) * (rank === 0 ? 0.8 : 1.6)
+      ctx.fillStyle = rank === 0 ? 'rgba(22,38,26,0.85)' : 'rgba(14,26,17,0.95)'
+      ctx.beginPath()
+      ctx.moveTo(x - halfW + sway, baseY)
+      ctx.lineTo(x + sway, baseY - th)
+      ctx.lineTo(x + halfW + sway, baseY)
+      ctx.closePath()
+      ctx.fill()
+      // Trunk
+      ctx.fillStyle = 'rgba(10,16,10,0.9)'
+      ctx.fillRect(x - 1.2 + sway, baseY - 2, 2.4, 6)
     }
-    if (x < -20 || x > w + 20 || y < 0 || y > h + 20) continue
-    ctx.fillStyle = 'rgba(143,191,63,0.5)'
-    ctx.beginPath()
-    ctx.arc(x, y, 2.6, 0, Math.PI * 2)
-    ctx.fill()
+  }
+
+  // Ground fog drifting across the treeline base — cheap, and it does more for
+  // "outside at night" than any amount of extra geometry.
+  ctx.save()
+  for (let i = 0; i < 5; i++) {
+    const y = c.fl.y * (0.78 + i * 0.05)
+    const drift = ((t * (6 + i * 3) + i * 200) % (w + 300)) - 150
+    const g = ctx.createRadialGradient(drift, y, 0, drift, y, 130)
+    g.addColorStop(0, 'rgba(120,150,120,0.05)')
+    g.addColorStop(1, 'rgba(120,150,120,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(drift - 130, y - 40, 260, 80)
   }
   ctx.restore()
 }
 
 /**
- * The four walls.
+ * A zombie outside the walls.
  *
- * Three states, and they have to be distinguishable at a glance on a phone:
- * intact, straining (the wall under attack — shuddering, red bleeding through
- * the boards), and splintered (a push got through this round). A fourth,
- * `collapsed`, is the endgame: the walls come down and the horde is inside.
+ * Drawn as a body rather than a dot. The first version used 2.6px circles and
+ * play-testing read them, correctly, as debris — a horde has to be made of
+ * things with arms if the walls are going to mean anything. Deliberately
+ * cruder than the survivors inside: hunched, arms out, no face.
  */
-function drawWalls(ctx: CanvasRenderingContext2D, rect: Rect, t: number, bar: BarricadeView) {
+function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, phase: number) {
+  const lurch = Math.sin(phase) * 1.4
+  ctx.save()
+  ctx.translate(x, y + lurch)
+  ctx.strokeStyle = 'rgba(143,191,63,0.62)'
+  ctx.fillStyle = 'rgba(143,191,63,0.62)'
+  ctx.lineWidth = 1.6 * s
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(0, 0); ctx.lineTo(-2.2 * s, 4.5 * s)   // legs
+  ctx.moveTo(0, 0); ctx.lineTo(2.2 * s, 4.5 * s)
+  ctx.moveTo(0, 0); ctx.lineTo(0, -5.5 * s)          // spine
+  // Arms reaching forward — the whole silhouette of the thing.
+  ctx.moveTo(0, -4 * s); ctx.lineTo(4.6 * s, -3 * s + Math.sin(phase * 1.3) * 1.2)
+  ctx.moveTo(0, -4 * s); ctx.lineTo(4.2 * s, -1.2 * s - Math.sin(phase * 1.1) * 1.2)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(0, -7 * s, 1.9 * s, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/**
+ * The horde: bodies circling the compound, probing it, massing where the next
+ * push is coming.
+ *
+ * Motion is derived from time and index rather than simulated, so a hundred of
+ * them cost nothing and nothing has to be stored. Sizes scale with depth so the
+ * ones behind the far wall sit correctly against the trees.
+ */
+function drawHorde(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: BarricadeView) {
+  const count = Math.min(40, 12 + bar.infectedCount * 5)
+  const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
+  const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
+  const spanX = (c.nr.x - c.nl.x) / 2
+  const spanY = (c.nl.y - c.fl.y) / 2
+
+  for (let i = 0; i < count; i++) {
+    // Two thirds converge on the threatened wall; the rest keep circling, so
+    // the pressure is legible without the rest of the picture emptying out.
+    const massing = bar.threatened !== null && i % 3 !== 0
+    let x: number
+    let y: number
+    if (massing && bar.threatened !== null) {
+      const seg = wallSegment(bar.threatened, c)
+      const out = wallOutward(bar.threatened, c)
+      const k = noise(i, 11)
+      const depth = 8 + noise(i, 13) * 30 + Math.sin(t * 1.6 + i) * 3
+      x = seg.x1 + (seg.x2 - seg.x1) * k + out.dx * depth
+      y = seg.y1 + (seg.y2 - seg.y1) * k + out.dy * depth
+    } else {
+      // A slow patrol around the perimeter, each at its own rate — they are
+      // looking for a way in, not orbiting a point.
+      const a = noise(i, 17) * Math.PI * 2 + t * (0.05 + noise(i, 19) * 0.06)
+      const r = 1.32 + noise(i, 23) * 0.5
+      x = cx + Math.cos(a) * spanX * r
+      y = cy + Math.sin(a) * spanY * r
+    }
+    const d = depthAt(y, c)
+    drawWalker(ctx, x, y, 0.85 + d * 0.7, t * 3.4 + i)
+  }
+}
+
+/**
+ * The four walls, as actual barricades.
+ *
+ * Stacked planks with posts at the ends — a single stroked line read as a
+ * diagram box, which is exactly what play-testing said. Plank count and
+ * thickness scale with depth so the near wall is heavier than the far one.
+ *
+ * Three states, all readable at a glance on a phone: intact, straining (under
+ * attack — shuddering, red bleeding between the boards) and splintered (a push
+ * got through this round). `collapsed` is the endgame, not a state of a wall.
+ */
+function drawWalls(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: BarricadeView) {
   for (let i = 0; i < 4; i++) {
-    const seg = wallSegment(i, rect)
-    const out = wallOutward(i)
+    const seg = wallSegment(i, c)
+    const out = wallOutward(i, c)
     const straining = bar.threatened === i
     const broken = bar.brokenWalls.includes(i)
     const gone = bar.collapsed
 
-    ctx.save()
-    // The boards straining, not the camera — a shaking viewport reads as a bug.
-    if (straining && !gone) ctx.translate(out.dx * Math.sin(t * 30) * 1.8, out.dy * Math.sin(t * 30) * 1.8)
+    const midY = (seg.y1 + seg.y2) / 2
+    const d = depthAt(midY, c)
+    const planks = 3 + Math.round(d * 2)          // 3 far … 5 near
+    const gap = 2.6 + d * 2.2
+    const lw = 2.2 + d * 2.4
 
-    if (gone) {
-      // Collapsed: fragments, no line. There is no wall any more.
-      ctx.strokeStyle = 'rgba(230,51,41,0.5)'
-      ctx.lineWidth = 3
-      for (let k = 0; k < 5; k++) {
-        const a = k / 5
-        const bx = seg.x1 + (seg.x2 - seg.x1) * a
-        const by = seg.y1 + (seg.y2 - seg.y1) * a
-        ctx.beginPath()
-        ctx.moveTo(bx, by)
-        ctx.lineTo(bx + (seg.x2 - seg.x1) * 0.08, by + (seg.y2 - seg.y1) * 0.08 + 4)
-        ctx.stroke()
-      }
-      ctx.restore()
-      continue
+    ctx.save()
+    // The boards strain, not the camera — a shaking viewport reads as a bug.
+    if (straining && !gone) {
+      ctx.translate(out.dx * Math.sin(t * 30) * 2, out.dy * Math.sin(t * 30) * 2)
     }
 
-    ctx.strokeStyle = broken
-      ? 'rgba(230,51,41,0.85)'
-      : straining
-        ? 'rgba(245,197,24,0.95)'
-        : 'rgba(107,142,35,0.6)'
-    ctx.lineWidth = broken ? 2 : 4
-    ctx.lineCap = 'round'
-
-    if (broken) {
-      // A gap punched clean through the middle: legible on a small screen in a
-      // way that a change of colour alone is not.
-      for (const [a, b] of [[0, 0.34], [0.66, 1]]) {
-        ctx.beginPath()
-        ctx.moveTo(seg.x1 + (seg.x2 - seg.x1) * a, seg.y1 + (seg.y2 - seg.y1) * a)
-        ctx.lineTo(seg.x1 + (seg.x2 - seg.x1) * b, seg.y1 + (seg.y2 - seg.y1) * b)
-        ctx.stroke()
-      }
-    } else {
+    // Pressure bleeding between the boards from outside.
+    if (straining && !gone) {
+      const pulse = 0.3 + 0.28 * Math.sin(t * 7)
+      ctx.save()
+      ctx.strokeStyle = `rgba(230,51,41,${pulse.toFixed(3)})`
+      ctx.lineWidth = planks * gap + 10
+      ctx.globalAlpha = 0.45
       ctx.beginPath()
       ctx.moveTo(seg.x1, seg.y1)
       ctx.lineTo(seg.x2, seg.y2)
       ctx.stroke()
+      ctx.restore()
     }
 
-    // Pressure bleeding through the boards from outside.
-    if (straining) {
-      const pulse = 0.35 + 0.3 * Math.sin(t * 7)
-      ctx.strokeStyle = `rgba(230,51,41,${pulse.toFixed(3)})`
-      ctx.lineWidth = 10
-      ctx.globalAlpha = 0.5
-      ctx.beginPath()
-      ctx.moveTo(seg.x1 + out.dx * 5, seg.y1 + out.dy * 5)
-      ctx.lineTo(seg.x2 + out.dx * 5, seg.y2 + out.dy * 5)
-      ctx.stroke()
+    ctx.strokeStyle = gone
+      ? 'rgba(230,51,41,0.42)'
+      : broken
+        ? 'rgba(230,51,41,0.85)'
+        : straining
+          ? 'rgba(245,197,24,0.95)'
+          : 'rgba(120,152,60,0.72)'
+    ctx.lineWidth = lw
+    ctx.lineCap = 'butt'
+
+    for (let k = 0; k < planks; k++) {
+      // Planks stack along the wall's own outward normal, so each wall boards
+      // up in its own direction instead of all of them stacking downward.
+      const off = (k - (planks - 1) / 2) * gap
+      const ox = out.dx * off
+      const oy = out.dy * off
+      // A splintered wall keeps its outer boards and loses the middle: a gap
+      // punched through reads at a glance where a colour change does not.
+      const spans: [number, number][] = gone
+        ? [[0, 0.16], [0.34, 0.46], [0.72, 0.86]]
+        : broken && k > 0
+          ? [[0, 0.3], [0.7, 1]]
+          : [[0, 1]]
+      for (const [a, b] of spans) {
+        ctx.beginPath()
+        ctx.moveTo(seg.x1 + (seg.x2 - seg.x1) * a + ox, seg.y1 + (seg.y2 - seg.y1) * a + oy)
+        ctx.lineTo(seg.x1 + (seg.x2 - seg.x1) * b + ox, seg.y1 + (seg.y2 - seg.y1) * b + oy)
+        ctx.stroke()
+      }
+    }
+
+    // End posts — they turn a stack of lines into a built thing.
+    if (!gone) {
+      ctx.lineWidth = lw + 1.4
+      ctx.strokeStyle = broken ? 'rgba(230,51,41,0.7)' : 'rgba(90,116,48,0.9)'
+      const half = (planks * gap) / 2 + 2
+      for (const [px, py] of [[seg.x1, seg.y1], [seg.x2, seg.y2]] as const) {
+        ctx.beginPath()
+        ctx.moveTo(px - out.dx * half, py - out.dy * half)
+        ctx.lineTo(px + out.dx * half, py + out.dy * half)
+        ctx.stroke()
+      }
     }
     ctx.restore()
   }
+}
+
+/** Lamplight inside the compound — the reason the survivors are visible and the
+ *  forest is not, and the thing that makes the enclosure feel occupied. */
+function drawCompoundGround(ctx: CanvasRenderingContext2D, c: Corners) {
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(c.fl.x, c.fl.y)
+  ctx.lineTo(c.fr.x, c.fr.y)
+  ctx.lineTo(c.nr.x, c.nr.y)
+  ctx.lineTo(c.nl.x, c.nl.y)
+  ctx.closePath()
+  const cx = (c.fl.x + c.nr.x) / 2
+  const cy = (c.fl.y + c.nl.y) / 2
+  const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.max(c.nr.x - c.nl.x, c.nl.y - c.fl.y) * 0.7)
+  g.addColorStop(0, 'rgba(120,150,60,0.14)')
+  g.addColorStop(1, 'rgba(20,32,18,0.5)')
+  ctx.fillStyle = g
+  ctx.fill()
+  ctx.restore()
 }
 
 function drawScene(
@@ -479,9 +581,12 @@ function drawScene(
   // boards they are holding. Everything outside the walls is the world the
   // walls exist to keep out — without it, a barricade is a fence.
   if (bar) {
-    const rect = compoundRect(w, h, PAD_TOP, PAD_BOTTOM)
-    drawOutside(ctx, w, h, rect, t, bar)
-    drawWalls(ctx, rect, t, bar)
+    const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
+    drawOutside(ctx, w, h, c, t)
+    drawCompoundGround(ctx, c)
+    // Horde before the walls: they are outside, so the boards occlude them.
+    drawHorde(ctx, c, t, bar)
+    drawWalls(ctx, c, t, bar)
   }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
@@ -563,6 +668,8 @@ export function OutbreakScene({
   const stationOfBodyRef = useRef<Map<number, number>>(new Map())
   /** Seconds left on the breach reaction — figures scatter, then recover. */
   const breachTRef = useRef(0)
+  /** Set when placement changes; the sim loop clears pauses and re-forms. */
+  const reformRef = useRef(false)
   const lastResultKeyRef = useRef(-1)
   const epochRef = useRef(0)
   const bodiesRef = useRef<Body[]>([])
@@ -637,9 +744,14 @@ export function OutbreakScene({
       if (bar && b.alive && breachTRef.current <= 0) {
         const station = stationOfBodyRef.current.get(b.id)
         if (station !== undefined) {
-          const anchor = stationAnchor(station, compoundRect(w, h, PAD_TOP, PAD_BOTTOM))
-          b.tx = Math.min(Math.max(anchor.x + rand(-26, 26), PAD_X), Math.max(PAD_X, w - PAD_X))
-          b.ty = Math.min(Math.max(anchor.y + rand(-16, 16), PAD_TOP), Math.max(PAD_TOP, h - PAD_BOTTOM))
+          const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
+          const anchor = stationAnchor(station, c)
+          // Jitter, then clamp INSIDE the walls. Bodies used to be bounded by
+          // the canvas, so they walked straight through a barricade and stood
+          // in the forest — which made nonsense of the whole picture.
+          const p = clampInside(anchor.x + rand(-30, 30), anchor.y + rand(-18, 18), c, 12)
+          b.tx = p.x
+          b.ty = p.y
           return
         }
       }
@@ -845,6 +957,26 @@ export function OutbreakScene({
       tRef.current += dt
       tickBreach(dt)
       stepCue(dt)
+
+      if (reformRef.current) {
+        reformRef.current = false
+        for (const b of bodiesRef.current) b.pauseUntil = 0
+      }
+
+      // Belt and braces: whatever moved a body this frame — walking, a cue, a
+      // resize — it ends up inside the walls. The picture only works if the
+      // survivors are unambiguously behind the barricade.
+      const barNow = barricadeRef.current
+      if (barNow && !barNow.collapsed) {
+        const { w, h } = sizeRef.current
+        const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
+        for (const b of bodiesRef.current) {
+          if (!b.alive) continue
+          const p = clampInside(b.x, b.y, c, 8)
+          b.x = p.x
+          b.y = p.y
+        }
+      }
       for (const b of bodiesRef.current) {
         b.staggerT = Math.max(0, b.staggerT - dt * 2.2)
         b.transformT = Math.max(0, b.transformT - dt / 0.7)
@@ -855,7 +987,12 @@ export function OutbreakScene({
         if (settleRef.current !== null) { b.gait = Math.max(0, b.gait - dt * 4); continue }
         // Clean figures break away before a zombie can reach them — checked
         // ahead of the idle pause so panic always beats standing still.
-        if (b.kind === 'human' && fleeStep(b, dt)) {
+        // No fleeing while the compound stands. Figures are rendered uniformly
+        // during the barricade but their internal kind is unchanged, so this
+        // had survivors bolting from figures that LOOK human — scattering the
+        // formation and, with the old canvas-wide bounds, pushing them out
+        // through the walls. They are holding a line, not running from it.
+        if (!barricadeRef.current && b.kind === 'human' && fleeStep(b, dt)) {
           b.gait = Math.min(1, b.gait + dt * 6)
           continue
         }
@@ -868,7 +1005,11 @@ export function OutbreakScene({
         const speed = b.kind === 'zombie' ? ZOMBIE_SPEED : HUMAN_SPEED
         const dist = moveToward(b, speed, dt)
         if (dist < 3) {
-          b.pauseUntil = tRef.current + (b.kind === 'zombie' ? rand(0.3, 1.2) : rand(0.7, 2.8))
+          // Short pauses while holding the line: a long idle looks like nobody
+          // reacted to the wall that is about to be hit.
+          b.pauseUntil = tRef.current + (barricadeRef.current
+            ? rand(0.2, 0.9)
+            : b.kind === 'zombie' ? rand(0.3, 1.2) : rand(0.7, 2.8))
           retarget(b)
         }
       }
@@ -933,6 +1074,16 @@ export function OutbreakScene({
       occupancy: barricade.occupancy,
       previous: stationOfBodyRef.current,
     })
+
+    // Ask the sim loop to break every pause, so the room re-forms on the NEXT
+    // frame rather than up to three seconds later. Without this, opening the
+    // barricade — or the server publishing new occupancy — left figures
+    // standing at walls they had already been reassigned away from.
+    //
+    // Raised as a flag rather than mutating bodies here: the simulation owns
+    // body state, and reaching into it from an effect is exactly the kind of
+    // cross-ownership write that gets hard to reason about later.
+    reformRef.current = true
 
     // A breach scatters the room. Fired from a key rather than from `held`
     // changing, so two consecutive breaches both land.

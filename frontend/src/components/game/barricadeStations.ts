@@ -7,80 +7,125 @@
  * barricade said you were posted at a fixed station. No tuning reconciles that,
  * because it is different geometry — so the cam became the barricade.
  *
- * The enclosure is the second half of that fix. Three marks on a back wall are
- * a fence: nothing is coming, so holding them means nothing. Four walls with a
- * horde pressing from outside make the stakes visible without a word of
- * explanation, and four walls cannot be covered by five players, so where you
- * stand is finally a decision with a cost.
+ * THE COMPOUND IS A TRAPEZOID, NOT A RECTANGLE.
+ * An axis-aligned box reads as a diagram: a plan view with people standing on
+ * it, which is exactly how the first version looked. Foreshortening the far
+ * wall — narrower and higher, with the near wall wide and low — puts the camera
+ * above and behind the survivors and makes the enclosure a place they are
+ * standing IN. Everything else (figure scale, wall thickness, plank spacing)
+ * keys off the same depth, so the parts agree.
  *
- * 🚨 EVERYONE INSIDE LOOKS THE SAME. THIS IS LOad-BEARING.
+ * 🚨 EVERYONE INSIDE LOOKS THE SAME. THIS IS LOAD-BEARING.
  * The cam places figures TRUTHFULLY in aggregate — station occupancy is real —
- * and players announce their positions in chat constantly. Add any visible mark
- * on infected figures and those three facts combine: a wall shows three bodies,
- * three players claimed that wall, one body is marked, and the suspect pool just
- * went from five to three with nobody having said anything true. Two rounds of
- * that and the game is solved by watching instead of reasoning.
+ * and players announce their walls in chat constantly. Add any visible mark on
+ * infected figures and those three facts combine: a wall shows three bodies,
+ * three players claimed that wall, one body is marked, and the suspect pool
+ * just went from five to three with nobody having said anything true. Two
+ * rounds of that and the game is solved by watching instead of reasoning.
  *
- * So inside the compound there are no marks, no colours, no tells. The dread is
- * that the figures are indistinguishable and one of them is lying. The only
+ * So inside the compound there are no marks, no colours, no tells. The only
  * truthful figure on any screen is the local player's own, which reveals
- * nothing to anyone else — the guarantee OutbreakDirector already makes.
+ * nothing to anyone else.
  *
  * The zombies stay outside, where being visibly zombies costs nothing.
  */
 
-/** Fraction of the canvas the compound occupies. The margin is the outside
- *  world — treeline, fog, and the horde — and it has to be wide enough to read
- *  as somewhere rather than as a border. */
-const INSET_X = 0.19
-const INSET_TOP = 0.3
-const INSET_BOTTOM = 0.13
+/** Horizontal inset of the NEAR (south) wall — the widest edge. */
+const NEAR_INSET_X = 0.10
+/** Horizontal inset of the FAR (north) wall. The gap between the two is the
+ *  whole perspective effect, so it wants to be generous. */
+const FAR_INSET_X = 0.30
+/** Where the far and near walls sit in the usable vertical band. */
+const FAR_Y = 0.34
+const NEAR_Y = 0.92
 
-export interface Rect { x: number; y: number; w: number; h: number }
+export interface Corners {
+  /** Far-left, far-right, near-right, near-left — clockwise from the back. */
+  fl: { x: number; y: number }
+  fr: { x: number; y: number }
+  nr: { x: number; y: number }
+  nl: { x: number; y: number }
+}
 
-/** The compound's footprint in canvas pixels. */
-export function compoundRect(w: number, h: number, padTop: number, padBottom: number): Rect {
-  const top = padTop + (h - padTop - padBottom) * INSET_TOP
-  const bottom = h - padBottom - (h - padTop - padBottom) * INSET_BOTTOM
-  return { x: w * INSET_X, y: top, w: w * (1 - INSET_X * 2), h: Math.max(24, bottom - top) }
+export function compoundShape(w: number, h: number, padTop: number, padBottom: number): Corners {
+  const band = Math.max(1, h - padTop - padBottom)
+  const farY = padTop + band * FAR_Y
+  const nearY = padTop + band * NEAR_Y
+  return {
+    fl: { x: w * FAR_INSET_X, y: farY },
+    fr: { x: w * (1 - FAR_INSET_X), y: farY },
+    nr: { x: w * (1 - NEAR_INSET_X), y: nearY },
+    nl: { x: w * NEAR_INSET_X, y: nearY },
+  }
+}
+
+/** 0 at the far wall, 1 at the near wall — the depth every other size keys off. */
+export function depthAt(y: number, c: Corners): number {
+  return Math.min(1, Math.max(0, (y - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)))
+}
+
+export interface Segment { x1: number; y1: number; x2: number; y2: number }
+
+/** Wall segments, in station order: North, East, South, West. */
+export function wallSegment(station: number, c: Corners): Segment {
+  switch (station) {
+    case 0: return { x1: c.fl.x, y1: c.fl.y, x2: c.fr.x, y2: c.fr.y }
+    case 1: return { x1: c.fr.x, y1: c.fr.y, x2: c.nr.x, y2: c.nr.y }
+    case 2: return { x1: c.nl.x, y1: c.nl.y, x2: c.nr.x, y2: c.nr.y }
+    default: return { x1: c.fl.x, y1: c.fl.y, x2: c.nl.x, y2: c.nl.y }
+  }
+}
+
+/** Outward normal of a wall, for massing the horde on the correct side. */
+export function wallOutward(station: number, c: Corners): { dx: number; dy: number } {
+  const s = wallSegment(station, c)
+  const dx = s.x2 - s.x1
+  const dy = s.y2 - s.y1
+  const len = Math.hypot(dx, dy) || 1
+  // Right-hand normal, then flipped to point away from the centre.
+  let nx = dy / len
+  let ny = -dx / len
+  const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
+  const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
+  const mx = (s.x1 + s.x2) / 2
+  const my = (s.y1 + s.y2) / 2
+  if ((mx - cx) * nx + (my - cy) * ny < 0) { nx = -nx; ny = -ny }
+  return { dx: nx, dy: ny }
 }
 
 export interface StationAnchor { x: number; y: number }
 
 /**
- * Where defenders of a given wall stand: just inside it, not flush against it.
- * A figure pressed into the boards reads as scenery; a figure standing off them
- * reads as someone bracing.
+ * Where defenders stand: just inside their wall, pulled toward the centre.
+ * A figure pressed into the boards reads as scenery; one standing off them
+ * reads as somebody bracing.
  */
-export function stationAnchor(station: number, rect: Rect): StationAnchor {
-  const inset = Math.min(26, rect.h * 0.22)
-  switch (station) {
-    case 0: return { x: rect.x + rect.w / 2, y: rect.y + inset }              // North
-    case 1: return { x: rect.x + rect.w - inset, y: rect.y + rect.h / 2 }     // East
-    case 2: return { x: rect.x + rect.w / 2, y: rect.y + rect.h - inset }     // South
-    default: return { x: rect.x + inset, y: rect.y + rect.h / 2 }             // West
-  }
+export function stationAnchor(station: number, c: Corners): StationAnchor {
+  const s = wallSegment(station, c)
+  const out = wallOutward(station, c)
+  const mx = (s.x1 + s.x2) / 2
+  const my = (s.y1 + s.y2) / 2
+  const inset = Math.min(34, (c.nl.y - c.fl.y) * 0.2)
+  return { x: mx - out.dx * inset, y: my - out.dy * inset }
 }
 
-/** The wall segment itself, as a line, for drawing and for pressure effects. */
-export function wallSegment(station: number, rect: Rect): { x1: number; y1: number; x2: number; y2: number } {
-  const { x, y, w, h } = rect
-  switch (station) {
-    case 0: return { x1: x, y1: y, x2: x + w, y2: y }
-    case 1: return { x1: x + w, y1: y, x2: x + w, y2: y + h }
-    case 2: return { x1: x, y1: y + h, x2: x + w, y2: y + h }
-    default: return { x1: x, y1: y, x2: x, y2: y + h }
-  }
-}
-
-/** Outward-facing normal, so the horde masses on the correct side of a wall. */
-export function wallOutward(station: number): { dx: number; dy: number } {
-  switch (station) {
-    case 0: return { dx: 0, dy: -1 }
-    case 1: return { dx: 1, dy: 0 }
-    case 2: return { dx: 0, dy: 1 }
-    default: return { dx: -1, dy: 0 }
-  }
+/**
+ * Clamps a point inside the compound.
+ *
+ * Figures used to be bounded by the canvas rather than by the walls, so they
+ * strolled straight through a barricade and stood in the forest — which made
+ * nonsense of the entire picture. Interpolating the left and right edges at the
+ * point's own depth keeps them inside the trapezoid rather than inside its
+ * bounding box.
+ */
+export function clampInside(x: number, y: number, c: Corners, margin = 10): { x: number; y: number } {
+  const top = c.fl.y + margin
+  const bottom = c.nl.y - margin
+  const cy = Math.min(bottom, Math.max(top, y))
+  const t = (cy - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)
+  const left = c.fl.x + (c.nl.x - c.fl.x) * t + margin
+  const right = c.fr.x + (c.nr.x - c.fr.x) * t - margin
+  return { x: Math.min(right, Math.max(left, x)), y: cy }
 }
 
 export interface AssignInput {
@@ -95,10 +140,9 @@ export interface AssignInput {
 }
 
 /**
- * Assigns each living figure to a wall so the per-wall totals match `occupancy`
- * exactly.
+ * Assigns each living figure to a wall so per-wall totals match `occupancy`.
  *
- * Stability is what `previous` is for. Recomputing freely every time the server
+ * Stability is what `previous` is for: recomputing freely every time the server
  * spoke would have figures swapping walls for no visible reason, which reads as
  * a bug and destroys the one thing this is for — watching a wall thin out.
  */
@@ -130,9 +174,6 @@ export function assignStations(input: AssignInput): Map<number, number> {
   for (const id of ids) {
     if (out.has(id)) continue
     while (cursor < stations && remaining[cursor] <= 0) cursor++
-    // Counts can under-cover the roster for a frame — a figure the director has
-    // not retired yet, a snapshot in flight. Park the remainder rather than
-    // dropping anyone off the board.
     const station = cursor < stations ? cursor : stations - 1
     out.set(id, station)
     if (cursor < stations) remaining[cursor]--
