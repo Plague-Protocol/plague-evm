@@ -434,7 +434,9 @@ export default function DemoPage() {
         ...prev.feed,
         held
           ? `The ${STATIONS[station]} held. ${present} defended it.`
-          : `The ${STATIONS[station]} BROKE. ${present === 0 ? 'Nobody was there.' : 'Everyone there has been seen.'}`,
+          // "BUCKLED", not "BROKE" — the boarding is battered, never breached
+          // through, until the parity collapse. Matches BarricadeBoard.
+          : `The ${STATIONS[station]} BUCKLED. ${present === 0 ? 'Nobody was there.' : 'Everyone there has been seen.'}`,
       ].slice(-60)
 
       return {

@@ -53,8 +53,14 @@ const FAR_Y = 0.30
  * and the end of the canvas — not enough for a treeline, so the south side read
  * as bare, and not enough for the horde to work that wall without standing on
  * it. The forest needs somewhere to be on all four sides, not three.
+ *
+ * The figure is now set by arithmetic rather than taste: the south strip has to
+ * fit the boarding's half-thickness (~21px), a walker's clearance (~12px) and a
+ * whole walker's HEIGHT (~26px) below that, or the horde ends up drawn across
+ * the boards it is supposed to be outside of. ~60px, which 0.78 buys on a
+ * 400px cam with room to spare and on a 240px one with none.
  */
-const NEAR_Y = 0.84
+const NEAR_Y = 0.78
 
 export interface Corners {
   /** Far-left, far-right, near-right, near-left — clockwise from the back. */
@@ -190,7 +196,21 @@ export function isInside(x: number, y: number, c: Corners): boolean {
  * instead of through them — which is what something looking for a way in
  * actually looks like.
  */
-export function clampOutside(x: number, y: number, c: Corners, margin = 14): { x: number; y: number } {
+export function clampOutside(
+  x: number, y: number, c: Corners, margin = 14,
+  /**
+   * Extra clearance when the way out is DOWNWARD, i.e. past the south wall.
+   *
+   * The other three sides need only the boarding's own thickness, because a
+   * figure standing beyond them is drawn above or beside the planks and reads
+   * as outside without any help. The south wall is the exception: a body drawn
+   * just below it extends UP across the boards, and everything above the south
+   * wall is the courtyard — so a walker there looks like it is standing inside
+   * the compound, which is exactly what play-testing kept reporting. Pushing it
+   * a full body-height clear is what makes "outside" unambiguous on that side.
+   */
+  downMargin = 0,
+): { x: number; y: number } {
   if (!isInside(x, y, c)) return { x, y }
   let best = { x, y }
   let bestD = Infinity
@@ -206,7 +226,8 @@ export function clampOutside(x: number, y: number, c: Corners, margin = 14): { x
     if (d < bestD) {
       bestD = d
       const out = wallOutward(i, c)
-      best = { x: px + out.dx * margin, y: py + out.dy * margin }
+      const m = margin + Math.max(0, out.dy) * downMargin
+      best = { x: px + out.dx * m, y: py + out.dy * m }
     }
   }
   return best

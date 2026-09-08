@@ -203,7 +203,11 @@ export function BarricadeBoard({
           {state.outcomes.map(o => (
             <li key={o.push} className="font-mono text-[10px] leading-snug break-words" style={{ color: MOSS }}>
               <span style={{ color: o.held ? TOXIC : ALARM }}>
-                {o.held ? '✔' : '✘'} {STATIONS[o.station]} {o.held ? 'held' : 'BROKE'}
+                {/* "BUCKLED", not "BROKE". The wall is never breached through
+                    mid-game — see the note on `spans` in OutbreakScene — so the
+                    word has to describe damage that held, or the copy promises
+                    an influx of zombies the scene deliberately does not draw. */}
+                {o.held ? '✔' : '✘'} {STATIONS[o.station]} {o.held ? 'held' : 'BUCKLED'}
               </span>
               {' · '}{o.present} present
               {!o.held && o.exposed.length > 0 && (

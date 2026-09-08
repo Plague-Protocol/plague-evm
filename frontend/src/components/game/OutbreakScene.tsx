@@ -86,8 +86,13 @@ const SPRINT_SECS = 2.6
  * is an incoming push, when the people assigned to the threatened wall go and
  * stand on it — which is the only moment the placement is carrying information
  * anyway, and now the only moment anyone is standing anywhere.
+ *
+ * The clock starts on ARRIVAL, not on the tap, so this is eight seconds of
+ * actually standing there. It reads much shorter than the number suggests,
+ * which is why it has been raised twice: a figure that jogs out, touches the
+ * wall and turns straight round does not look like it went to help.
  */
-const POST_SECS = 5
+const POST_SECS = 8
 
 const COLOR_HUMAN = '#93a883'
 const COLOR_HUMAN_ME = '#d6e6a3'
@@ -846,8 +851,24 @@ const HORDE_SPEED = 13
  */
 const HORDE_SIZE = 16
 
+/**
+ * Extra room the horde keeps below the SOUTH wall — about one walker's height.
+ *
+ * Everything above the south boarding is the courtyard, so a walker standing
+ * just outside it is drawn straight up across the planks and reads as being
+ * inside the compound. Nothing else fixes that: occluding it with the boards
+ * only hides its legs and leaves a torso in the yard. It has to stand a whole
+ * body clear. NEAR_Y in barricadeStations.ts is sized to leave room for this.
+ */
+const SOUTH_CLEAR = 26
+
 /** Somewhere outside the walls for a walker to head for. */
-function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: number) {
+function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: number, collapsed = false) {
+  if (collapsed) {
+    // The walls are down. They go in.
+    const q = interiorPoint(c, r1, r2)
+    return { x: q.x, y: q.y }
+  }
   // Most of them drift toward whatever is being pushed; the rest keep working
   // the perimeter, so the picture never empties out on one side.
   if (threatened !== null && r1 < 0.66) {
@@ -891,12 +912,12 @@ function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: numb
  */
 function stepHorde(
   walkers: Walker[], c: Corners, dt: number, threatened: number | null,
-  w: number, h: number,
+  w: number, h: number, collapsed: boolean,
 ) {
   for (const wk of walkers) {
     wk.retargetIn -= dt
     if (wk.retargetIn <= 0) {
-      const t = hordeTarget(c, threatened, Math.random(), Math.random())
+      const t = hordeTarget(c, threatened, Math.random(), Math.random(), collapsed)
       wk.tx = t.x
       wk.ty = t.y
       // Short while a wall is being worked, long while merely circling — they
@@ -919,8 +940,16 @@ function stepHorde(
     //
     // The margin clears the BOARDING, not the centreline. Now that a wall is
     // real timber up to ~21px thick, a flat 14 would have parked half the horde
-    // inside the planks.
-    const p = clampOutside(wk.x, wk.y, c, wallBand(depthAt(wk.y, c)) + 12)
+    // inside the planks. On the SOUTH side it also clears a whole body height —
+    // see clampOutside.
+    //
+    // 🚨 UNLESS THE WALLS ARE DOWN. At parity the compound is breached and the
+    // horde is meant to be inside it; keeping them politely outside a wall that
+    // no longer exists was the endgame's whole drama being drawn as a colour
+    // change. This is the ONE state where the safe zone stops being safe.
+    const p = collapsed
+      ? { x: wk.x, y: wk.y }
+      : clampOutside(wk.x, wk.y, c, wallBand(depthAt(wk.y, c)) + 12, SOUTH_CLEAR)
     // 🚨 AND THEY STAY ON SCREEN.
     // The perimeter orbit reached about 1.65 span-widths from the centre, which
     // is off the side of a narrow canvas. Walkers strolled out of frame and
@@ -1086,14 +1115,26 @@ function drawWalls(
       ctx.fill()
     }
 
-    // Which stretches of this wall still have boarding on them. A splintered
-    // wall loses its middle: a hole punched through reads at a glance where a
-    // change of colour does not.
+    // 🚨 A HOLE IS A PROMISE, AND MID-GAME WE CANNOT KEEP IT.
+    //
+    // A splintered wall used to be drawn with its middle punched out. That is a
+    // clearer read than a colour change, and it was the wrong thing to draw:
+    // a wall with a gap in it, a horde pressed against the far side, and
+    // nothing coming through. Every player who saw it reasoned — correctly —
+    // that zombies should now be getting in, and the scene had no answer.
+    //
+    // The rules cannot give it one. A breach must stay survivable or there is
+    // no round-to-round tension, and nothing in the barricade is allowed to
+    // eliminate anybody: the vote is the only thing that costs money. So a
+    // mid-game breach is damage that HELD — battered, gouged, boards torn off
+    // the outer face — with the line unbroken.
+    //
+    // The hole is reserved for `gone`, the parity collapse, which is the one
+    // moment the promise is kept: the boarding opens and the horde walks in
+    // (see stepHorde).
     const spans: [number, number][] = gone
       ? [[0, 0.15], [0.33, 0.45], [0.71, 0.86]]
-      : broken
-        ? [[0, 0.34], [0.66, 1]]
-        : [[0, 1]]
+      : [[0, 1]]
 
     // Timber. Ash when splintered, scorched when the walls are down.
     const tone = gone
@@ -1120,6 +1161,22 @@ function drawWalls(
       for (const f of [0.5]) {
         const m = f1 + (f2 - f1) * f
         slab(m - bw, m + bw, -band, band, gone ? '#3a1d18' : broken ? '#35322c' : '#3c2a17')
+      }
+
+      // Battle damage on a wall that took a push and held: chunks torn out of
+      // the OUTER face, leaving the inner boarding continuous. Nothing can get
+      // through it, and it plainly shows that something tried.
+      if (broken && !gone) {
+        // Depth is a fraction of the full band, capped below 0.5 so a gouge can
+        // never reach the centreline: the inner face stays continuous timber,
+        // which is the whole reason this is damage and not a hole.
+        for (const [g, depth] of [[0.24, 0.44], [0.47, 0.3], [0.71, 0.48]] as const) {
+          const gw = 0.035
+          const m = f1 + (f2 - f1) * g
+          slab(m - gw, m + gw, band - band * 2 * depth, band + 1, 'rgba(16,11,6,0.9)')
+          // A splinter left standing in the gouge.
+          slab(m + gw * 0.35, m + gw * 0.6, band - band * 2 * depth * 0.7, band, '#6a6459')
+        }
       }
 
       // Lit top edge. The braziers are inside, so the inner face catches them.
@@ -1379,7 +1436,7 @@ export function OutbreakScene({
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
         hordeRef.current = Array.from({ length: HORDE_SIZE }, (_, i) => {
           const t0 = hordeTarget(c, null, noise(i, 61), noise(i, 67))
-          const p0 = clampOutside(t0.x, t0.y, c, wallBand(depthAt(t0.y, c)) + 12)
+          const p0 = clampOutside(t0.x, t0.y, c, wallBand(depthAt(t0.y, c)) + 12, SOUTH_CLEAR)
           return { x: p0.x, y: p0.y, tx: p0.x, ty: p0.y, phase: i, retargetIn: noise(i, 71) * 4 }
         })
       }
@@ -1678,7 +1735,7 @@ export function OutbreakScene({
         const { w, h } = sizeRef.current
         const bar = barricadeRef.current
         if (bar) {
-          stepHorde(hordeRef.current, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dt, bar.threatened, w, h)
+          stepHorde(hordeRef.current, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dt, bar.threatened, w, h, bar.collapsed)
         }
       }
 
@@ -1775,11 +1832,19 @@ export function OutbreakScene({
           : b.kind === 'zombie' ? ZOMBIE_SPEED : HUMAN_SPEED
         const dist = moveToward(b, speed, dt)
         if (dist < 3) {
-          // Short pauses while holding the line: a long idle looks like nobody
-          // reacted to the wall that is about to be hit.
-          b.pauseUntil = tRef.current + (barricadeRef.current
-            ? rand(0.2, 0.9)
-            : b.kind === 'zombie' ? rand(0.3, 1.2) : rand(0.7, 2.8))
+          // 🚨 A DEFENDER STANDS STILL. THAT IS THE WHOLE POINT OF THE POSE.
+          // Everyone inside the compound shared one short pause, so a figure
+          // that had just braced against a wall re-picked a jittered spot a
+          // few pixels away within a second and started walking again. The
+          // brace only draws while the gait is near zero, so it barely showed:
+          // the effect was somebody shuffling along the boards rather than
+          // holding them. Posted figures now hold for a proper beat.
+          const posted = b.braceX !== 0 || b.braceY !== 0
+          b.pauseUntil = tRef.current + (posted
+            ? rand(2.4, 4.2)
+            : barricadeRef.current
+              ? rand(0.6, 1.8)
+              : b.kind === 'zombie' ? rand(0.3, 1.2) : rand(0.7, 2.8))
           retarget(b)
         }
       }
