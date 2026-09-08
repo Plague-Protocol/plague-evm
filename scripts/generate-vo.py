@@ -191,12 +191,74 @@ def write_manifest(durations: list[int]) -> None:
     )
 
 
+def from_recordings(src_dir: Path) -> int:
+    """
+    Run your own takes through the same pipeline as the generated set.
+
+    WHY THIS PATH EXISTS
+    The radio treatment is doing a great deal of work, and it works in a
+    home-recorder's favour: the band-pass throws away everything below 180 Hz and
+    above 3.4 kHz, which is exactly where cheap-microphone problems live — room
+    boom, sibilance, hiss, the thinness of a phone capsule. A voice memo through
+    this chain lands much closer to "field radio" than an untreated studio take
+    would, because the degradation IS the costume.
+
+    So the honest comparison is not "my phone vs ElevenLabs". It is "my phone,
+    band-limited and compressed, vs ElevenLabs, band-limited and compressed" —
+    and on the one line that matters (the tell in line 9, where a composed man
+    has to slip register without announcing it), a real person under-performing
+    beats a model over-performing almost every time.
+
+    ⚠ Do not mix sources. Eight synthetic lines and one human line is more
+    jarring than nine of either, because the listener tracks a voice, not a
+    performance. Pick one and record the whole set.
+
+    Accepts line-1..line-9 in anything ffmpeg reads. Loudness is normalised
+    across the set, so takes recorded at different distances still sit level.
+    """
+    missing = [i for i in range(1, 10)
+               if not any((src_dir / f"line-{i}{e}").exists()
+                          for e in (".wav", ".m4a", ".mp3", ".aiff", ".flac", ".ogg"))]
+    if missing:
+        print(f"Missing takes for line(s): {', '.join(map(str, missing))}", file=sys.stderr)
+        print(f"Expected line-N.<wav|m4a|mp3|aiff|flac|ogg> in {src_dir}", file=sys.stderr)
+        return 1
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    durations: list[int] = []
+    for i in range(1, 10):
+        src = next(src_dir / f"line-{i}{e}" for e in (".wav", ".m4a", ".mp3", ".aiff", ".flac", ".ogg")
+                   if (src_dir / f"line-{i}{e}").exists())
+        dst = OUT_DIR / f"line-{i}.mp3"
+        postprocess(src, dst)
+        ms = duration_ms(dst)
+        durations.append(ms)
+        print(f"  line-{i}.mp3  {ms:>5} ms   <- {src.name}")
+
+    write_manifest(durations)
+    total = sum((OUT_DIR / f"line-{i}.mp3").stat().st_size for i in range(1, 10))
+    print(f"\nSet: {total / 1024:.1f} KB (budget ~300 KB), {sum(durations) / 1000:.1f}s of audio")
+    print(f"Manifest: {MANIFEST_TS.relative_to(ROOT)}")
+    print("Captions now pace themselves to these durations. Nothing else to switch on.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--check", action="store_true",
-                    help="render only line 5 so you can confirm the model honours "
-                         "[bracket] tags before spending the whole set")
+    ap.add_argument("--check", nargs="?", type=int, const=1, metavar="N",
+                    help="render only line N (default 1) to audition the voice. "
+                         "Note line 5 is DIRECTED FLAT and is a poor test of "
+                         "atmosphere — use 1, 6 or 9 to judge the read.")
+    ap.add_argument("--from-recordings", metavar="DIR",
+                    help="skip TTS entirely: run your own takes through the same "
+                         "radio treatment, loudness pass and duration manifest. "
+                         "DIR must hold line-1..line-9 in any format ffmpeg reads "
+                         "(.wav/.m4a/.mp3 — a phone voice memo is fine).")
     args = ap.parse_args()
+
+    # Your own takes need no API key and no network — check before the key gate.
+    if args.from_recordings:
+        return from_recordings(Path(args.from_recordings).expanduser().resolve())
 
     if not os.environ.get("ELEVENLABS_API_KEY"):
         print("Set ELEVENLABS_API_KEY first.", file=sys.stderr)
@@ -213,16 +275,23 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
 
-        if args.check:
-            name, text = LINES[4]  # "We lied." — shortest, cheapest to audition
-            raw = tmp / "check_raw.mp3"
-            synth(client, text, raw)
-            dst = OUT_DIR / f"{name}.mp3"
-            postprocess(raw, dst)
+        if args.check is not None:
+            n = max(1, min(9, args.check))
+            if n == 9:
+                dst = OUT_DIR / "line-9.mp3"
+                build_line_9(client, tmp, dst)
+            else:
+                name, text = LINES[n - 1]
+                raw = tmp / "check_raw.mp3"
+                synth(client, text, raw)
+                dst = OUT_DIR / f"{name}.mp3"
+                postprocess(raw, dst)
             print(f"wrote {dst}  ({duration_ms(dst)} ms)")
-            print("\nListen. You should hear ONLY: \"We lied.\"")
-            print("If you hear the words 'flat' or 'no emphasis', this model does not")
-            print("support audio tags — change ELEVENLABS_MODEL_ID or strip the tags.")
+            if n == 5:
+                print("\n⚠ Line 5 is DIRECTED FLAT — deliberately no weight, no fear.")
+                print("  It is the admission, not the warning. Judge the voice on 1, 6 or 9.")
+            print("\nIf you hear the bracket words themselves ('tense', 'controlled'),")
+            print("this model is reading tags aloud — change ELEVENLABS_MODEL_ID.")
             return 0
 
         durations: list[int] = []

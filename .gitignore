@@ -74,3 +74,8 @@ docs/MINIPAY_LISTING_SUBMISSION.md
 # in them (they are shots of the public site) — they are simply reproducible.
 # The capture scripts and README next to them ARE tracked: that is the recipe.
 docs/store-screenshots/
+
+# Python venv for scripts/generate-vo.py (local tooling, not app code)
+scripts/.venv/
+__pycache__/
+*.pyc
