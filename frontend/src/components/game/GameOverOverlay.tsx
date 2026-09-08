@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import type { PlayerProgress } from '@/hooks/usePlayerProgress'
 
 export type GameOutcome = 'clean_win' | 'infected_win' | 'draw' | 'aborted'
 
@@ -47,6 +48,8 @@ function useCountUp(target: number, start: boolean, durationMs = 1_000): number 
 
 export interface GameOverOverlayProps {
   readonly outcome: GameOutcome
+  /** The player's standing, once loaded. Null renders nothing at all. */
+  readonly progress?: PlayerProgress | null
   /** Pot share per winner (already in whole USDm units). */
   readonly potPerWinner?: number
   /** Display names of winners. */
@@ -54,7 +57,7 @@ export interface GameOverOverlayProps {
   readonly onDismiss: () => void
 }
 
-export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDismiss }: GameOverOverlayProps) {
+export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], progress = null, onDismiss }: GameOverOverlayProps) {
   const reduced = useReducedMotion()
   const meta = OUTCOME_META[outcome]
   const [stampDone, setStampDone] = useState(false)
@@ -154,6 +157,73 @@ export function GameOverOverlay({ outcome, potPerWinner = 0, winners = [], onDis
             >
               Survivors: <span style={{ color: '#d4c9b2' }}>{winners.join(', ')}</span>
             </motion.p>
+          )}
+
+          {/* ── The return hook ──────────────────────────────────────────────
+              This is the last thing a player reads before closing the tab, so
+              it is the only place a reason to come back can actually land. It
+              answers one question — what is the very next thing I would get —
+              and answers it in games, never in an abstract score.
+
+              Ordered by immediacy: a live streak first (loss aversion is the
+              strongest pull and it is already at risk), then the next rung.
+              Renders nothing at all until the fetch lands, so it can never hold
+              up the result. */}
+          {progress && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.6, duration: 0.45 }}
+              className="w-full max-w-xs rounded-lg border px-4 py-3"
+              style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(107,142,35,0.06)' }}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>
+                  Rank {progress.rank.tier}
+                </span>
+                <span className="font-heading text-sm uppercase tracking-[0.12em]" style={{ color: '#d4c9b2' }}>
+                  {progress.rank.name}
+                </span>
+              </div>
+
+              {/* Band progress, not ladder progress — it has to visibly move
+                  after a single game or it argues against coming back. */}
+              {progress.next && (
+                <div
+                  className="mt-2 h-1.5 w-full overflow-hidden rounded-full"
+                  style={{ backgroundColor: 'rgba(107,142,35,0.15)' }}
+                  role="progressbar"
+                  aria-valuenow={Math.round(progress.fraction * 100)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: '#6b8e23' }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.round(progress.fraction * 100)}%` }}
+                    transition={{ delay: 1.9, duration: 0.7, ease: 'easeOut' }}
+                  />
+                </div>
+              )}
+
+              <p className="mt-2 font-mono text-[11px] leading-snug" style={{ color: '#8fa882' }}>
+                {progress.currentStreak >= 2 ? (
+                  <>
+                    <span style={{ color: '#f5c518' }}>{progress.currentStreak} wins in a row.</span>{' '}
+                    Lose the next one and it&apos;s gone.
+                  </>
+                ) : progress.next ? (
+                  <>
+                    <span style={{ color: '#d4c9b2' }}>{progress.toNext}</span> points to{' '}
+                    <span style={{ color: '#d4c9b2' }}>{progress.next.name}</span>
+                    {progress.toNext <= 7 && <span style={{ color: '#f5c518' }}> — one win away.</span>}
+                  </>
+                ) : (
+                  <>Top of the ladder. {progress.bestStreak} is your best run.</>
+                )}
+              </p>
+            </motion.div>
           )}
 
           <motion.p
