@@ -1,40 +1,67 @@
 #!/usr/bin/env python3
 """
-Generate the nine-line "Sector Seven" splash voiceover with ElevenLabs.
+Process the nine-line "Sector Seven" splash voiceover from your own recordings.
 
-    pip install elevenlabs
-    export ELEVENLABS_API_KEY=...
-    ffmpeg + ffprobe on PATH
+    ffmpeg + ffprobe on PATH (no API key, no network, no dependencies)
 
-    python3 scripts/generate-vo.py --check     # one line, to audition the voice
-    python3 scripts/generate-vo.py             # the full set
+    python3 scripts/generate-vo.py ~/Desktop/vo-takes
 
+Reads:
+    <dir>/line-1 .. line-9   in any format ffmpeg understands
+                             (.wav .m4a .mp3 .aiff .flac .ogg — a phone voice
+                             memo is fine)
 Writes:
     frontend/public/sounds/vo/line-1.mp3 ... line-9.mp3
     frontend/src/lib/vo-manifest.ts        (measured durations)
 
-WHY THE MANIFEST EXISTS — read before changing anything here.
+WHY A HOME RECORDING IS THE RIGHT SOURCE
 
-The splash types its captions at a fixed rate. Speech is far slower than that
-rate: the typewriter's 44 ms/char works out to ~227 wpm, while a grim, composed
-read lands around 130 wpm. Every single line therefore finishes typing well
-before the voice finishes saying it, and the voice runs on over the next caption.
+The radio treatment below does more work than it looks. Band-passing to
+180 Hz–3.4 kHz discards exactly where cheap-microphone problems live: room
+boom, sibilance, hiss, the thinness of a phone capsule. The degradation is
+the costume — a voice memo through this chain lands closer to "field radio"
+than an untreated studio take would.
 
-Rather than guess a slower typing rate and hope, this measures each rendered clip
-and emits its real duration. The splash paces each line's typing from that
-number, so caption and voice land together BY CONSTRUCTION — whatever read the
-model gives you, and whatever you change the script to later.
+What it cannot supply is the performance, which is the whole point of this
+particular set. The speaker is composed. He is filing a report, and the horror
+is in what he says rather than how hard it is sold — right up to the last
+fragment of the last line, where a man who has been in command the entire time
+lets slip that he is not going to be for much longer. That is a human thing to
+do with a voice.
 
-That also means the manifest is the on/off switch. No clips, no manifest entries,
-no voiceover — there is no flag to forget to flip.
+WHY THE MANIFEST EXISTS
+
+The splash types its captions at a fixed rate. Speech is far slower: 44 ms/char
+works out to ~227 wpm, while a composed, grim read lands around 130. Every line
+therefore finished typing well before the voice finished saying it, and ran on
+over the next caption.
+
+So each clip is MEASURED and its real duration emitted. The splash paces each
+line's typing from that number, and caption and voice land together by
+construction — whatever read you give it.
+
+The manifest is also the on/off switch. No clips, no entries, no voiceover.
+There is no flag to forget to flip.
+
+RECORDING NOTES
+
+  - One take, one file, nine files. Do not mix sources: eight of one voice and
+    one of another is more jarring than nine of either, because a listener
+    tracks the voice, not the performance.
+  - Levels are normalised across the set, so takes at different distances from
+    the microphone still sit level. Do not try to match them by ear.
+  - Line 3 opens under a scream sting fired 500 ms in — leave a beat of air at
+    the front rather than starting on the word.
+  - Line 5 ("We lied.") is the flattest line in the set. No weight, no fear:
+    it is an admission, not a warning.
+  - Line 9 is two people. Give the order in full command voice, take a real
+    pause, then say the last fragment quieter and further off the microphone,
+    as though you had forgotten the transmitter was still open. Do not act it.
 """
 
 import argparse
-import json
-import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # Repo-root-relative, resolved from THIS file rather than the shell's cwd, so it
@@ -43,71 +70,19 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "frontend" / "public" / "sounds" / "vo"
 MANIFEST_TS = ROOT / "frontend" / "src" / "lib" / "vo-manifest.ts"
 
-# ── Voice ─────────────────────────────────────────────────────────────────────
-# A mid-register male voice with no strong accent. "A man filing a report", not a
-# performance — the horror is in what he says, not how hard he sells it.
-VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
-
-# ⚠ Audio tags in [brackets] are a v3 feature. On a model that does not support
-# them the tags are READ ALOUD — you get "tense controlled Sector Seven Command".
-# That is what --check is for: render one line and listen before spending the
-# other eight.
-MODEL_ID = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_v3")
-
-# Low stability buys natural waver, which reads as barely-held-together without
-# tipping into cartoon panic. It also makes every run different — once a take
-# sounds right, KEEP IT. Re-running will not reproduce it.
-VOICE_SETTINGS = {
-    "stability": 0.35,
-    "similarity_boost": 0.75,
-    "style": 0.4,
-    "use_speaker_boost": True,
-}
-
-# ── The script ────────────────────────────────────────────────────────────────
-# Tags stay sparse — one or two a line. A run of vocal effects stops sounding
-# like a person and starts sounding like a soundboard.
-#
-# ⚠ The plain text here must match STORY in frontend/src/components/ui/
-# splash-screen.tsx. The captions are what most players actually get (mobile
-# sessions run muted, and MiniPay's browser is muted by default), so the text is
-# the floor and the voice is the enhancement — they must not drift apart.
-LINES = [
-    ("line-1", "[tense, controlled] Sector Seven Command. If you hear this, [shaky breath] you are inside."),
-    ("line-2", "[flat, reporting] Day 3 — we sealed the district. Two patients. High fever."),
-    # The splash fires its scream sting 500 ms into this line, so it opens with
-    # air rather than a word landing under the sting.
-    ("line-3", "[pause] [strained] Day 7 — the hospitals stopped counting."),
-    ("line-4", "[steady, formal] We declared full containment. I signed that order myself."),
-    # Shortest line in the set, and the admission the whole cold open turns on.
-    # Flattest possible delivery: no emphasis, just dropped in.
-    ("line-5", "[flat, no emphasis] We lied."),
-    ("line-6", "[low, urgent] It was already past the walls. [quiet dread] It came wearing our faces."),
-    ("line-7", "[controlled, grim] Someone in your room carried it in. They look fine."),
-    ("line-8", "[cold, final] One of you is Patient Zero."),
-]
-
-# Line 9 is the tell, and it is two different people in one breath: the commander
-# giving his last order, then — after a real pause — the thing he has not told
-# anyone, said off-mic as if he forgot the transmitter was open. Rendered as two
-# takes so the registers are genuinely different rather than one read with a
-# comma in it.
-LINE_9_COMMAND = "[full command voice, clipped] Trust no one. Find them first."
-LINE_9_WHISPER = "[much quieter, further off-mic, distracted, as if the mic was forgotten] ...it is so cold in here."
-LINE_9_PAUSE_S = 0.9
+SOURCE_EXTS = (".wav", ".m4a", ".mp3", ".aiff", ".flac", ".ogg")
 
 # ── Audio format ──────────────────────────────────────────────────────────────
-# 22.05 kHz mono at 56 kbps. The band-pass below throws away everything above
-# 3.4 kHz anyway, so a higher rate would only be storing silence. The whole set
-# lands around 170 KB, inside the ~300 KB budget the splash was designed for.
+# 22.05 kHz mono at 56 kbps. The band-pass throws away everything above 3.4 kHz
+# anyway, so a higher rate would only store silence. The whole set lands around
+# 170 KB, inside the ~300 KB budget the splash was designed for.
 SAMPLE_RATE = 22050
 BITRATE = "56k"
-# Telephone/field-radio band. The degradation is the costume: it makes a
-# synthetic voice MORE convincing, not less, because a clean synthetic read is
-# where the uncanny valley lives.
+# Telephone/field-radio band — see the note above on why this flatters a home
+# recording rather than exposing it.
 RADIO_FILTER = "highpass=f=180,lowpass=f=3400"
-# loudnorm, not a bare compressor: the set has to sit at one consistent level
-# under the ambient bed, and nine separately-generated clips will not.
+# loudnorm, not a bare compressor: nine separately recorded takes will not sit
+# at one level on their own, and they have to sit under the ambient bed.
 LOUDNESS = "loudnorm=I=-18:TP=-2:LRA=11"
 
 
@@ -125,49 +100,19 @@ def duration_ms(path: Path) -> int:
     return int(round(float(out.stdout.strip()) * 1000))
 
 
-def synth(client, text: str, out_path: Path) -> None:
-    audio = client.text_to_speech.convert(
-        voice_id=VOICE_ID,
-        model_id=MODEL_ID,
-        text=text,
-        voice_settings=VOICE_SETTINGS,
-        output_format="mp3_44100_128",  # render high, degrade deliberately below
-    )
-    with open(out_path, "wb") as f:
-        for chunk in audio:
-            f.write(chunk)
-
-
-def postprocess(src: Path, dst: Path, extra: str = "") -> None:
-    chain = ",".join(filter(None, [RADIO_FILTER, extra, LOUDNESS]))
+def postprocess(src: Path, dst: Path) -> None:
+    """Downmix, band-limit to radio, normalise level, encode."""
+    chain = f"{RADIO_FILTER},{LOUDNESS}"
     run(["ffmpeg", "-y", "-i", str(src), "-ac", "1", "-ar", str(SAMPLE_RATE),
          "-b:a", BITRATE, "-af", chain, str(dst)])
 
 
-def build_line_9(client, tmp: Path, dst: Path) -> None:
-    cmd_raw, whisper_raw = tmp / "l9c_raw.mp3", tmp / "l9w_raw.mp3"
-    synth(client, LINE_9_COMMAND, cmd_raw)
-    synth(client, LINE_9_WHISPER, whisper_raw)
-
-    cmd_p, whisper_p = tmp / "l9c.mp3", tmp / "l9w.mp3"
-    postprocess(cmd_raw, cmd_p)
-    # Pushed further back than the shared chain allows, and rolled off harder —
-    # off-mic means duller, not just quieter.
-    postprocess(whisper_raw, whisper_p, extra="lowpass=f=3000,volume=0.55")
-
-    silence = tmp / "pause.mp3"
-    run(["ffmpeg", "-y", "-f", "lavfi", "-i",
-         f"anullsrc=r={SAMPLE_RATE}:cl=mono", "-t", str(LINE_9_PAUSE_S),
-         "-b:a", BITRATE, str(silence)])
-
-    # Concat via the filter graph with a re-encode, NOT `-c copy`. A copy-concat
-    # of separately-encoded MP3s splices streams whose encoder delay and frame
-    # boundaries do not line up, which shows up as a click or a swallowed
-    # syllable exactly at the pause — i.e. on the most important beat in the set.
-    run(["ffmpeg", "-y", "-i", str(cmd_p), "-i", str(silence), "-i", str(whisper_p),
-         "-filter_complex", "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]",
-         "-map", "[out]", "-ac", "1", "-ar", str(SAMPLE_RATE), "-b:a", BITRATE,
-         str(dst)])
+def find_take(src_dir: Path, line: int) -> Path | None:
+    for ext in SOURCE_EXTS:
+        candidate = src_dir / f"line-{line}{ext}"
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def write_manifest(durations: list[int]) -> None:
@@ -191,124 +136,55 @@ def write_manifest(durations: list[int]) -> None:
     )
 
 
-def from_recordings(src_dir: Path) -> int:
-    """
-    Run your own takes through the same pipeline as the generated set.
-
-    WHY THIS PATH EXISTS
-    The radio treatment is doing a great deal of work, and it works in a
-    home-recorder's favour: the band-pass throws away everything below 180 Hz and
-    above 3.4 kHz, which is exactly where cheap-microphone problems live — room
-    boom, sibilance, hiss, the thinness of a phone capsule. A voice memo through
-    this chain lands much closer to "field radio" than an untreated studio take
-    would, because the degradation IS the costume.
-
-    So the honest comparison is not "my phone vs ElevenLabs". It is "my phone,
-    band-limited and compressed, vs ElevenLabs, band-limited and compressed" —
-    and on the one line that matters (the tell in line 9, where a composed man
-    has to slip register without announcing it), a real person under-performing
-    beats a model over-performing almost every time.
-
-    ⚠ Do not mix sources. Eight synthetic lines and one human line is more
-    jarring than nine of either, because the listener tracks a voice, not a
-    performance. Pick one and record the whole set.
-
-    Accepts line-1..line-9 in anything ffmpeg reads. Loudness is normalised
-    across the set, so takes recorded at different distances still sit level.
-    """
-    missing = [i for i in range(1, 10)
-               if not any((src_dir / f"line-{i}{e}").exists()
-                          for e in (".wav", ".m4a", ".mp3", ".aiff", ".flac", ".ogg"))]
-    if missing:
-        print(f"Missing takes for line(s): {', '.join(map(str, missing))}", file=sys.stderr)
-        print(f"Expected line-N.<wav|m4a|mp3|aiff|flac|ogg> in {src_dir}", file=sys.stderr)
-        return 1
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    durations: list[int] = []
-    for i in range(1, 10):
-        src = next(src_dir / f"line-{i}{e}" for e in (".wav", ".m4a", ".mp3", ".aiff", ".flac", ".ogg")
-                   if (src_dir / f"line-{i}{e}").exists())
-        dst = OUT_DIR / f"line-{i}.mp3"
-        postprocess(src, dst)
-        ms = duration_ms(dst)
-        durations.append(ms)
-        print(f"  line-{i}.mp3  {ms:>5} ms   <- {src.name}")
-
-    write_manifest(durations)
-    total = sum((OUT_DIR / f"line-{i}.mp3").stat().st_size for i in range(1, 10))
-    print(f"\nSet: {total / 1024:.1f} KB (budget ~300 KB), {sum(durations) / 1000:.1f}s of audio")
-    print(f"Manifest: {MANIFEST_TS.relative_to(ROOT)}")
-    print("Captions now pace themselves to these durations. Nothing else to switch on.")
-    return 0
-
-
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--check", nargs="?", type=int, const=1, metavar="N",
-                    help="render only line N (default 1) to audition the voice. "
-                         "Note line 5 is DIRECTED FLAT and is a poor test of "
-                         "atmosphere — use 1, 6 or 9 to judge the read.")
-    ap.add_argument("--from-recordings", metavar="DIR",
-                    help="skip TTS entirely: run your own takes through the same "
-                         "radio treatment, loudness pass and duration manifest. "
-                         "DIR must hold line-1..line-9 in any format ffmpeg reads "
-                         "(.wav/.m4a/.mp3 — a phone voice memo is fine).")
+    ap = argparse.ArgumentParser(
+        description="Process your own splash voiceover takes into the game's set.")
+    ap.add_argument("src", metavar="DIR",
+                    help="directory holding line-1..line-9 in any format ffmpeg reads")
+    ap.add_argument("--only", type=int, metavar="N",
+                    help="process just line N, to audition a take before recording "
+                         "the rest. Does not touch the manifest.")
     args = ap.parse_args()
 
-    # Your own takes need no API key and no network — check before the key gate.
-    if args.from_recordings:
-        return from_recordings(Path(args.from_recordings).expanduser().resolve())
-
-    if not os.environ.get("ELEVENLABS_API_KEY"):
-        print("Set ELEVENLABS_API_KEY first.", file=sys.stderr)
-        return 1
-    try:
-        from elevenlabs.client import ElevenLabs
-    except ImportError:
-        print("pip install elevenlabs", file=sys.stderr)
+    src_dir = Path(args.src).expanduser().resolve()
+    if not src_dir.is_dir():
+        print(f"Not a directory: {src_dir}", file=sys.stderr)
         return 1
 
-    client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
+    if args.only:
+        n = max(1, min(9, args.only))
+        take = find_take(src_dir, n)
+        if not take:
+            print(f"No line-{n}.* in {src_dir}", file=sys.stderr)
+            return 1
+        dst = OUT_DIR / f"line-{n}.mp3"
+        postprocess(take, dst)
+        print(f"{dst}  ({duration_ms(dst)} ms)  <- {take.name}")
+        # Deliberately no manifest write: a partial set would switch the
+        # voiceover on with eight lines missing.
+        print("\nAudition only — manifest untouched, voiceover still off.")
+        return 0
 
-        if args.check is not None:
-            n = max(1, min(9, args.check))
-            if n == 9:
-                dst = OUT_DIR / "line-9.mp3"
-                build_line_9(client, tmp, dst)
-            else:
-                name, text = LINES[n - 1]
-                raw = tmp / "check_raw.mp3"
-                synth(client, text, raw)
-                dst = OUT_DIR / f"{name}.mp3"
-                postprocess(raw, dst)
-            print(f"wrote {dst}  ({duration_ms(dst)} ms)")
-            if n == 5:
-                print("\n⚠ Line 5 is DIRECTED FLAT — deliberately no weight, no fear.")
-                print("  It is the admission, not the warning. Judge the voice on 1, 6 or 9.")
-            print("\nIf you hear the bracket words themselves ('tense', 'controlled'),")
-            print("this model is reading tags aloud — change ELEVENLABS_MODEL_ID.")
-            return 0
+    missing = [i for i in range(1, 10) if not find_take(src_dir, i)]
+    if missing:
+        print(f"Missing take(s) for line(s): {', '.join(map(str, missing))}", file=sys.stderr)
+        print(f"Expected line-N.<{'|'.join(e[1:] for e in SOURCE_EXTS)}> in {src_dir}",
+              file=sys.stderr)
+        # All or nothing: a partial set would leave the splash voicing some
+        # captions and silently skipping others.
+        return 1
 
-        durations: list[int] = []
-        for name, text in LINES:
-            raw = tmp / f"{name}_raw.mp3"
-            synth(client, text, raw)
-            dst = OUT_DIR / f"{name}.mp3"
-            postprocess(raw, dst)
-            ms = duration_ms(dst)
-            durations.append(ms)
-            print(f"  {name}.mp3  {ms:>5} ms")
-
-        dst9 = OUT_DIR / "line-9.mp3"
-        build_line_9(client, tmp, dst9)
-        ms9 = duration_ms(dst9)
-        durations.append(ms9)
-        print(f"  line-9.mp3  {ms9:>5} ms  (command + {LINE_9_PAUSE_S}s + off-mic)")
+    durations: list[int] = []
+    for i in range(1, 10):
+        take = find_take(src_dir, i)
+        assert take is not None  # guarded above
+        dst = OUT_DIR / f"line-{i}.mp3"
+        postprocess(take, dst)
+        ms = duration_ms(dst)
+        durations.append(ms)
+        print(f"  line-{i}.mp3  {ms:>5} ms   <- {take.name}")
 
     write_manifest(durations)
 
