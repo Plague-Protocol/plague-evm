@@ -9,7 +9,13 @@ import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PhaseCoach } from '@/components/game/PhaseCoach'
 import { useNarrative } from '@/hooks/useNarrative'
-import { PlayerCard } from '@/components/game/PlayersGrid'
+import { PlayerCard, useContainmentSweep } from '@/components/game/PlayersGrid'
+import { sweepDurationMs } from '@/lib/containment-sweep'
+import { BarricadeBoard } from '@/components/game/BarricadeBoard'
+import {
+  STATIONS, assignedStation, targetStation, levelForRound,
+  type BarricadeAction, type BarricadeState, type PushOutcome,
+} from '@/lib/barricade'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import { checkChatMessage } from '@/lib/chatFilter'
@@ -107,6 +113,10 @@ interface DemoState {
   infectionChain: string[]
   feed: string[]
   chat: ChatMsg[]
+  /** Bots currently "composing" — drives the same indicator the live game shows. */
+  typingIds: string[]
+  /** Discussion-phase barricade, or null outside that window. */
+  barricade: BarricadeState | null
 }
 
 const INITIAL_STATE: DemoState = {
@@ -125,6 +135,8 @@ const INITIAL_STATE: DemoState = {
   infectionChain: [],
   feed: [],
   chat: [],
+  typingIds: [],
+  barricade: null,
 }
 
 // ── Phase display (mirrors the real game page) ───────────────────────────────
@@ -222,6 +234,10 @@ export default function DemoPage() {
     reveal:     narrative.phaseColors.reveal,
   }
   const [demoCount, setDemoCount] = useState(0)
+  // Read inside scheduled callbacks, which would otherwise close over the value
+  // that was current when the round was set up rather than the run in progress.
+  const demoCountRef = useRef(0)
+  useEffect(() => { demoCountRef.current = demoCount }, [demoCount])
   const [state, setState] = useState<DemoState>(INITIAL_STATE)
   const [countdown, setCountdown] = useState(0)
   const [selectedVote, setSelectedVote] = useState<string | null>(null)
@@ -289,11 +305,41 @@ export default function DemoPage() {
   const botSay = useCallback((botId: string, text: string) => {
     setState(prev => {
       const bot = prev.players.find(p => p.id === botId)
-      if (!bot || bot.eliminated) return prev
-      if (prev.phase === 'voting' || prev.phase === 'gameover' || prev.phase === 'welcome') return prev
-      return { ...prev, chat: [...prev.chat, { senderId: botId, name: bot.name, text }].slice(-200) }
+      const typingIds = prev.typingIds.filter(id => id !== botId)
+      if (!bot || bot.eliminated) return { ...prev, typingIds }
+      if (prev.phase === 'voting' || prev.phase === 'gameover' || prev.phase === 'welcome') {
+        return { ...prev, typingIds }
+      }
+      return {
+        ...prev,
+        typingIds,
+        chat: [...prev.chat, { senderId: botId, name: bot.name, text }].slice(-200),
+      }
     })
   }, [])
+
+  /**
+   * A bot composing before it speaks.
+   *
+   * The live game's typing indicator is a real socket signal
+   * (hooks/usePresence.ts); here it is simulated, which is the honest thing for
+   * a demo to do — and it matters more here than it looks. Chatter that
+   * materialises instantly reads as printed output; the same line preceded by
+   * two seconds of "…is typing" reads as somebody deciding what to say to you.
+   *
+   * The delay scales with the length of the line so a one-word reply does not
+   * take as long to "write" as an accusation.
+   */
+  const botType = useCallback((botId: string, text: string) => {
+    setState(prev => {
+      const bot = prev.players.find(p => p.id === botId)
+      if (!bot || bot.eliminated) return prev
+      if (prev.phase === 'voting' || prev.phase === 'gameover' || prev.phase === 'welcome') return prev
+      if (prev.typingIds.includes(botId)) return prev
+      return { ...prev, typingIds: [...prev.typingIds, botId] }
+    })
+    schedule(900 + Math.min(2_600, text.length * 45), () => botSay(botId, text))
+  }, [schedule, botSay])
 
   /** Schedule scattered bot chatter across a phase window. */
   const scheduleBotChatter = useCallback((kind: 'starting' | 'discussion', windowSecs: number) => {
@@ -322,10 +368,124 @@ export default function DemoPage() {
         } else {
           line = pick(DEFEND_LINES)
         }
-        botSay(bot.id, line)
+        botType(bot.id, line)
       })
     }
-  }, [schedule, botSay])
+  }, [schedule, botType])
+
+  // ── Barricade (simulated) ──────────────────────────────────────────────────
+  //
+  // The live game resolves this on the server (backend/src/lib/barricade.ts is
+  // the authority, and is where the rules are tested). The demo simulates it,
+  // the same way it already simulates the chain, the votes and the payout —
+  // there is no server here to ask.
+  //
+  // What is NOT simulated is the shape: stations and assignments come from the
+  // shared lib/barricade.ts mirror, so a player who tries the demo and then
+  // plays for real sees the same board laid out the same way.
+  const botIntentsRef = useRef<Map<string, BarricadeAction>>(new Map())
+  const [myBarricadeChoice, setMyBarricadeChoice] = useState<BarricadeAction>({ kind: 'hold' })
+
+  const resolveBarricadePush = useCallback((push: number, roomKey: string) => {
+    setState(prev => {
+      if (prev.phase !== 'discussion' || !prev.barricade) return prev
+      const station = targetStation(roomKey, prev.round, push)
+      const alive = prev.players.filter(p => !p.eliminated)
+
+      let present = 0
+      let effective = 0
+      const exposed: string[] = []
+      for (const p of alive) {
+        const seat = prev.players.indexOf(p)
+        const intent = p.isYou
+          ? myBarricadeChoice
+          : botIntentsRef.current.get(p.id) ?? { kind: 'hold' as const }
+        const at = intent.kind === 'move' ? intent.station : assignedStation(roomKey, prev.round, seat)
+        if (at !== station) continue
+        present++
+        exposed.push(p.id)
+        // Only a genuinely infected player subtracts — mirrors resolvePush.
+        if (intent.kind === 'sabotage' && p.status === 'infected') effective--
+        else effective++
+      }
+
+      const held = effective >= prev.barricade.threshold
+      const outcome: PushOutcome = {
+        push, station, held, present,
+        // A station that holds names nobody; one that breaks names everyone who
+        // was there, innocent or not. That asymmetry is the entire point.
+        exposed: held ? [] : exposed,
+        at: Date.now(),
+      }
+      const feed = [
+        ...prev.feed,
+        held
+          ? `The ${STATIONS[station]} held. ${present} defended it.`
+          : `The ${STATIONS[station]} BROKE. ${present === 0 ? 'Nobody was there.' : 'Everyone there has been seen.'}`,
+      ].slice(-60)
+
+      return {
+        ...prev,
+        feed,
+        barricade: { ...prev.barricade, next: null, outcomes: [...prev.barricade.outcomes, outcome] },
+      }
+    })
+    botIntentsRef.current.clear()
+    setMyBarricadeChoice({ kind: 'hold' })
+  }, [myBarricadeChoice])
+
+  const startBarricade = useCallback((roomKey: string, windowSecs: number) => {
+    botIntentsRef.current.clear()
+    setMyBarricadeChoice({ kind: 'hold' })
+    setState(prev => ({
+      ...prev,
+      barricade: {
+        roomId: roomKey,
+        round: prev.round,
+        stations: STATIONS,
+        // The night's condition. The demo runs the same arc on the same rounds
+        // as the live game so the two teach the same thing.
+        threshold: levelForRound(prev.round).threshold,
+        pushes: levelForRound(prev.round).pushes,
+        level: levelForRound(prev.round).label,
+        next: null,
+        outcomes: [],
+      },
+    }))
+
+    // Evenly spread between the same bounds the server uses, for however many
+    // pushes this round's level calls for.
+    const count = levelForRound(stateRef.current.round).pushes
+    const fractions = Array.from({ length: count }, (_, i) =>
+      count <= 1 ? 0.25 : 0.25 + (0.82 - 0.25) * (i / (count - 1)))
+    fractions.forEach((f, push) => {
+      const at = windowSecs * 1_000 * f
+      schedule(Math.max(0, at - 8_000), () => {
+        const now = stateRef.current
+        if (now.phase !== 'discussion') return
+        const station = targetStation(roomKey, now.round, push)
+
+        // Bot intents, decided at the warning. Most hold — that is the common,
+        // unremarkable play, and it is what makes silence uninformative. A few
+        // reposition; infected bots sometimes sabotage where they stand.
+        for (const bot of now.players.filter(p => !p.isYou && !p.eliminated)) {
+          if (bot.status === 'infected' && chance(0.45)) {
+            botIntentsRef.current.set(bot.id, { kind: 'sabotage' })
+          } else if (chance(0.3)) {
+            botIntentsRef.current.set(bot.id, { kind: 'move', station })
+          }
+        }
+
+        setState(p => p.barricade
+          ? { ...p, barricade: { ...p.barricade, next: { push, station, at: Date.now() + 8_000 } } }
+          : p)
+      })
+      schedule(at, () => {
+        if (stateRef.current.phase !== 'discussion') return
+        resolveBarricadePush(push, roomKey)
+      })
+    })
+  }, [schedule, resolveBarricadePush])
 
   // ── Phase engine ───────────────────────────────────────────────────────────
   // Forward declarations via refs so callbacks can chain in any order.
@@ -356,6 +516,7 @@ export default function DemoPage() {
       return {
         ...prev,
         phase: 'gameover',
+        typingIds: [],
         players,
         outcome,
         maxRoundsHit,
@@ -443,7 +604,7 @@ export default function DemoPage() {
         }
       }
 
-      return { ...prev, phase: 'reveal', players, votes, eliminatedIds, noElimination: eliminatedIds.length === 0, feed: feed.slice(-60) }
+      return { ...prev, phase: 'reveal', typingIds: [], players, votes, eliminatedIds, noElimination: eliminatedIds.length === 0, feed: feed.slice(-60) }
     })
     startCountdown(REVEAL_SECS, () => checkEndRef.current())
   }, [clearTimers, startCountdown])
@@ -483,6 +644,10 @@ export default function DemoPage() {
     setState(prev => ({
       ...prev,
       phase: 'voting',
+      // clearTimers() above cancels any pending botSay, so the composing set has
+      // to be dropped with it or a bot types forever into a silent phase.
+      typingIds: [],
+      barricade: null,
       feed: [...prev.feed, 'Voting is open. Skipping your vote records a self-vote against you.'].slice(-60),
     }))
     // Bots vote at scattered times.
@@ -518,6 +683,8 @@ export default function DemoPage() {
       ...prev,
       phase: 'infection',
       round: n,
+      typingIds: [],
+      barricade: null,
       votes: {},
       eliminatedIds: [],
       noElimination: false,
@@ -591,6 +758,7 @@ export default function DemoPage() {
 
       startCountdown(DISCUSSION_SECS, () => goVotingRef.current())
       scheduleBotChatter('discussion', DISCUSSION_SECS)
+      startBarricade(`demo-${demoCountRef.current}`, DISCUSSION_SECS)
 
       // Some clean bots prove innocence with a Shield mid-discussion.
       const s = stateRef.current
@@ -610,7 +778,7 @@ export default function DemoPage() {
         })
       }
     })
-  }, [clearTimers, startCountdown, schedule, scheduleBotChatter, finishGame])
+  }, [clearTimers, startCountdown, schedule, scheduleBotChatter, finishGame, startBarricade])
 
   // Keep the forward-declaration refs pointing at the latest callbacks.
   useEffect(() => {
@@ -694,14 +862,30 @@ export default function DemoPage() {
       schedule(1_200 + Math.random() * 2_500, () => {
         const now = stateRef.current
         const bots = now.players.filter(p => !p.isYou && !p.eliminated)
-        if (bots.length > 0) botSay(pick(bots).id, pick(REPLY_LINES))
+        if (bots.length > 0) botType(pick(bots).id, pick(REPLY_LINES))
       })
     }
-  }, [chatInput, schedule, botSay])
+  }, [chatInput, schedule, botType])
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const { phase, round, players, votes, eliminatedIds, noElimination, outcome, maxRoundsHit, winners, potPerWinner, shieldSet, feed, chat } = state
+  const { phase, round, players, votes, eliminatedIds, noElimination, outcome, maxRoundsHit, winners, potPerWinner, shieldSet, feed, chat, typingIds, barricade } = state
+
+  // Round-opening containment sweep — the same beat, and the same timing rules,
+  // the live game runs (lib/containment-sweep.ts). Seeded from the demo run and
+  // round so it differs each round; anchored to the moment the infection phase
+  // opened. Status-blind here too: it takes a seat count, not the roster.
+  const [demoSweep, setDemoSweep] = useState<{ seed: string; anchor: number } | null>(null)
+  useEffect(() => {
+    if (phase !== 'infection' || round < 1) { setDemoSweep(null); return }
+    setDemoSweep({ seed: `demo-${demoCount}:${round}`, anchor: Date.now() })
+    const t = setTimeout(() => setDemoSweep(null), sweepDurationMs(players.length))
+    return () => clearTimeout(t)
+  // Keyed to the round opening, not the roster: re-running as players change
+  // would restart the beat mid-sweep.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, round, demoCount])
+  const demoScanStates = useContainmentSweep(players.length, demoSweep?.seed ?? null, demoSweep?.anchor ?? 0)
 
   const you = players.find(p => p.isYou)!
 
@@ -1014,6 +1198,26 @@ export default function DemoPage() {
                     myShieldActive={youShielded}
                     othersShieldCount={round > 0 ? players.filter(p => !p.isYou && !p.eliminated && p.shieldRound === round).length : 0}
                   />
+                  {phase === 'discussion' && barricade && (() => {
+                    const you = players.find(p => p.isYou)
+                    const mySeat = you ? players.indexOf(you) : -1
+                    return (
+                      <div className="mb-4">
+                        <BarricadeBoard
+                          state={barricade}
+                          myStation={you && !you.eliminated && mySeat >= 0
+                            ? assignedStation(barricade.roomId, barricade.round, mySeat)
+                            : null}
+                          myChoice={myBarricadeChoice}
+                          canSabotage={!!you && !you.eliminated && you.status === 'infected'}
+                          disabled={!you || you.eliminated || !barricade.next}
+                          nameOf={id => players.find(p => p.id === id)?.name ?? id}
+                          onChoose={setMyBarricadeChoice}
+                        />
+                      </div>
+                    )
+                  })()}
+
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {players.map((p, i) => {
                       const selected = phase === 'voting' && selectedVote === p.id
@@ -1032,6 +1236,7 @@ export default function DemoPage() {
                           justEliminated={justRevealed}
                           votedByMe={phase === 'voting' && votes[YOU_ID] === p.id}
                           clickable={clickable}
+                          scanState={demoScanStates[i] ?? 'idle'}
                           onClick={() => clickable && setSelectedVote(prev => prev === p.id ? null : p.id)}
                         >
                           {p.isYou && <span className="block font-mono text-[9px] font-normal lowercase tracking-wider mt-1" style={{ color: 'inherit', opacity: 0.7 }}>(you)</span>}
@@ -1170,7 +1375,23 @@ export default function DemoPage() {
                       ))
                     )}
                   </div>
-                  <div className="mt-3 flex gap-2 flex-shrink-0">
+                  {/* Composing indicator — simulated here, a real socket signal
+                      in the live game. Reserves its line so the log never
+                      reflows as bots start and stop. */}
+                  <div
+                    className="mt-1 h-4 flex-shrink-0 overflow-hidden font-mono text-[10px] italic"
+                    style={{ color: '#7d9a72' }}
+                    aria-live="polite"
+                  >
+                    {typingIds.length > 0 && (
+                      <span style={{ animation: 'presence-fade 1.8s ease-in-out infinite' }}>
+                        {typingIds.length === 1
+                          ? `${players.find(p => p.id === typingIds[0])?.name ?? 'Someone'} is typing…`
+                          : `${typingIds.length} players are typing…`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex gap-2 flex-shrink-0">
                     <input
                       type="text"
                       placeholder={chatBlockedReason ?? 'Say something…'}
