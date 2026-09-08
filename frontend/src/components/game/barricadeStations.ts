@@ -30,14 +30,23 @@
  * The zombies stay outside, where being visibly zombies costs nothing.
  */
 
+/**
+ * Compound proportions.
+ *
+ * The first pass gave the near wall 80% of the canvas width against ~100px of
+ * depth — an 8:1 corridor, not a courtyard, which is a large part of why it
+ * read as a diagram. Pulling the walls in does two things at once: the
+ * enclosure gets plausible proportions, and the margin outside becomes wide
+ * enough for the treeline and the horde to be somewhere rather than a border.
+ */
 /** Horizontal inset of the NEAR (south) wall — the widest edge. */
-const NEAR_INSET_X = 0.10
-/** Horizontal inset of the FAR (north) wall. The gap between the two is the
- *  whole perspective effect, so it wants to be generous. */
-const FAR_INSET_X = 0.30
+const NEAR_INSET_X = 0.20
+/** Horizontal inset of the FAR (north) wall. The gap between the two IS the
+ *  perspective, so it stays generous. */
+const FAR_INSET_X = 0.36
 /** Where the far and near walls sit in the usable vertical band. */
-const FAR_Y = 0.34
-const NEAR_Y = 0.92
+const FAR_Y = 0.30
+const NEAR_Y = 0.93
 
 export interface Corners {
   /** Far-left, far-right, near-right, near-left — clockwise from the back. */

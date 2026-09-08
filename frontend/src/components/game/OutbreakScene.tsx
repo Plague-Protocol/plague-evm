@@ -317,17 +317,37 @@ function noise(i: number, salt = 1): number {
  * they are keeping out. Trunks are now lit from the compound's own lamplight,
  * so the treeline is legible without competing with the figures.
  */
-function drawOutside(
-  ctx: CanvasRenderingContext2D, w: number, h: number, c: Corners, t: number,
-) {
-  // Night sky behind the trees, warming very slightly toward the compound.
-  const sky = ctx.createLinearGradient(0, 0, 0, c.fl.y + 20)
+/**
+ * Sky and treeline, rendered ONCE per resize into an offscreen canvas and
+ * blitted each frame.
+ *
+ * These are static: 38 tree polygons and a sky gradient that never change until
+ * the canvas does. Rebuilding them every frame meant allocating gradients at
+ * 60 Hz, which is the classic canvas performance smell and the thing that would
+ * have made a taller cam expensive. Caching it is what pays for the extra
+ * height — the per-frame cost is now one drawImage.
+ *
+ * The sway is gone with it, deliberately. Trees that shift are a per-frame cost
+ * for something nobody looks at, and the drifting fog (still live, still cheap)
+ * already supplies the motion the backdrop needs.
+ */
+function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null
+  const off = document.createElement('canvas')
+  off.width = Math.max(1, Math.floor(w * dpr))
+  off.height = Math.max(1, Math.floor(h * dpr))
+  const ctx = off.getContext('2d')
+  if (!ctx) return null
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+  const horizon = c.fl.y + 20
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon)
   sky.addColorStop(0, '#050a06')
   sky.addColorStop(1, '#0b1410')
   ctx.fillStyle = sky
-  ctx.fillRect(0, 0, w, c.fl.y + 20)
+  ctx.fillRect(0, 0, w, horizon)
 
-  // Treeline: two ranks, the far one dimmer and thinner, for depth.
+  // Two ranks: the far one dimmer and thinner, for depth.
   for (const rank of [0, 1] as const) {
     const baseY = c.fl.y * (rank === 0 ? 0.72 : 0.94)
     const count = rank === 0 ? 22 : 16
@@ -335,33 +355,80 @@ function drawOutside(
       const x = noise(i + rank * 50) * (w + 60) - 30
       const th = c.fl.y * (rank === 0 ? 0.34 : 0.5) * (0.6 + noise(i, 3) * 0.7)
       const halfW = (rank === 0 ? 5 : 8) * (0.7 + noise(i, 7) * 0.6)
-      const sway = Math.sin(t * 0.4 + i) * (rank === 0 ? 0.8 : 1.6)
       ctx.fillStyle = rank === 0 ? 'rgba(22,38,26,0.85)' : 'rgba(14,26,17,0.95)'
       ctx.beginPath()
-      ctx.moveTo(x - halfW + sway, baseY)
-      ctx.lineTo(x + sway, baseY - th)
-      ctx.lineTo(x + halfW + sway, baseY)
+      ctx.moveTo(x - halfW, baseY)
+      ctx.lineTo(x, baseY - th)
+      ctx.lineTo(x + halfW, baseY)
       ctx.closePath()
       ctx.fill()
-      // Trunk
       ctx.fillStyle = 'rgba(10,16,10,0.9)'
-      ctx.fillRect(x - 1.2 + sway, baseY - 2, 2.4, 6)
+      ctx.fillRect(x - 1.2, baseY - 2, 2.4, 6)
     }
+  }
+
+  // Lamplight on the compound floor. Static too, so it is baked in here rather
+  // than allocating a radial gradient every frame — and it is drawn before the
+  // horde and the walls, which is the order the live pass needs anyway.
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(c.fl.x, c.fl.y)
+  ctx.lineTo(c.fr.x, c.fr.y)
+  ctx.lineTo(c.nr.x, c.nr.y)
+  ctx.lineTo(c.nl.x, c.nl.y)
+  ctx.closePath()
+  const gx = (c.fl.x + c.nr.x) / 2
+  const gy = (c.fl.y + c.nl.y) / 2
+  const glow = ctx.createRadialGradient(gx, gy, 4, gx, gy, Math.max(c.nr.x - c.nl.x, c.nl.y - c.fl.y) * 0.7)
+  glow.addColorStop(0, 'rgba(120,150,60,0.14)')
+  glow.addColorStop(1, 'rgba(20,32,18,0.5)')
+  ctx.fillStyle = glow
+  ctx.fill()
+  ctx.restore()
+
+  return off
+}
+
+/**
+ * One fog puff, drawn once and blitted wherever it is needed.
+ *
+ * Five radial gradients per frame is a small cost repeated 60 times a second
+ * for a soft grey blob. As a sprite it becomes five drawImage calls.
+ */
+function renderFogSprite(r: number, dpr: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null
+  const off = document.createElement('canvas')
+  off.width = off.height = Math.max(1, Math.floor(r * 2 * dpr))
+  const ctx = off.getContext('2d')
+  if (!ctx) return null
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const g = ctx.createRadialGradient(r, r, 0, r, r, r)
+  g.addColorStop(0, 'rgba(120,150,120,0.05)')
+  g.addColorStop(1, 'rgba(120,150,120,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, r * 2, r * 2)
+  return off
+}
+
+function drawOutside(
+  ctx: CanvasRenderingContext2D, w: number, h: number, c: Corners, t: number,
+  backdrop: HTMLCanvasElement | null,
+  fog: HTMLCanvasElement | null,
+) {
+  if (backdrop) {
+    ctx.drawImage(backdrop, 0, 0, w, h)
   }
 
   // Ground fog drifting across the treeline base — cheap, and it does more for
   // "outside at night" than any amount of extra geometry.
-  ctx.save()
-  for (let i = 0; i < 5; i++) {
-    const y = c.fl.y * (0.78 + i * 0.05)
-    const drift = ((t * (6 + i * 3) + i * 200) % (w + 300)) - 150
-    const g = ctx.createRadialGradient(drift, y, 0, drift, y, 130)
-    g.addColorStop(0, 'rgba(120,150,120,0.05)')
-    g.addColorStop(1, 'rgba(120,150,120,0)')
-    ctx.fillStyle = g
-    ctx.fillRect(drift - 130, y - 40, 260, 80)
+  if (fog) {
+    const r = fog.width / 2
+    for (let i = 0; i < 5; i++) {
+      const y = c.fl.y * (0.78 + i * 0.05)
+      const drift = ((t * (6 + i * 3) + i * 200) % (w + 300)) - 150
+      ctx.drawImage(fog, drift - r / 2, y - r / 2, r, r)
+    }
   }
-  ctx.restore()
 }
 
 /**
@@ -527,26 +594,6 @@ function drawWalls(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
   }
 }
 
-/** Lamplight inside the compound — the reason the survivors are visible and the
- *  forest is not, and the thing that makes the enclosure feel occupied. */
-function drawCompoundGround(ctx: CanvasRenderingContext2D, c: Corners) {
-  ctx.save()
-  ctx.beginPath()
-  ctx.moveTo(c.fl.x, c.fl.y)
-  ctx.lineTo(c.fr.x, c.fr.y)
-  ctx.lineTo(c.nr.x, c.nr.y)
-  ctx.lineTo(c.nl.x, c.nl.y)
-  ctx.closePath()
-  const cx = (c.fl.x + c.nr.x) / 2
-  const cy = (c.fl.y + c.nl.y) / 2
-  const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.max(c.nr.x - c.nl.x, c.nl.y - c.fl.y) * 0.7)
-  g.addColorStop(0, 'rgba(120,150,60,0.14)')
-  g.addColorStop(1, 'rgba(20,32,18,0.5)')
-  ctx.fillStyle = g
-  ctx.fill()
-  ctx.restore()
-}
-
 function drawScene(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -556,6 +603,8 @@ function drawScene(
   active: ActiveCue | null,
   myShield: boolean,
   bar: BarricadeView | null,
+  backdrop: HTMLCanvasElement | null,
+  fog: HTMLCanvasElement | null,
 ) {
   ctx.clearRect(0, 0, w, h)
 
@@ -582,8 +631,7 @@ function drawScene(
   // walls exist to keep out — without it, a barricade is a fence.
   if (bar) {
     const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
-    drawOutside(ctx, w, h, c, t)
-    drawCompoundGround(ctx, c)
+    drawOutside(ctx, w, h, c, t, backdrop, fog)
     // Horde before the walls: they are outside, so the boards occlude them.
     drawHorde(ctx, c, t, bar)
     drawWalls(ctx, c, t, bar)
@@ -670,6 +718,10 @@ export function OutbreakScene({
   const breachTRef = useRef(0)
   /** Set when placement changes; the sim loop clears pauses and re-forms. */
   const reformRef = useRef(false)
+  /** Cached sky + treeline. Rebuilt on resize only — see renderBackdrop. */
+  const backdropRef = useRef<HTMLCanvasElement | null>(null)
+  /** One fog puff, blitted five times per frame instead of five gradients. */
+  const fogRef = useRef<HTMLCanvasElement | null>(null)
   const lastResultKeyRef = useRef(-1)
   const epochRef = useRef(0)
   const bodiesRef = useRef<Body[]>([])
@@ -706,6 +758,8 @@ export function OutbreakScene({
       canvas.width = Math.max(1, Math.floor(w * dpr))
       canvas.height = Math.max(1, Math.floor(h * dpr))
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      backdropRef.current = renderBackdrop(w, h, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dpr)
+      fogRef.current ??= renderFogSprite(130, dpr)
       for (const b of bodiesRef.current) {
         b.x = Math.min(Math.max(b.x, PAD_X), Math.max(PAD_X, w - PAD_X))
         b.y = Math.min(Math.max(b.y, PAD_TOP), Math.max(PAD_TOP, h - PAD_BOTTOM))
@@ -717,7 +771,7 @@ export function OutbreakScene({
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, fogRef.current)
     }
     renderRef.current = render
 
@@ -1176,7 +1230,18 @@ export function OutbreakScene({
       className={`relative overflow-hidden rounded-lg border ${className}`}
       style={{ borderColor: 'rgba(107,142,35,0.15)', background: 'linear-gradient(180deg, #050a05 0%, #0a120a 100%)' }}
     >
-      <div ref={wrapRef} className="relative h-[190px] w-full sm:h-[230px]">
+      {/* Height is what the scene needs, not width.
+          At 190/230px against a ~1060px column this was a 4.6:1 letterbox: the
+          compound got ~100px of depth across ~850px of width, so the
+          perspective had no room to read and the whole thing looked like a plan
+          view. Taller fixes that; wider would have made it worse.
+
+          Mobile stays comparatively short on purpose — vertical space is scarce
+          there, chat and the wall controls are directly below, and MiniPay
+          users should not have to scroll past a cutscene to reach the game.
+          The canvas is DPR-capped at 2 and the backdrop is cached, so the extra
+          pixels cost one drawImage per frame. */}
+      <div ref={wrapRef} className="relative h-[240px] w-full sm:h-[400px]">
         <canvas ref={canvasRef} aria-hidden="true" className="block h-full w-full" />
         {/* CCTV scanlines */}
         <div
