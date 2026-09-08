@@ -190,35 +190,25 @@ describe('barricade', () => {
       expect(levelForRound(-3)).toEqual(levelForRound(1))
     })
 
-    // The escalation must bite on the resolution, not just on the schedule.
-    it('raises the bar a station has to clear late in the game', () => {
-      // Two defenders hold at the opening level and fail once it tightens.
-      const early = [1, 2].find(r => levelForRound(r).threshold === 2 && targetStation(ROOM, r, 0) === 0)
-      const late = Array.from({ length: 60 }, (_, i) => i + 5)
-        .find(r => levelForRound(r).threshold === 3 && targetStation(ROOM, r, 0) === 0)
-      expect(early).toBeDefined()
-      expect(late).toBeDefined()
-
-      const earlyOut = resolvePush({
-        roomId: ROOM, round: early!, push: 0,
-        players: rosterAt(early!, 0, 2), actions: new Map(),
-      })
-      const lateOut = resolvePush({
-        roomId: ROOM, round: late!, push: 0,
-        players: rosterAt(late!, 0, 2), actions: new Map(),
-      })
-      expect(earlyOut.held).toBe(true)
-      expect(lateOut.held).toBe(false)
+    // Escalation has to bite somewhere. It is the number of walls attacked
+    // per round, not the bar any single wall has to clear — see the note on
+    // LEVELS for why raising the bar would cost the game its ambiguity.
+    it('sends more pushes as the night goes on', () => {
+      expect(levelForRound(9).pushes).toBeGreaterThan(levelForRound(1).pushes)
+      let prev = levelForRound(1).pushes
+      for (let r = 2; r <= 12; r++) {
+        const cur = levelForRound(r).pushes
+        expect(cur).toBeGreaterThanOrEqual(prev)
+        prev = cur
+      }
     })
 
-    it('still lets a bigger crew hold at the hardest level', () => {
-      const late = Array.from({ length: 60 }, (_, i) => i + 5)
-        .find(r => levelForRound(r).threshold === 3 && targetStation(ROOM, r, 0) === 0)!
-      const out = resolvePush({
-        roomId: ROOM, round: late, push: 0,
-        players: rosterAt(late, 0, 3), actions: new Map(),
-      })
-      expect(out.held).toBe(true)
+    it('still cannot cover every wall, at any level', () => {
+      // Four walls at a threshold of 2 needs eight bodies to be safe
+      // everywhere. A room never has that many, so something is always open.
+      for (const round of [1, 5, 11]) {
+        expect(STATIONS.length * levelForRound(round).threshold).toBeGreaterThan(6)
+      }
     })
 
     // Escalation must never turn into a reflex or connection test.
@@ -266,6 +256,59 @@ describe('barricade', () => {
       const home = assignedStation(ROOM, 4, 0)
       const counts = occupancy(ROOM, 4, players, new Map([['0xa', { kind: 'sabotage' }]]))
       expect(counts[home]).toBe(1)
+    })
+  })
+
+  describe('ambiguity — the property the whole design rests on', () => {
+    /**
+     * A wall that breaks with exactly ONE person on it must be explicable both
+     * ways: they sabotaged it, or nobody came to help them.
+     *
+     * This is what a threshold of 1 would destroy. At 1, a lone clean defender
+     * contributes +1 and holds, so a solo break could only ever be sabotage —
+     * one name on the board would be a confirmed carrier, and the barricade
+     * would start producing proofs instead of arguments.
+     */
+    it('a lone defender breaking a wall could be innocent OR guilty', () => {
+      for (const round of [1, 2, 3, 4, 6, 9]) {
+        const target = targetStation(ROOM, round, 0)
+        const [seat] = rosterAt(round, target, 1)
+
+        const innocent = resolvePush({
+          roomId: ROOM, round, push: 0,
+          players: [{ ...seat, infected: false }], actions: new Map(),
+        })
+        const guilty = resolvePush({
+          roomId: ROOM, round, push: 0,
+          players: [{ ...seat, infected: true }],
+          actions: new Map([[seat.address, { kind: 'sabotage' } as BarricadeAction]]),
+        })
+
+        // Both break, and both name exactly that one person — so the board
+        // looks identical either way.
+        expect(innocent.held).toBe(false)
+        expect(guilty.held).toBe(false)
+        expect(innocent.exposed).toEqual(guilty.exposed)
+      }
+    })
+
+    it('holding is still achievable without sabotage at every level', () => {
+      for (const round of [1, 2, 3, 4, 6, 9]) {
+        const target = targetStation(ROOM, round, 0)
+        const need = levelForRound(round).threshold
+        const out = resolvePush({
+          roomId: ROOM, round, push: 0,
+          players: rosterAt(round, target, need), actions: new Map(),
+        })
+        expect(out.held).toBe(true)
+      }
+    })
+
+    // Escalation moved to the push count precisely so this stays true.
+    it('never raises the bar on a single wall', () => {
+      for (let r = 1; r <= 15; r++) {
+        expect(levelForRound(r).threshold).toBe(levelForRound(1).threshold)
+      }
     })
   })
 

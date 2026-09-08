@@ -73,7 +73,7 @@ export interface BarricadeState {
 const LEVELS = [
   { from: 1, pushes: 3, threshold: 2, label: 'Contained' },
   { from: 3, pushes: 4, threshold: 2, label: 'Spreading' },
-  { from: 5, pushes: 4, threshold: 3, label: 'Overrun' },
+  { from: 6, pushes: 5, threshold: 2, label: 'Overrun' },
 ] as const
 
 export interface BarricadeLevel {

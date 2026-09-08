@@ -80,10 +80,34 @@ export type StationId = 0 | 1 | 2 | 3
  * The names are player-facing (shown as the night's condition), so they should
  * read as weather, not as a difficulty setting.
  */
+/**
+ * 🚨 THE THRESHOLD STAYS AT 2. ESCALATE WITH PUSHES, NOT WITH THE BAR.
+ *
+ * Two is the smallest number that keeps a solo exposure AMBIGUOUS, and the
+ * ambiguity is the entire product:
+ *
+ *   threshold 1, one defender — a clean player alone contributes +1 and HOLDS,
+ *     so the only way a wall with one person on it can break is if that person
+ *     sabotaged it. A single name on the board would be a confirmed carrier.
+ *     The barricade would stop generating arguments and start generating
+ *     proofs, and the vote — the thing that costs money — becomes a formality.
+ *
+ *   threshold 2, one defender — a clean player alone contributes +1 and still
+ *     fails to hold, exactly as a saboteur's -1 fails to hold. One name on the
+ *     board means "either they sabotaged it or nobody helped them", which is
+ *     the argument this exists to start.
+ *
+ * Raising it does not break that property, but it makes walls fail so often
+ * that exposure stops meaning anything either — noise instead of a tell.
+ *
+ * So difficulty escalates by the number of pushes: more walls hit per round,
+ * more chances something is under-defended, and a room of five still cannot
+ * cover four walls. See the ambiguity test in barricade.test.ts.
+ */
 const LEVELS = [
   { from: 1, pushes: 3, threshold: 2, label: 'Contained' },
   { from: 3, pushes: 4, threshold: 2, label: 'Spreading' },
-  { from: 5, pushes: 4, threshold: 3, label: 'Overrun' },
+  { from: 6, pushes: 5, threshold: 2, label: 'Overrun' },
 ] as const
 
 export interface BarricadeLevel {

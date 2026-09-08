@@ -512,53 +512,110 @@ function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: numb
   ctx.restore()
 }
 
-/**
- * The horde: bodies circling the compound, probing it, massing where the next
- * push is coming.
- *
- * Motion is derived from time and index rather than simulated, so a hundred of
- * them cost nothing and nothing has to be stored. Sizes scale with depth so the
- * ones behind the far wall sit correctly against the trees.
- */
-function drawHorde(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: BarricadeView) {
-  const count = Math.min(40, 12 + bar.infectedCount * 5)
+/** A member of the horde. Stateful on purpose — see stepHorde. */
+interface Walker {
+  x: number
+  y: number
+  tx: number
+  ty: number
+  phase: number
+  /** Seconds until it picks somewhere new to shamble toward. */
+  retargetIn: number
+}
+
+const HORDE_SPEED = 13
+
+/** Somewhere outside the walls for a walker to head for. */
+function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: number) {
+  // Most of them drift toward whatever is being pushed; the rest keep working
+  // the perimeter, so the picture never empties out on one side.
+  if (threatened !== null && r1 < 0.66) {
+    const seg = wallSegment(threatened, c)
+    const out = wallOutward(threatened, c)
+    const depth = 10 + r2 * 26
+    return {
+      x: seg.x1 + (seg.x2 - seg.x1) * r2 + out.dx * depth,
+      y: seg.y1 + (seg.y2 - seg.y1) * r2 + out.dy * depth,
+    }
+  }
   const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
   const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
   const spanX = (c.nr.x - c.nl.x) / 2
   const spanY = (c.nl.y - c.fl.y) / 2
-
-  // Collected then depth-sorted: drawn in index order, a walker behind the
-  // compound could paint over one standing in front of it.
-  const placed: { x: number; y: number; s: number; phase: number }[] = []
-  for (let i = 0; i < count; i++) {
-    // Two thirds converge on the threatened wall; the rest keep circling, so
-    // the pressure is legible without the rest of the picture emptying out.
-    const massing = bar.threatened !== null && i % 3 !== 0
-    let x: number
-    let y: number
-    if (massing && bar.threatened !== null) {
-      const seg = wallSegment(bar.threatened, c)
-      const out = wallOutward(bar.threatened, c)
-      const k = noise(i, 11)
-      const depth = 8 + noise(i, 13) * 30 + Math.sin(t * 1.6 + i) * 3
-      x = seg.x1 + (seg.x2 - seg.x1) * k + out.dx * depth
-      y = seg.y1 + (seg.y2 - seg.y1) * k + out.dy * depth
-    } else {
-      // A slow patrol around the perimeter, each at its own rate — they are
-      // looking for a way in, not orbiting a point.
-      // Patrol the perimeter, but on the GROUND. The orbit is squashed in y and
-      // biased downward so walkers track the floor plane instead of drifting up
-      // into the treeline, where they looked like they were flying.
-      const a = noise(i, 17) * Math.PI * 2 + t * (0.05 + noise(i, 19) * 0.06)
-      const r = 1.22 + noise(i, 23) * 0.42
-      x = cx + Math.cos(a) * spanX * r
-      y = cy + Math.sin(a) * spanY * r * 0.72 + spanY * 0.18
-    }
-    const d = depthAt(y, c)
-    placed.push({ x, y, s: 0.85 + d * 0.7, phase: t * 3.4 + i })
+  const a = r1 * Math.PI * 2
+  const rad = 1.2 + r2 * 0.45
+  return {
+    x: cx + Math.cos(a) * spanX * rad,
+    y: cy + Math.sin(a) * spanY * rad * 0.72 + spanY * 0.18,
   }
-  placed.sort((a, b) => a.y - b.y)
-  for (const p of placed) drawWalker(ctx, p.x, p.y, p.s, p.phase)
+}
+
+/**
+ * Walks the horde.
+ *
+ * 🚨 THEY MOVE. They do not appear.
+ *
+ * The first version computed every position from time and index, so the two
+ * thirds that converge on a threatened wall TELEPORTED there the instant the
+ * warning fired, and teleported back afterwards. Play-testing read that as
+ * things blinking in and out, which it was.
+ *
+ * They are stateful now and steer toward a target at a shamble. The
+ * consequence is the point: pressure on a wall is no longer a flag the wall
+ * reads, it is however many of them have physically arrived. The shaking is
+ * caused by the crowd rather than drawn alongside it, so it builds as they
+ * gather and eases as they wander off.
+ */
+function stepHorde(walkers: Walker[], c: Corners, dt: number, threatened: number | null) {
+  for (const wk of walkers) {
+    wk.retargetIn -= dt
+    if (wk.retargetIn <= 0) {
+      const t = hordeTarget(c, threatened, Math.random(), Math.random())
+      wk.tx = t.x
+      wk.ty = t.y
+      // Short while a wall is being worked, long while merely circling — they
+      // commit to a breach and lose interest slowly.
+      wk.retargetIn = threatened !== null ? 1.2 + Math.random() * 1.6 : 3 + Math.random() * 4
+    }
+    const dx = wk.tx - wk.x
+    const dy = wk.ty - wk.y
+    const d = Math.hypot(dx, dy)
+    if (d > 1) {
+      const step = Math.min(d, HORDE_SPEED * dt)
+      wk.x += (dx / d) * step
+      wk.y += (dy / d) * step
+    }
+    wk.phase += dt * 3.4
+  }
+}
+
+/** How many walkers are pressed against each wall — this is what shakes it. */
+function wallPressure(walkers: readonly Walker[], c: Corners): number[] {
+  const counts = [0, 0, 0, 0]
+  for (let i = 0; i < 4; i++) {
+    const seg = wallSegment(i, c)
+    const len = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1
+    for (const wk of walkers) {
+      // Distance from the wall's line segment, clamped to its span so a walker
+      // beyond the corner is not counted against it.
+      const t = Math.max(0, Math.min(1,
+        ((wk.x - seg.x1) * (seg.x2 - seg.x1) + (wk.y - seg.y1) * (seg.y2 - seg.y1)) / (len * len)))
+      const px = seg.x1 + (seg.x2 - seg.x1) * t
+      const py = seg.y1 + (seg.y2 - seg.y1) * t
+      if (Math.hypot(wk.x - px, wk.y - py) < 34) counts[i]++
+    }
+  }
+  return counts
+}
+
+function drawHorde(ctx: CanvasRenderingContext2D, walkers: readonly Walker[], c: Corners) {
+  // Depth-sorted: drawn in array order, a walker behind the compound could
+  // paint over one standing in front of it.
+  const order = [...walkers].sort((a, b) => a.y - b.y)
+  for (const wk of order) {
+    const d = depthAt(wk.y, c)
+    drawWalker(ctx, wk.x, wk.y, 0.85 + d * 0.7, wk.phase)
+  }
 }
 
 /**
@@ -572,7 +629,10 @@ function drawHorde(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
  * attack — shuddering, red bleeding between the boards) and splintered (a push
  * got through this round). `collapsed` is the endgame, not a state of a wall.
  */
-function drawWalls(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: BarricadeView) {
+function drawWalls(
+  ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: BarricadeView,
+  pressure: readonly number[],
+) {
   for (let i = 0; i < 4; i++) {
     const seg = wallSegment(i, c)
     const out = wallOutward(i, c)
@@ -586,17 +646,23 @@ function drawWalls(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
     const gap = 2.6 + d * 2.2
     const lw = 2.2 + d * 2.4
 
+    // Shake is CAUSED by the crowd, not drawn alongside it: it builds as they
+    // arrive and eases as they wander off, so the picture explains itself.
+    const crowd = Math.min(1, (pressure[i] ?? 0) / 7)
+
     ctx.save()
     // The boards strain, not the camera — a shaking viewport reads as a bug.
-    if (straining && !gone) {
-      ctx.translate(out.dx * Math.sin(t * 30) * 2, out.dy * Math.sin(t * 30) * 2)
+    if (crowd > 0 && !gone) {
+      const amp = crowd * 3
+      ctx.translate(out.dx * Math.sin(t * 30) * amp, out.dy * Math.sin(t * 30) * amp)
     }
 
-    // Pressure bleeding between the boards from outside.
-    if (straining && !gone) {
-      const pulse = 0.3 + 0.28 * Math.sin(t * 7)
+    // Strain bleeding between the boards, scaled by how many are leaning on it.
+    if (crowd > 0.15 && !gone) {
+      const pulse = (0.18 + 0.24 * Math.sin(t * 7)) * crowd
       ctx.save()
-      ctx.strokeStyle = `rgba(230,51,41,${pulse.toFixed(3)})`
+      // Amber, not red. Red is reserved for the walls being DOWN.
+      ctx.strokeStyle = `rgba(245,197,24,${pulse.toFixed(3)})`
       ctx.lineWidth = planks * gap + 10
       ctx.globalAlpha = 0.45
       ctx.beginPath()
@@ -606,12 +672,22 @@ function drawWalls(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
       ctx.restore()
     }
 
+    // ── The colour ladder ──────────────────────────────────────────────────
+    // Red used to mean "a push got through", which read as the wall being GONE
+    // — so a round with two splintered walls looked like the game was already
+    // lost. Red is now reserved for the one state that is actually terminal:
+    // the walls down and the horde inside.
+    //
+    //   green  intact
+    //   amber  under pressure — they are on it right now
+    //   ash    splintered: a push got through, damaged but still standing
+    //   red    collapsed at parity, the game is over
     ctx.strokeStyle = gone
-      ? 'rgba(230,51,41,0.42)'
-      : broken
-        ? 'rgba(230,51,41,0.85)'
-        : straining
-          ? 'rgba(245,197,24,0.95)'
+      ? 'rgba(230,51,41,0.75)'
+      : straining
+        ? 'rgba(245,197,24,0.95)'
+        : broken
+          ? 'rgba(122,116,92,0.8)'
           : 'rgba(120,152,60,0.72)'
     ctx.lineWidth = lw
     ctx.lineCap = 'butt'
@@ -640,7 +716,7 @@ function drawWalls(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
     // End posts — they turn a stack of lines into a built thing.
     if (!gone) {
       ctx.lineWidth = lw + 1.4
-      ctx.strokeStyle = broken ? 'rgba(230,51,41,0.7)' : 'rgba(90,116,48,0.9)'
+      ctx.strokeStyle = broken ? 'rgba(122,116,92,0.85)' : 'rgba(90,116,48,0.9)'
       const half = (planks * gap) / 2 + 2
       for (const [px, py] of [[seg.x1, seg.y1], [seg.x2, seg.y2]] as const) {
         ctx.beginPath()
@@ -664,6 +740,7 @@ function drawScene(
   bar: BarricadeView | null,
   backdrop: HTMLCanvasElement | null,
   fog: HTMLCanvasElement | null,
+  walkers: readonly Walker[],
 ) {
   ctx.clearRect(0, 0, w, h)
 
@@ -692,8 +769,8 @@ function drawScene(
     const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
     drawOutside(ctx, w, h, c, t, backdrop, fog)
     // Horde before the walls: they are outside, so the boards occlude them.
-    drawHorde(ctx, c, t, bar)
-    drawWalls(ctx, c, t, bar)
+    drawHorde(ctx, walkers, c)
+    drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
   }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
@@ -799,6 +876,8 @@ export function OutbreakScene({
   const backdropRef = useRef<HTMLCanvasElement | null>(null)
   /** One fog puff, blitted five times per frame instead of five gradients. */
   const fogRef = useRef<HTMLCanvasElement | null>(null)
+  /** The horde. Stateful so they walk rather than blink between positions. */
+  const hordeRef = useRef<Walker[]>([])
   const lastResultKeyRef = useRef(-1)
   const epochRef = useRef(0)
   const bodiesRef = useRef<Body[]>([])
@@ -837,6 +916,15 @@ export function OutbreakScene({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       backdropRef.current = renderBackdrop(w, h, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dpr)
       fogRef.current ??= renderFogSprite(130, dpr)
+      // Seed the horde where it will already be walking, so a resize does not
+      // make them appear from nowhere.
+      if (hordeRef.current.length === 0) {
+        const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
+        hordeRef.current = Array.from({ length: 40 }, (_, i) => {
+          const t0 = hordeTarget(c, null, noise(i, 61), noise(i, 67))
+          return { x: t0.x, y: t0.y, tx: t0.x, ty: t0.y, phase: i, retargetIn: noise(i, 71) * 4 }
+        })
+      }
       for (const b of bodiesRef.current) {
         b.x = Math.min(Math.max(b.x, PAD_X), Math.max(PAD_X, w - PAD_X))
         b.y = Math.min(Math.max(b.y, PAD_TOP), Math.max(PAD_TOP, h - PAD_BOTTOM))
@@ -848,7 +936,7 @@ export function OutbreakScene({
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, fogRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, fogRef.current, hordeRef.current)
     }
     renderRef.current = render
 
@@ -1109,6 +1197,16 @@ export function OutbreakScene({
       tRef.current += dt
       tickBreach(dt)
       stepCue(dt)
+
+      // The horde walks every frame, whatever phase it is — they are outside
+      // the whole game, not only while the barricade mechanic is running.
+      {
+        const { w, h } = sizeRef.current
+        const bar = barricadeRef.current
+        if (bar) {
+          stepHorde(hordeRef.current, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dt, bar.threatened)
+        }
+      }
 
       if (reformRef.current) {
         reformRef.current = false
