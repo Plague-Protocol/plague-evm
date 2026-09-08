@@ -809,3 +809,31 @@ html[data-intro-seen] #intro-veil {
   0%, 55%   { background-position: 230% 0; }
   90%, 100% { background-position: -60% 0; }
 }
+
+/* The commander's tell on the splash — the transmission losing its grip as the
+   speaker slips. Opacity-only so it stays off the paint path, and paired with
+   the italic/desaturated treatment in splash-screen.tsx rather than carrying
+   the effect alone. */
+@keyframes splash-tell {
+  0%, 100% { opacity: 0.85; }
+  38%      { opacity: 0.45; }
+  44%      { opacity: 0.9;  }
+  61%      { opacity: 0.35; }
+  67%      { opacity: 0.8;  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep the dimmed, italic tell; drop only the flicker. */
+  [style*="splash-tell"] { animation: none !important; }
+}
+
+/* Composer indicator — a slow breath so the line reads as live without
+   pulling the eye off the chat log. */
+@keyframes presence-fade {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [style*="presence-fade"] { animation: none !important; }
+}

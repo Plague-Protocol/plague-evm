@@ -24,6 +24,11 @@ import { ArenaDoors } from '@/components/game/ArenaDoors'
 import { ArenaHub } from '@/components/game/ArenaHub'
 import { MomentOverlay, type Moment } from '@/components/game/MomentOverlay'
 import { PlayersGrid } from '@/components/game/PlayersGrid'
+import { sweepDurationMs } from '@/lib/containment-sweep'
+import { usePresence } from '@/hooks/usePresence'
+import { useBarricade } from '@/hooks/useBarricade'
+import { usePlayerProgress } from '@/hooks/usePlayerProgress'
+import { BarricadeBoard } from '@/components/game/BarricadeBoard'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import { BotControls } from '@/components/lobby/bot-controls'
@@ -262,6 +267,12 @@ function GamePageInner() { // NOSONAR
   // ── Personal moment overlay (private beats: infection reveal, shield) ────
   const [moment, setMoment] = useState<{ key: string; data: Moment } | null>(null)
 
+  // ── Round-opening containment sweep (shared, public, status-blind) ───────
+  // Declared here rather than beside the effect that fills it: the players
+  // panel is built further down this render, so the binding has to exist before
+  // that point.
+  const [sweep, setSweep] = useState<{ seed: string; anchor: number } | null>(null)
+
   // ── Role commitment state (during Starting phase) ────────────────────────
   const [committing, setCommitting]               = useState(false)
   const [commitError, setCommitError]             = useState<string | null>(null)
@@ -286,6 +297,29 @@ function GamePageInner() { // NOSONAR
   // "was at the bottom" from "scrolled up reading history".
   const chatPinnedRef = useRef(true)
   const phaseAdvanceNudgeKeyRef = useRef<string>('')
+
+  // Live "who is composing" signal. Purely social information — see
+  // hooks/usePresence.ts for the rate-limiting that keeps it off the egress cap.
+  const { typingAddrs, noteActivity, noteSent } = usePresence(socket, roomId, address)
+
+  // Discussion-phase barricade. The seat index is the player's position in the
+  // chain-ordered roster, which is what the server derives station assignments
+  // from — so it must come from room.players, not from any filtered view.
+  const mySeatIndex = room?.players?.findIndex(
+    p => p.walletAddress.toLowerCase() === (address ?? '').toLowerCase(),
+  ) ?? -1
+  const barricade = useBarricade(socket, roomId, address, mySeatIndex)
+
+  // The return hook. Fetched only once the game is actually over — see the
+  // note in usePlayerProgress about why the exit moment is the only one that
+  // matters here. An aborted room is a refund, not a played game, so it has
+  // nothing to report.
+  // `currentRound` rather than the derived `round`, which is declared further
+  // down this render.
+  const playerProgress = usePlayerProgress(
+    address,
+    room?.status === 'ended' && (currentRound?.number ?? 0) > 0,
+  )
 
   // ── Mobile tab navigation ───────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<GameTab>('play')
@@ -342,6 +376,10 @@ function GamePageInner() { // NOSONAR
   const round       = currentRound?.number ?? 0
   /** Shields can only be activated during Discussion — see PlagueGame.submitInnocenceProof. */
   const shieldWindowOpen = phase === 'discussion'
+  // Round-opening containment sweep — see the LATCH note at the useEffect below.
+  const sweepArmed = phase === 'infection' && room?.status === 'active' && round > 0
+    ? `${roomId}:${round}`
+    : null
   const activePlayers = room?.players?.filter(p => !p.isEliminated) ?? []
   const totalPlayers  = room?.players?.length ?? 0
   const infectedCount = room?.players?.filter(p => p.status === 'infected' && !p.isEliminated).length ?? 0
@@ -445,6 +483,8 @@ function GamePageInner() { // NOSONAR
         canVote={canVote}
         selectedVote={selectedVote}
         myVotedTarget={phase === 'voting' ? myVotedTarget : null}
+        sweepSeed={sweep?.seed ?? null}
+        sweepAnchor={sweep?.anchor ?? 0}
         onToggleVote={(addr) => setSelectedVote(addr === selectedVote ? null : addr)}
       />
     )
@@ -491,6 +531,45 @@ function GamePageInner() { // NOSONAR
   }, [localPlayer?.status])
   // Re-baseline when switching rooms.
   useEffect(() => { prevMyStatusRef.current = null }, [roomId])
+
+  // ── Round-opening containment sweep (LATCHED) ────────────────────────────
+  // Seeded from room+round ONLY — deliberately uncorrelated with who is
+  // actually infected. lib/containment-sweep.ts explains why that is a safety
+  // property rather than a style choice.
+  //
+  // ⚠ The latch is the whole point. Infection is a TRANSIENT phase: the backend
+  // calls assignInfection and the room flips to Discussion within seconds (note
+  // that computePhaseEndsAtMs gives phase 0 no duration at all). Deriving the
+  // seed straight from `phase === 'infection'` therefore yanked the beat off
+  // screen the moment the chain moved on, so the sweep died halfway across the
+  // board. Latch on entry instead and hold for the beat's own duration; the
+  // overlay is non-blocking, so letting it outlive the phase costs nothing.
+  //
+  // The ANCHOR is latched alongside the seed for the same reason. It is the
+  // chain's phaseStartedAt, which is re-stamped on every phase change — so
+  // reading it live meant that the instant Infection gave way to Discussion the
+  // anchor jumped forward, the sweep's elapsed time went negative, and the beat
+  // restarted from seat one on top of the new phase.
+  useEffect(() => {
+    if (!sweepArmed) return
+    // The anchor is CHAIN time, but the grid measures elapsed against the
+    // browser's Date.now(). A client whose clock disagrees with the chain by
+    // more than the beat's own length would otherwise never see the sweep at
+    // all — running slow makes elapsed negative, running fast makes the beat
+    // look already finished. Clamping into the only window it can occupy
+    // degrades a skewed client to "plays, slightly out of step with the table"
+    // rather than "silently plays nothing".
+    const now = Date.now()
+    const total = sweepDurationMs(room?.players?.length ?? 0)
+    const chainAnchor = currentRound?.startedAt ?? now
+    setSweep({ seed: sweepArmed, anchor: Math.min(Math.max(chainAnchor, now - total), now) })
+    const t = setTimeout(() => setSweep(null), total)
+    return () => clearTimeout(t)
+  // Depends on the armed seed only: re-running as the roster reference or the
+  // phase clock churns would restart the beat mid-sweep.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sweepArmed])
+  useEffect(() => { setSweep(null) }, [roomId])
 
   // Reset optimistic vote when round changes
   const roundNumber = currentRound?.number ?? 0
@@ -619,7 +698,8 @@ function GamePageInner() { // NOSONAR
       ?? `${address.slice(0, 6)}…${address.slice(-4)}`
     socket.emit('chat_message', { roomId, message: screened.text, playerAddress: address, displayName })
     setChatInput('')
-  }, [chatInput, socket, address, roomId, room, canChat])
+    noteSent()
+  }, [chatInput, socket, address, roomId, room, canChat, noteSent])
 
   // ── Vote tally ────────────────────────────────────────────────────────────
   const voteTally: Record<string, number> = {}
@@ -1118,6 +1198,7 @@ function GamePageInner() { // NOSONAR
           outcome={gameOutcome}
           potPerWinner={gameOutcome === 'aborted' ? 0 : potPerWinnerValue}
           winners={gameOutcome === 'aborted' ? [] : winnerNames}
+          progress={gameOutcome === 'aborted' ? null : playerProgress}
           onDismiss={() => setGameOverDismissed(true)}
         />
       )}
@@ -1597,6 +1678,23 @@ function GamePageInner() { // NOSONAR
                   above the thing you watch, at every width. */}
               {showOnTab('play') && (
                 <div className="order-2 flex flex-col gap-6">
+                  {/* The barricade sits ABOVE Shield on purpose. It is the only
+                      thing in Discussion with a deadline attached, and an 8 s
+                      warning that has scrolled off screen is not a warning. */}
+                  {phase === 'discussion' && barricade.state && (
+                    <BarricadeBoard
+                      state={barricade.state}
+                      myStation={localPlayer?.isEliminated ? null : barricade.myStation}
+                      myChoice={barricade.choice}
+                      canSabotage={!!localPlayer && !localPlayer.isEliminated && localPlayer.status === 'infected'}
+                      disabled={!localPlayer || localPlayer.isEliminated || !barricade.state.next}
+                      nameOf={addr => room?.players?.find(
+                        p => p.walletAddress.toLowerCase() === addr.toLowerCase(),
+                      )?.displayName ?? `${addr.slice(0, 6)}…`}
+                      onChoose={barricade.choose}
+                    />
+                  )}
+
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>
@@ -1742,13 +1840,34 @@ function GamePageInner() { // NOSONAR
                       ))
                     )}
                   </div>
-                  <div className="mt-3 flex gap-2 flex-shrink-0">
+                  {/* Live composer indicator. Names are resolved from the same
+                      player list the cards use, so it automatically inherits
+                      whatever naming rule is in force — including the No Names
+                      modifier's seat numbers. Reserves its own line height so
+                      appearing and vanishing never reflows the chat log. */}
+                  <div
+                    className="mt-1 h-4 flex-shrink-0 overflow-hidden font-mono text-[10px] italic"
+                    style={{ color: '#7d9a72' }}
+                    aria-live="polite"
+                  >
+                    {typingAddrs.length > 0 && (
+                      <span style={{ animation: 'presence-fade 1.8s ease-in-out infinite' }}>
+                        {typingAddrs.length === 1
+                          ? `${room?.players?.find(p => p.walletAddress.toLowerCase() === typingAddrs[0])?.displayName ?? 'Someone'} is typing…`
+                          : `${typingAddrs.length} players are typing…`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex gap-2 flex-shrink-0">
                     <input
                       type="text"
                       placeholder={chatBlockedReason ?? 'Say something…'}
                       value={chatInput}
                       maxLength={256}
-                      onChange={e => setChatInput(e.target.value)}
+                      onChange={e => {
+                        setChatInput(e.target.value)
+                        noteActivity(e.target.value.trim().length > 0)
+                      }}
                       onKeyDown={e => { if (e.key === 'Enter') handleSendChat() }}
                       disabled={!canChat}
                       className="flex-1 rounded border bg-transparent px-3 py-1.5 font-mono text-xs focus:outline-none"
