@@ -193,19 +193,12 @@ export function clampInside(x: number, y: number, c: Corners, margin = 10): { x:
   return { x: Math.min(right, Math.max(left, x)), y: cy }
 }
 
-/** True when a point lies within the compound walls. */
-export function isInside(x: number, y: number, c: Corners): boolean {
-  if (y < c.fl.y || y > c.nl.y) return false
-  const t = (y - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)
-  return x > c.fl.x + (c.nl.x - c.fl.x) * t && x < c.fr.x + (c.nr.x - c.fr.x) * t
-}
-
 /**
  * Guarantees a point is at least `margin` OUTSIDE the compound.
  *
  * 🚨 THIS REPLACED clampOutside, WHICH ONLY EVER FIRED ON TRESPASSERS.
- * The old function tested `isInside` first and returned the point untouched
- * otherwise. That is the correct shape for catching an escape and completely
+ * The old function did a point-in-polygon test first and returned the point
+ * untouched otherwise. That is the correct shape for catching an escape and completely
  * wrong for keeping a crowd off the boards, because a walker standing in the
  * middle of the south planks is NOT inside the compound — the planks straddle
  * the wall line, and everything past that line is "outside" as far as a

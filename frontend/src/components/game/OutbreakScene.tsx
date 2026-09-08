@@ -30,7 +30,7 @@ import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
 import {
   assignStations, stationAnchor, interiorPoint, compoundShape, wallSegment,
-  wallOutward, clampInside, pushClear, outsideWall, isInside, depthAt, wallBand,
+  wallOutward, clampInside, pushClear, outsideWall, depthAt, wallBand,
   type Corners,
 } from './barricadeStations'
 
@@ -556,7 +556,9 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
 
   // Back ranks, above the compound — kept dense so the horizon reads as woods.
   for (const rank of [0, 1] as const) {
-    const baseY = c.fl.y * (rank === 0 ? 0.72 : 0.94)
+    // 0.86 rather than 0.94 for the front rank: at 0.94 the trunks were planted
+    // in the north boarding, so the wall sliced their bases off.
+    const baseY = c.fl.y * (rank === 0 ? 0.68 : 0.86)
     const count = rank === 0 ? 22 : 16
     for (let i = 0; i < count; i++) {
       const x = noise(i + rank * 50) * (w + 60) - 30
@@ -567,31 +569,41 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
 
   // Flanks and foreground. Sized by depth so trees nearer the camera are bigger,
   // which is what stops the sides reading as wallpaper.
-  const clear = (x: number, y: number, skirt: number) => {
-    if (isInside(x, y, c)) return false
-    return !(isInside(x - skirt, y, c) || isInside(x + skirt, y, c)
-      || isInside(x, y - skirt * 0.8, c) || isInside(x, y + skirt * 0.8, c))
+  /**
+   * True when a point is clear of the compound AND of the boarding around it.
+   *
+   * Asks pushClear whether it would have to move the point — the same authority
+   * the horde uses, so trees and zombies cannot disagree about where the wall
+   * ends. The old version tested isInside with a hand-rolled skirt, which has
+   * the same blind spot pushClear was written to fix: the planks straddle the
+   * wall line, so a point sitting in the middle of them is not "inside".
+   */
+  const clear = (x: number, y: number, pad: number) => {
+    const p = pushClear(x, y, c, wallBand(depthAt(y, c)) + pad)
+    return Math.hypot(p.x - x, p.y - y) < 0.5
   }
   for (let i = 0; i < 54; i++) {
     const x = noise(i, 31) * (w + 80) - 40
     const y = c.fl.y + noise(i, 37) * (h - c.fl.y + 30)
     // A generous skirt around the walls: trees must not appear to grow out of
     // the barricade itself.
-    if (!clear(x, y, 22)) continue
+    if (!clear(x, y, 16)) continue
     const d = 0.45 + ((y - c.fl.y) / Math.max(1, h - c.fl.y)) * 0.9
     let th = (26 + noise(i, 41) * 34) * d
-    // 🚨 A TREE IS TALLER THAN ITS BASE POINT.
-    // The clearance test only looked at where the trunk meets the ground, so a
-    // tree rooted just south of the near wall passed the check and then threw
-    // sixty pixels of canopy straight over the compound — which is why the
-    // south side looked like the woods were growing inside the barricade.
-    // South of the wall the canopy is capped at the real gap; anything with no
-    // room left is dropped rather than drawn intruding.
-    if (y > c.nl.y) {
-      const room = y - c.nl.y - 14
-      if (room < 12) continue
-      th = Math.min(th, room)
-    }
+    // 🚨 A TREE IS TALLER THAN ITS BASE POINT, AND ITS CROWN GETS CLIPPED.
+    //
+    // The first version only tested where the trunk met the ground, so a tree
+    // rooted south of the near wall threw its whole canopy over the compound.
+    // Capping it against the wall's CENTRELINE fixed that and left a subtler
+    // version of the same thing: the crown reached into the boarding, the
+    // backdrop is painted before the walls, and the planks sliced the top off.
+    // A conifer with a flat cut across it reads as growing from behind — or
+    // inside — the barricade, which is exactly what it looked like.
+    //
+    // So the crown has to clear the PLANKS, not the line through them. Shrink
+    // the tree until it does; drop it only if nothing usable is left.
+    for (let guard = 0; guard < 5 && !clear(x, y - th * TREE_CROWN, 5); guard++) th *= 0.68
+    if (th < 11 || !clear(x, y - th * TREE_CROWN, 5)) continue
     tree(x, y, th, (5 + noise(i, 43) * 4) * d, false)
   }
 
@@ -599,7 +611,7 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
   for (let i = 0; i < 26; i++) {
     const x = noise(i, 83) * (w + 60) - 30
     const y = c.fl.y * 0.86 + noise(i, 89) * (h - c.fl.y * 0.86)
-    if (!clear(x, y, 16)) continue
+    if (!clear(x, y, 10)) continue
     const d = Math.min(1, Math.max(0, (y - c.fl.y) / Math.max(1, h - c.fl.y)))
     prop(x, y, Math.floor(noise(i, 97) * 3), d)
   }
@@ -683,9 +695,12 @@ function drawWalker(
   const headY = shoulderY - 3.4 * s
   // The reach, projected. `ry` is squashed because the camera looks down the
   // scene — a walker on the far side leans toward us a little rather than
-  // vanishing into a vertical line.
+  // vanishing into a vertical line. Raised from 0.45: on the north and south
+  // walls the direction is almost purely vertical, so too much squash flattened
+  // the reach back to horizontal and the figure read as standing side-on to the
+  // boards it is clawing at.
   const ax = rx
-  const ay = ry * 0.45
+  const ay = ry * 0.6
   const lean = ax * 1.8 * s
 
   ctx.save()
@@ -879,15 +894,34 @@ const HORDE_SIZE = 16
  * just outside it is drawn straight up across the planks and reads as being
  * inside the compound. Nothing else fixes that: occluding it with the boards
  * only hides its legs and leaves a torso in the yard. It has to stand a whole
- * body clear — a walker is about 31px tall at the near scale, so 26 was still
- * leaving its head inside the planks. NEAR_Y and FAR_Y in barricadeStations.ts
+ * body clear — a walker is about 31px tall at the near scale. Trimmed from 34
+ * to 30 to bring the south rank in with the rest; the head still clears the
+ * outer edge by ~7px at the tightest point on a 400px cam and ~6px on a 240px
+ * one, which is checked arithmetically rather than by eye. Do not lower it
+ * further without redoing that sum. NEAR_Y and FAR_Y in barricadeStations.ts
  * are sized to leave room for this.
  */
-const SOUTH_CLEAR = 34
+const SOUTH_CLEAR = 30
 
-/** The clearance the horde keeps from a wall's centreline, in its own depth. */
+/**
+ * How far above its base point tree() actually draws.
+ *
+ * The canopy is three tiers stacked upward, and the topmost reaches
+ * `trunk + canopy * 1.12` — about 1.084 × the nominal height. Capping a tree
+ * against its nominal height therefore left ~8% of it over the line, which is
+ * plenty to catch on a wall.
+ */
+const TREE_CROWN = 1.084
+
+/**
+ * The clearance the horde keeps from a wall's centreline, in its own depth.
+ *
+ * The boarding's own half-thickness plus seven pixels — just enough that a
+ * walker is not drawn touching the planks. It was twelve, which held them a
+ * visible pace back from a wall they are supposed to be trying to get through.
+ */
 function hordeMargin(y: number, c: Corners): number {
-  return wallBand(depthAt(y, c)) + 12
+  return wallBand(depthAt(y, c)) + 7
 }
 
 /** Where on its wall a walker is trying to stand. */
@@ -934,13 +968,13 @@ function stepHorde(
       }
       // Shuffle along the boards rather than jumping the length of them.
       wk.along = Math.min(1, Math.max(0, wk.along + (Math.random() - 0.5) * 0.34))
-      wk.depth = Math.random() * 16
+      wk.depth = Math.random() * 11
       wk.retargetIn = threatened !== null ? 1.4 + Math.random() * 1.8 : 2.6 + Math.random() * 3.4
     }
 
     if (collapsed) {
       // The walls are down. They go in.
-      const q = interiorPoint(c, (wk.along + 0.13) % 1, (wk.depth / 16 + 0.37) % 1)
+      const q = interiorPoint(c, (wk.along + 0.13) % 1, (wk.depth / 11 + 0.37) % 1)
       wk.tx = q.x
       wk.ty = q.y
     } else {
@@ -1003,9 +1037,10 @@ function drawHorde(
     // and wrong on the north and south, where the direction is almost purely
     // vertical: the horizontal component collapsed to nothing and the figure
     // read as standing side-on to the boards it was supposedly clawing at.
-    // The inward normal of its own wall is unambiguous everywhere, and a
-    // stable per-walker lean keeps a rank of them from being one figure
-    // repeated sixteen times.
+    // The inward normal of its own wall is unambiguous everywhere. The stable
+    // per-walker lean keeps a rank of them from being one figure repeated
+    // sixteen times, and is deliberately small — enough for variety, not
+    // enough for anyone to end up angled away from the wall.
     const out = wallOutward(wk.wall, c)
     let rx = -out.dx + wk.jitter
     let ry = -out.dy
@@ -1455,8 +1490,8 @@ export function OutbreakScene({
             phase: i,
             wall: i % 4,
             along: noise(i, 61),
-            depth: noise(i, 67) * 16,
-            jitter: (noise(i, 73) - 0.5) * 0.7,
+            depth: noise(i, 67) * 11,
+            jitter: (noise(i, 73) - 0.5) * 0.44,
             retargetIn: noise(i, 71) * 4,
           }
           const spot = walkerSpot(wk, c)
