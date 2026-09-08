@@ -386,6 +386,19 @@ export default function DemoPage() {
   const botIntentsRef = useRef<Map<string, BarricadeAction>>(new Map())
   const [myBarricadeChoice, setMyBarricadeChoice] = useState<BarricadeAction>({ kind: 'hold' })
 
+  /** Headcount per station. Counts only, exactly like the server's — the cam
+   *  places anonymous figures from this and never learns who is who. */
+  const demoOccupancy = useCallback((st: DemoState, roomKey: string): number[] => {
+    const counts = [0, 0, 0]
+    for (const p of st.players.filter(x => !x.eliminated)) {
+      const seat = st.players.indexOf(p)
+      const intent = p.isYou ? myBarricadeChoice : botIntentsRef.current.get(p.id) ?? { kind: 'hold' as const }
+      const at = intent.kind === 'move' ? intent.station : assignedStation(roomKey, st.round, seat)
+      counts[at]++
+    }
+    return counts
+  }, [myBarricadeChoice])
+
   const resolveBarricadePush = useCallback((push: number, roomKey: string) => {
     setState(prev => {
       if (prev.phase !== 'discussion' || !prev.barricade) return prev
@@ -427,12 +440,17 @@ export default function DemoPage() {
       return {
         ...prev,
         feed,
-        barricade: { ...prev.barricade, next: null, outcomes: [...prev.barricade.outcomes, outcome] },
+        barricade: {
+          ...prev.barricade,
+          next: null,
+          occupancy: demoOccupancy(prev, roomKey),
+          outcomes: [...prev.barricade.outcomes, outcome],
+        },
       }
     })
     botIntentsRef.current.clear()
     setMyBarricadeChoice({ kind: 'hold' })
-  }, [myBarricadeChoice])
+  }, [myBarricadeChoice, demoOccupancy])
 
   const startBarricade = useCallback((roomKey: string, windowSecs: number) => {
     botIntentsRef.current.clear()
@@ -448,6 +466,7 @@ export default function DemoPage() {
         threshold: levelForRound(prev.round).threshold,
         pushes: levelForRound(prev.round).pushes,
         level: levelForRound(prev.round).label,
+        occupancy: demoOccupancy(prev, roomKey),
         next: null,
         outcomes: [],
       },
@@ -477,7 +496,14 @@ export default function DemoPage() {
         }
 
         setState(p => p.barricade
-          ? { ...p, barricade: { ...p.barricade, next: { push, station, at: Date.now() + 8_000 } } }
+          ? {
+              ...p,
+              barricade: {
+                ...p.barricade,
+                occupancy: demoOccupancy(p, roomKey),
+                next: { push, station, at: Date.now() + 8_000 },
+              },
+            }
           : p)
       })
       schedule(at, () => {
@@ -485,7 +511,7 @@ export default function DemoPage() {
         resolveBarricadePush(push, roomKey)
       })
     })
-  }, [schedule, resolveBarricadePush])
+  }, [schedule, resolveBarricadePush, demoOccupancy])
 
   // ── Phase engine ───────────────────────────────────────────────────────────
   // Forward declarations via refs so callbacks can chain in any order.
@@ -1189,6 +1215,20 @@ export default function DemoPage() {
                     <span className="font-mono text-xs rounded border px-2 py-0.5" style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}>{alivePlayers.length} alive</span>
                   </div>
                   <OutbreakScene
+                    barricade={phase === 'discussion' && barricade ? {
+                      occupancy: barricade.occupancy ?? [],
+                      threatened: barricade.next?.station ?? null,
+                      myStation: (() => {
+                        const you = players.find(p => p.isYou)
+                        const seat = you ? players.indexOf(you) : -1
+                        return you && !you.eliminated && seat >= 0
+                          ? assignedStation(barricade.roomId, barricade.round, seat)
+                          : null
+                      })(),
+                      resultKey: barricade.outcomes.length,
+                      held: barricade.outcomes[barricade.outcomes.length - 1]?.held ?? null,
+                      resultStation: barricade.outcomes[barricade.outcomes.length - 1]?.station ?? null,
+                    } : null}
                     className="mb-4"
                     totalPlayers={players.length}
                     aliveCount={alivePlayers.length}

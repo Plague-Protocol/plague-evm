@@ -310,6 +310,7 @@ function GamePageInner() { // NOSONAR
   ) ?? -1
   const barricade = useBarricade(socket, roomId, address, mySeatIndex)
 
+
   // The return hook. Fetched only once the game is actually over — see the
   // note in usePlayerProgress about why the exit moment is the only one that
   // matters here. An aborted room is a refund, not a played game, so it has
@@ -376,6 +377,25 @@ function GamePageInner() { // NOSONAR
   const round       = currentRound?.number ?? 0
   /** Shields can only be activated during Discussion — see PlagueGame.submitInnocenceProof. */
   const shieldWindowOpen = phase === 'discussion'
+  // What the quarantine cam draws. The barricade and the cam used to be two
+  // panels describing the same room and disagreeing about its geometry — the
+  // cam showed figures wandering an open chamber while the panel insisted you
+  // were posted at a window. The cam IS the barricade now, so there is one
+  // fiction, and the rules are legible by watching rather than by reading.
+  const lastPush = barricade.state?.outcomes[barricade.state.outcomes.length - 1] ?? null
+  const barricadeView = barricade.state && phase === 'discussion'
+    ? {
+        occupancy: barricade.state.occupancy ?? [],
+        threatened: barricade.state.next?.station ?? null,
+        myStation: barricade.myStation,
+        // Keyed on how many pushes have resolved, so two consecutive breaches
+        // both fire instead of the second being swallowed as "no change".
+        resultKey: barricade.state.outcomes.length,
+        held: lastPush?.held ?? null,
+        resultStation: lastPush?.station ?? null,
+      }
+    : null
+
   // Round-opening containment sweep — see the LATCH note at the useEffect below.
   const sweepArmed = phase === 'infection' && room?.status === 'active' && round > 0
     ? `${roomId}:${round}`
@@ -1602,6 +1622,7 @@ function GamePageInner() { // NOSONAR
                   </div>
                   <OutbreakScene
                     key={roomId ?? 'no-room'}
+                    barricade={barricadeView}
                     className="mt-5"
                     totalPlayers={totalPlayers}
                     aliveCount={activePlayers.length}

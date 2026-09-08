@@ -20,6 +20,15 @@
  * low-frequency: three decisions across ~180 s, each a single tap, with an 8 s
  * warning. No timing skill, no reflex, nothing that punishes a slow connection.
  * If it ever needs concentration, it is broken.
+ *
+ * 🚨 THIS PANEL IS CONTROLS AND EVIDENCE ONLY — the SITUATION lives in the
+ * quarantine cam. It originally drew its own picture of the room, which put two
+ * disagreeing pictures on screen at once: the cam showed figures wandering an
+ * open chamber while this insisted you were posted at a window. Play-testing
+ * found it immediately, and it also made the rules illegible, because a panel
+ * has to explain what a picture can just show. So the cam took the geometry and
+ * this kept the two things a picture cannot do — letting you choose, and listing
+ * what was learned. Do not re-add a board diagram here.
  */
 
 import { useEffect, useState } from 'react'
@@ -108,7 +117,10 @@ export function BarricadeBoard({
         )}
       </AnimatePresence>
 
-      {/* Stations. Yours is marked; tapping another is the move. */}
+      {/* Controls. Deliberately a row of labelled buttons rather than a diagram:
+          the cam above is already showing where everyone is standing, and a
+          second, smaller, less accurate picture beside it only invites the eye
+          to check whether they agree. */}
       <div className="mt-2 grid grid-cols-3 gap-2">
         {STATIONS.map((label, i) => {
           const station = i as StationId
@@ -160,8 +172,9 @@ export function BarricadeBoard({
         </p>
       ) : (
         <p className="mt-2 font-mono text-[10px] leading-snug" style={{ color: MOSS }}>
-          Holding your post is a normal play — most of the room does it. Needs{' '}
-          <b style={{ color: BONE }}>{state.threshold}</b> to hold.
+          Watch the cam — you are the figure marked YOU. Holding your post is a
+          normal play and most of the room does it. A station needs{' '}
+          <b style={{ color: BONE }}>{state.threshold}</b> bodies to hold.
         </p>
       )}
 

@@ -1,6 +1,6 @@
 import {
   STATIONS, HOLD_THRESHOLD, PUSHES_PER_ROUND,
-  assignedStation, targetStation, resolvePush, pushAtMs, levelForRound,
+  assignedStation, targetStation, resolvePush, pushAtMs, levelForRound, occupancy,
   type BarricadeAction, type StationId,
 } from './barricade'
 
@@ -232,6 +232,40 @@ describe('barricade', () => {
         })
         expect(out.held).toBe(true)
       }
+    })
+  })
+
+  describe('occupancy', () => {
+    it('counts every body exactly once', () => {
+      const players = Array.from({ length: 7 }, (_, i) => ({ address: `0x${i}`, seatIndex: i }))
+      const counts = occupancy(ROOM, 4, players, new Map())
+      expect(counts).toHaveLength(3)
+      expect(counts.reduce((a, b) => a + b, 0)).toBe(7)
+    })
+
+    it('follows a player who moved', () => {
+      const players = [{ address: '0xa', seatIndex: 0 }]
+      const home = assignedStation(ROOM, 4, 0)
+      const away = ((home + 1) % 3) as 0 | 1 | 2
+      const counts = occupancy(ROOM, 4, players,
+        new Map([['0xa', { kind: 'move', station: away }]]))
+      expect(counts[away]).toBe(1)
+      expect(counts[home]).toBe(0)
+    })
+
+    // The property the cam depends on: it must be safe to broadcast.
+    it('leaks no identities — it is numbers and nothing else', () => {
+      const players = Array.from({ length: 5 }, (_, i) => ({ address: `0xdead${i}`, seatIndex: i }))
+      const counts = occupancy(ROOM, 2, players, new Map())
+      expect(counts.every(c => typeof c === 'number')).toBe(true)
+      expect(JSON.stringify(counts)).not.toMatch(/0xdead/)
+    })
+
+    it('treats a sabotaging player as present where they stand', () => {
+      const players = [{ address: '0xa', seatIndex: 0 }]
+      const home = assignedStation(ROOM, 4, 0)
+      const counts = occupancy(ROOM, 4, players, new Map([['0xa', { kind: 'sabotage' }]]))
+      expect(counts[home]).toBe(1)
     })
   })
 

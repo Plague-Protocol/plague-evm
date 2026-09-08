@@ -169,6 +169,35 @@ export interface PushOutcome {
   readonly at: number
 }
 
+/**
+ * How many bodies are standing at each station right now.
+ *
+ * 🚨 COUNTS ONLY — never identities. This is what lets the quarantine cam show
+ * the barricade truthfully while staying anonymous: the scene can place the
+ * right NUMBER of figures at each wall without any client learning which real
+ * player is which figure. Only the local player's own position is truthful on
+ * their own screen, which is the guarantee OutbreakDirector already makes.
+ *
+ * Identities are still revealed in exactly one place and for exactly one
+ * reason: a station that BREAKS names everyone who was standing there.
+ */
+export function occupancy(
+  roomId: string,
+  round: number,
+  players: readonly { address: string; seatIndex: number }[],
+  actions: ReadonlyMap<string, BarricadeAction>,
+): number[] {
+  const counts = new Array(STATIONS.length).fill(0)
+  for (const p of players) {
+    const action = actions.get(p.address.toLowerCase())
+    const at = action?.kind === 'move'
+      ? action.station
+      : assignedStation(roomId, round, p.seatIndex)
+    counts[at]++
+  }
+  return counts
+}
+
 export interface ResolveInput {
   readonly roomId: string
   readonly round: number

@@ -25,7 +25,7 @@ import { chainAdapter } from './chainAdapter'
 import { logger } from '../lib/logger'
 import {
   WARN_LEAD_MS, STATIONS,
-  pushAtMs, targetStation, resolvePush, levelForRound,
+  pushAtMs, targetStation, resolvePush, levelForRound, occupancy,
   type BarricadeAction, type PushOutcome, type StationId,
 } from '../lib/barricade.js'
 
@@ -57,6 +57,12 @@ export interface BarricadeState {
   pushes: number
   /** The night's condition, e.g. "Spreading". Player-facing. */
   level: string
+  /**
+   * Bodies at each station, by station index. Counts only, never identities —
+   * this is what the quarantine cam draws, so the scene can be truthful about
+   * where the room is standing without ever saying who is who.
+   */
+  occupancy: readonly number[]
   next: { push: number; station: StationId; at: number } | null
   outcomes: readonly PushOutcome[]
 }
@@ -70,6 +76,7 @@ function stateOf(roomId: string, run: RoomRun): BarricadeState {
     threshold: level.threshold,
     pushes: level.pushes,
     level: level.label,
+    occupancy: occupancy(roomId, run.round, run.roster, run.actions),
     next: run.next,
     outcomes: run.outcomes,
   }

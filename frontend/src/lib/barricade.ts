@@ -45,6 +45,12 @@ export interface BarricadeState {
   pushes: number
   /** The night's condition, e.g. "Spreading". Player-facing. */
   level: string
+  /**
+   * Bodies at each station, by station index. COUNTS ONLY, never identities —
+   * this is what lets the quarantine cam place figures truthfully in aggregate
+   * while staying anonymous about who is who.
+   */
+  occupancy: number[]
   next: { push: number; station: StationId; at: number } | null
   outcomes: PushOutcome[]
 }

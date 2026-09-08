@@ -12,6 +12,13 @@
  * scene can never deanonymize another player. Shield saves (public events)
  * flash a protective ring on an anonymous figure.
  *
+ * During Discussion the chamber becomes the BARRICADE: figures post up at three
+ * stations along the far wall, the threatened one lights up before a push, and
+ * the room watches whether it holds. Only the local player's position is
+ * truthful — everyone else is placed to match server-published HEADCOUNTS, so
+ * the wall you can see thinning really is thinning while the scene still says
+ * nothing about who anyone is. See barricadeStations.ts.
+ *
  * Purely decorative: no polling, no RPC — driven entirely by props the game
  * page already derives plus the existing socket stream. Honors
  * prefers-reduced-motion (static tableau, cues applied instantly) and pauses
@@ -21,6 +28,7 @@
 import { useEffect, useRef } from 'react'
 import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
+import { assignStations, stationAnchor, stationWallY } from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
 
@@ -47,6 +55,8 @@ const BITE_LUNGE_SECS = 1.0
 const DEATH_SECS = 1.25
 const FINALE_SECS = 2.6
 const CUE_GAP_SECS = 0.35
+/** How long the room stays scattered after a station breaks. */
+const BREACH_SECS = 2.4
 
 const COLOR_HUMAN = '#93a883'
 const COLOR_HUMAN_ME = '#d6e6a3'
@@ -279,6 +289,7 @@ function drawScene(
   t: number,
   active: ActiveCue | null,
   myShield: boolean,
+  bar: BarricadeView | null,
 ) {
   ctx.clearRect(0, 0, w, h)
 
@@ -298,6 +309,54 @@ function drawScene(
   ctx.lineTo(w, PAD_TOP - 14)
   ctx.stroke()
   ctx.restore()
+
+  // ── The barricade, hard against the far wall ────────────────────────────────
+  // Drawn BEFORE the figures so depth-sorting puts defenders in front of the
+  // thing they are holding. The threatened station is the only urgent element
+  // on screen, and only for the eight seconds of its warning.
+  if (bar) {
+    const wallY = stationWallY(PAD_TOP)
+    for (let i = 0; i < bar.occupancy.length; i++) {
+      const anchor = stationAnchor(i, w, h, PAD_TOP, PAD_BOTTOM)
+      const threatened = bar.threatened === i
+      const broke = bar.held === false && bar.resultStation === i
+      const halfW = 34
+
+      ctx.save()
+      // Shudder while under attack — the boards straining, not the camera.
+      if (threatened) ctx.translate(Math.sin(t * 34) * 1.6, Math.sin(t * 51) * 0.9)
+
+      // Planks. A broken station loses two of its three boards and the rest
+      // hang crooked, so the state is readable at a glance with no legend.
+      const planks = broke ? 1 : 3
+      ctx.strokeStyle = broke
+        ? 'rgba(230,51,41,0.85)'
+        : threatened
+          ? 'rgba(245,197,24,0.9)'
+          : 'rgba(107,142,35,0.55)'
+      ctx.lineWidth = 3
+      ctx.lineCap = 'round'
+      for (let k = 0; k < planks; k++) {
+        const yy = wallY + k * 5
+        const tilt = broke ? 4 : 0
+        ctx.beginPath()
+        ctx.moveTo(anchor.x - halfW, yy + (broke ? tilt : 0))
+        ctx.lineTo(anchor.x + halfW, yy - (broke ? tilt : 0))
+        ctx.stroke()
+      }
+
+      // Pressure from outside: a glow bleeding through the boards.
+      if (threatened) {
+        const pulse = 0.35 + 0.3 * Math.sin(t * 7)
+        const g = ctx.createLinearGradient(0, wallY - 16, 0, wallY + 18)
+        g.addColorStop(0, `rgba(230,51,41,${(pulse * 0.7).toFixed(3)})`)
+        g.addColorStop(1, 'rgba(230,51,41,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(anchor.x - halfW - 8, wallY - 16, (halfW + 8) * 2, 34)
+      }
+      ctx.restore()
+    }
+  }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
   for (const b of [...bodies].sort((a, c) => a.y - c.y)) {
@@ -322,6 +381,21 @@ function drawScene(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/** What the cam needs to draw the barricade. Counts and geometry only. */
+export interface BarricadeView {
+  readonly occupancy: readonly number[]
+  /** Station under attack, or null between pushes. */
+  readonly threatened: number | null
+  /** The local player's own station — the one truthful placement. */
+  readonly myStation: number | null
+  /** Bumps on each resolution so the scene can play the outcome once. */
+  readonly resultKey: number
+  /** Whether the most recent push held. */
+  readonly held: boolean | null
+  /** Station the most recent push hit. */
+  readonly resultStation: number | null
+}
+
 export interface OutbreakSceneProps {
   readonly totalPlayers: number
   readonly aliveCount: number
@@ -335,15 +409,24 @@ export interface OutbreakSceneProps {
   readonly myShieldActive?: boolean
   /** Count of OTHER players with an active shield this round (public); increments flash anonymous figures. */
   readonly othersShieldCount?: number
+  /** Barricade state during Discussion; null the rest of the time (free wander). */
+  readonly barricade?: BarricadeView | null
 }
 
 export function OutbreakScene({
   totalPlayers, aliveCount, zombieCount, myStatus, outcome, socket, localAddress,
-  className = '', myShieldActive = false, othersShieldCount = 0,
+  className = '', myShieldActive = false, othersShieldCount = 0, barricade = null,
 }: OutbreakSceneProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const directorRef = useRef<OutbreakDirector | null>(null)
+  // Barricade is read through refs so it can steer the sim without tearing down
+  // and rebuilding the animation loop every time the server speaks.
+  const barricadeRef = useRef<BarricadeView | null>(null)
+  const stationOfBodyRef = useRef<Map<number, number>>(new Map())
+  /** Seconds left on the breach reaction — figures scatter, then recover. */
+  const breachTRef = useRef(0)
+  const lastResultKeyRef = useRef(-1)
   const epochRef = useRef(0)
   const bodiesRef = useRef<Body[]>([])
   const queueRef = useRef<OutbreakCue[]>([])
@@ -390,7 +473,7 @@ export function OutbreakScene({
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current)
     }
     renderRef.current = render
 
@@ -402,8 +485,28 @@ export function OutbreakScene({
       return () => { ro.disconnect(); renderRef.current = null }
     }
 
+    /** Decays once per frame, not once per body — see the call site below. */
+    const tickBreach = (dt: number) => {
+      if (breachTRef.current > 0) breachTRef.current = Math.max(0, breachTRef.current - dt)
+    }
+
     const retarget = (b: Body) => {
       const { w, h } = sizeRef.current
+
+      // Holding the line. Figures cluster on their station instead of drifting,
+      // with enough jitter that a wall reads as a crowd of people rather than a
+      // row of pegs. A breach overrides it — nobody holds a broken window.
+      const bar = barricadeRef.current
+      if (bar && b.alive && breachTRef.current <= 0) {
+        const station = stationOfBodyRef.current.get(b.id)
+        if (station !== undefined) {
+          const anchor = stationAnchor(station, w, h, PAD_TOP, PAD_BOTTOM)
+          b.tx = Math.min(Math.max(anchor.x + rand(-26, 26), PAD_X), Math.max(PAD_X, w - PAD_X))
+          b.ty = Math.min(Math.max(anchor.y + rand(-16, 16), PAD_TOP), Math.max(PAD_TOP, h - PAD_BOTTOM))
+          return
+        }
+      }
+
       if (b.kind === 'zombie' && Math.random() < 0.65) {
         // zombies drift toward the nearest living human — pure ambiance
         let prey: Body | null = null
@@ -603,6 +706,7 @@ export function OutbreakScene({
 
     const step = (dt: number) => {
       tRef.current += dt
+      tickBreach(dt)
       stepCue(dt)
       for (const b of bodiesRef.current) {
         b.staggerT = Math.max(0, b.staggerT - dt * 2.2)
@@ -672,6 +776,34 @@ export function OutbreakScene({
       resumeRef.current = null
     }
   }, [])
+
+  // ── Barricade: keep placement current, and react once per resolution ───────
+  useEffect(() => {
+    barricadeRef.current = barricade
+    if (!barricade) {
+      // Discussion is over — release the figures back to free wander rather
+      // than leaving them frozen at walls that no longer mean anything.
+      stationOfBodyRef.current = new Map()
+      breachTRef.current = 0
+      return
+    }
+    const alive = bodiesRef.current.filter(b => b.alive)
+    const me = alive.find(b => b.isMe) ?? null
+    stationOfBodyRef.current = assignStations({
+      ids: alive.map(b => b.id),
+      myId: me?.id ?? null,
+      myStation: barricade.myStation,
+      occupancy: barricade.occupancy,
+      previous: stationOfBodyRef.current,
+    })
+
+    // A breach scatters the room. Fired from a key rather than from `held`
+    // changing, so two consecutive breaches both land.
+    if (barricade.resultKey !== lastResultKeyRef.current) {
+      lastResultKeyRef.current = barricade.resultKey
+      if (barricade.held === false) breachTRef.current = BREACH_SECS
+    }
+  }, [barricade])
 
   // ── Feed public-state changes to the director ──────────────────────────────
   useEffect(() => {
