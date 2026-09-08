@@ -718,14 +718,28 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
             ZOMBIE PLAGUE
           </h1>
 
+          {/* 🚨 THE LABEL HAS TO DESCRIBE WHAT THE BUTTON DOES.
+              "DARE TO ENTER" promised the game and delivered a cutscene, so the
+              first thing it did was break its own promise — and it framed the
+              splash as a dare, which is a different tone from the one the
+              transmission actually has. The speaker names themselves in the
+              first line ("Sector Seven Command"), so the button borrows their
+              words. It also sets up the reveal: this is a message from the
+              officer who signed the containment order, and by the last line you
+              learn what happened to them.
+
+              Sized with clamps and nowrap because it is 20 characters against
+              13 — at a fixed 1rem and 0.28em of tracking it overflowed a 375px
+              phone. */}
           <button
             onClick={beginStory}
             style={{
               marginTop:       '0.5rem',
-              padding:         '0.75rem 2.5rem',
+              padding:         'clamp(0.7rem, 2.4vw, 0.75rem) clamp(1.1rem, 6vw, 2.5rem)',
               fontFamily:      'var(--font-mono)',
-              fontSize:        '1rem',
-              letterSpacing:   '0.28em',
+              fontSize:        'clamp(0.72rem, 3vw, 1rem)',
+              letterSpacing:   '0.2em',
+              whiteSpace:      'nowrap',
               textTransform:   'uppercase',
               fontWeight:      700,
               color:           '#060b06',
@@ -743,7 +757,7 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(107,142,35,0.6)'
             }}
           >
-            DARE TO ENTER
+            Message from Command
           </button>
 
           <p style={{

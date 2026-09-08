@@ -661,24 +661,28 @@ function drawOutside(
  * A zombie outside the walls.
  *
  * 🚨 (x, y) IS THE GROUND UNDER ITS FEET, AND THE FEET STAY ON IT.
- * The previous version translated the WHOLE body — feet included — by a
- * vertical lurch, so every walker bobbed a couple of pixels off the floor
- * sixty times a second while its shadow sat still. That is exactly the recipe
- * for reading as floating, which is what play-testing reported twice. The
- * lurch now moves the hips; the feet are planted at y and the shadow is drawn
- * at y, so contact is unambiguous.
+ * An earlier version translated the WHOLE body — feet included — by a vertical
+ * lurch, so every walker bobbed off the floor sixty times a second while its
+ * shadow sat still. That is the recipe for reading as floating, which is what
+ * play-testing reported twice. The lurch moves the hips; the feet are planted
+ * at y and the shadow is drawn at y, so contact is unambiguous.
  *
- * 🚨 SAME SIZE AS THE SURVIVORS INSIDE.
- * It is built to the same proportions as drawFigure's zombie pose and takes
- * the same perspectiveScale, so a walker and a person at the same depth are
- * the same height. They were previously about half scale, which made the
- * compound look like it was being besieged by insects and made the horde read
- * as texture rather than as a threat.
+ * 🚨 SAME SIZE AS THE SURVIVORS INSIDE, AND VISIBLY NOT ONE OF THEM.
+ * It takes the same perspectiveScale, so a walker and a person at the same
+ * depth are the same height. But the horde and the survivors were both drawn
+ * in greens a shade apart, and at a glance a figure outside the wall looked
+ * like a figure inside it. The posture carries that distinction now: pitched
+ * forward off a curved spine, shoulders dropped, head hung low and ahead of
+ * the body — the same hunch drawFigure uses for its zombie form, pushed
+ * further. Nothing inside the compound stands like this, so silhouette alone
+ * says which side of the boards someone is on.
  */
 function drawWalker(
   ctx: CanvasRenderingContext2D, x: number, y: number, s: number, phase: number,
-  /** Unit vector toward the compound — the thing it wants. */
+  /** Unit vector toward the wall it is working — the thing it wants. */
   rx: number, ry: number,
+  /** Eye positions are pushed here as (x, y, r) triples for one batched pass. */
+  eyes: number[],
 ) {
   // Contact shadow, on the ground line and staying there.
   ctx.save()
@@ -691,17 +695,22 @@ function drawWalker(
   const stride = Math.sin(phase) * 3.4 * s
   const bob = Math.abs(Math.sin(phase)) * 1.1 * s      // hips rise on the step
   const hipY = -11 * s + bob
-  const shoulderY = hipY - 8 * s
-  const headY = shoulderY - 3.4 * s
+  // Dropped shoulders. A zombie is not standing to attention.
+  const shoulderY = hipY - 7.2 * s
   // The reach, projected. `ry` is squashed because the camera looks down the
   // scene — a walker on the far side leans toward us a little rather than
-  // vanishing into a vertical line. Raised from 0.45: on the north and south
-  // walls the direction is almost purely vertical, so too much squash flattened
-  // the reach back to horizontal and the figure read as standing side-on to the
-  // boards it is clawing at.
+  // vanishing into a vertical line. 0.6 rather than 0.45: on the north and
+  // south walls the facing direction is almost purely vertical, so too much
+  // squash flattened the reach back toward horizontal and the figure read as
+  // standing side-on to the boards it is clawing at.
   const ax = rx
   const ay = ry * 0.6
-  const lean = ax * 1.8 * s
+  // Pitched forward over its own feet. This is the hunch.
+  const lean = ax * 4.6 * s
+  const leanY = ay * 2.4 * s
+  const headX = lean + ax * 3.4 * s
+  const headY = shoulderY + leanY - 2.6 * s + ay * 2.2 * s
+  const headR = 3.3 * s
 
   ctx.save()
   ctx.translate(x, y)
@@ -712,20 +721,37 @@ function drawWalker(
   ctx.beginPath()
   ctx.moveTo(0, hipY); ctx.lineTo(stride, 0)           // legs land ON the ground
   ctx.moveTo(0, hipY); ctx.lineTo(-stride, 0)
-  ctx.moveTo(0, hipY); ctx.lineTo(lean, shoulderY)     // hunched, leaning in
-  // Arms reaching TOWARD the compound — never away from it. They used to reach
-  // in a fixed +x direction, so half the horde stood with its back to the
-  // boards it was supposed to be trying to get through.
+  // Curved spine — the control point sits BEHIND the lean, so the back bows
+  // outward the way a stooped one does. A straight line from hip to shoulder
+  // reads as a person bending over; a curve reads as a person who cannot
+  // stand up.
+  ctx.moveTo(0, hipY)
+  ctx.quadraticCurveTo(-ax * 1.6 * s, hipY - 4.6 * s, lean, shoulderY + leanY)
+  // Arms reaching TOWARD the wall it is working — never away from it.
   const reach = 8.2 * s
-  ctx.moveTo(lean, shoulderY)
-  ctx.lineTo(lean + ax * reach, shoulderY + ay * reach + 2 * s + Math.sin(phase * 1.3) * 1.4 * s)
-  ctx.moveTo(lean, shoulderY)
-  ctx.lineTo(lean + ax * reach * 0.92, shoulderY + ay * reach * 0.92 + 4.6 * s - Math.sin(phase * 1.1) * 1.4 * s)
+  ctx.moveTo(lean, shoulderY + leanY)
+  ctx.lineTo(lean + ax * reach, shoulderY + leanY + ay * reach + 2 * s + Math.sin(phase * 1.3) * 1.4 * s)
+  ctx.moveTo(lean, shoulderY + leanY)
+  ctx.lineTo(lean + ax * reach * 0.92, shoulderY + leanY + ay * reach * 0.92 + 4.6 * s - Math.sin(phase * 1.1) * 1.4 * s)
   ctx.stroke()
   ctx.beginPath()
-  ctx.arc(lean + ax * 3.4 * s, headY + ay * 2.4 * s, 3.2 * s, 0, Math.PI * 2)
+  ctx.arc(headX, headY, headR, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
+
+  // Eyes are NOT drawn here. Two shadowed arcs per walker is thirty-two
+  // shadowed fills a frame, and canvas shadowBlur is the most expensive thing
+  // on this loop by a wide margin. The positions go into a buffer and the whole
+  // horde's eyes are drawn as one path with the shadow set once — see drawHorde.
+  const fx = x + headX + ax * 1.5 * s
+  const fy = y + headY + ay * 1.5 * s - 0.4 * s
+  // Perpendicular to the gaze, so the pair straddles the face whichever way
+  // the thing is turned.
+  const px = -ay
+  const py = ax
+  const r = 0.74 * s
+  eyes.push(fx + px * 1.05 * s, fy + py * 1.05 * s, r)
+  eyes.push(fx - px * 1.05 * s, fy - py * 1.05 * s, r)
 }
 
 /**
@@ -1031,6 +1057,7 @@ function drawHorde(
   // Depth-sorted: drawn in array order, a walker behind another could paint
   // over one standing in front of it.
   const order = [...walkers].sort((a, b) => a.y - b.y)
+  const eyes: number[] = []
   for (const wk of order) {
     // 🚨 EVERY WALKER FACES ITS WALL, on all four sides.
     // Reaching toward the compound's CENTRE looked right on the east and west
@@ -1050,7 +1077,26 @@ function drawHorde(
     // The SAME scale function the survivors use, so a walker and a person at
     // the same depth are the same height. They ran on their own curve before
     // and came out around half size.
-    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, rx, ry)
+    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, rx, ry, eyes)
+  }
+
+  // ── Every eye in the horde, in one shadowed fill ────────────────────────
+  // Thirty-two individually shadowed arcs a frame would be the most expensive
+  // thing in this loop; canvas shadowBlur is not cheap. Batched, the whole
+  // horde costs one path and one shadow state change.
+  if (eyes.length > 0) {
+    ctx.save()
+    ctx.shadowColor = 'rgba(255,47,47,0.85)'
+    ctx.shadowBlur = 4
+    ctx.fillStyle = '#ff3b30'
+    ctx.beginPath()
+    for (let i = 0; i < eyes.length; i += 3) {
+      // moveTo before each arc, or consecutive circles are joined by a chord.
+      ctx.moveTo(eyes[i] + eyes[i + 2], eyes[i + 1])
+      ctx.arc(eyes[i], eyes[i + 1], eyes[i + 2], 0, Math.PI * 2)
+    }
+    ctx.fill()
+    ctx.restore()
   }
 }
 
