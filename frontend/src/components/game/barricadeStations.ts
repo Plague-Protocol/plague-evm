@@ -116,8 +116,11 @@ export function stationAnchor(station: number, c: Corners): StationAnchor {
   const my = (s.y1 + s.y2) / 2
   // A full body-length back from the boards. The first pass used a small inset
   // and figures ended up drawn ON the wall, which read as standing on top of
-  // the barricade rather than behind it.
-  const inset = Math.max(26, Math.min(52, (c.nl.y - c.fl.y) * 0.26))
+  // the barricade rather than behind it. The floor rose again when the walls
+  // became real boarding rather than a stroked line: the timber is up to ~21px
+  // of half-thickness on the near side, so anything less than this puts a
+  // defender inside the wall it is defending.
+  const inset = Math.max(38, Math.min(60, (c.nl.y - c.fl.y) * 0.3))
   return { x: mx - out.dx * inset, y: my - out.dy * inset }
 }
 

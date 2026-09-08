@@ -560,7 +560,11 @@ function drawOutside(
  * compound look like it was being besieged by insects and made the horde read
  * as texture rather than as a threat.
  */
-function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, phase: number) {
+function drawWalker(
+  ctx: CanvasRenderingContext2D, x: number, y: number, s: number, phase: number,
+  /** Unit vector toward the compound — the thing it wants. */
+  rx: number, ry: number,
+) {
   // Contact shadow, on the ground line and staying there.
   ctx.save()
   ctx.beginPath()
@@ -574,6 +578,12 @@ function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: numb
   const hipY = -11 * s + bob
   const shoulderY = hipY - 8 * s
   const headY = shoulderY - 3.4 * s
+  // The reach, projected. `ry` is squashed because the camera looks down the
+  // scene — a walker on the far side leans toward us a little rather than
+  // vanishing into a vertical line.
+  const ax = rx
+  const ay = ry * 0.45
+  const lean = ax * 1.8 * s
 
   ctx.save()
   ctx.translate(x, y)
@@ -584,13 +594,18 @@ function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: numb
   ctx.beginPath()
   ctx.moveTo(0, hipY); ctx.lineTo(stride, 0)           // legs land ON the ground
   ctx.moveTo(0, hipY); ctx.lineTo(-stride, 0)
-  ctx.moveTo(0, hipY); ctx.lineTo(1.6 * s, shoulderY)  // hunched spine
-  // Arms reaching forward — the whole silhouette of the thing.
-  ctx.moveTo(1.6 * s, shoulderY); ctx.lineTo(8.4 * s, shoulderY + 2 * s + Math.sin(phase * 1.3) * 1.4 * s)
-  ctx.moveTo(1.6 * s, shoulderY); ctx.lineTo(7.8 * s, shoulderY + 4.6 * s - Math.sin(phase * 1.1) * 1.4 * s)
+  ctx.moveTo(0, hipY); ctx.lineTo(lean, shoulderY)     // hunched, leaning in
+  // Arms reaching TOWARD the compound — never away from it. They used to reach
+  // in a fixed +x direction, so half the horde stood with its back to the
+  // boards it was supposed to be trying to get through.
+  const reach = 8.2 * s
+  ctx.moveTo(lean, shoulderY)
+  ctx.lineTo(lean + ax * reach, shoulderY + ay * reach + 2 * s + Math.sin(phase * 1.3) * 1.4 * s)
+  ctx.moveTo(lean, shoulderY)
+  ctx.lineTo(lean + ax * reach * 0.92, shoulderY + ay * reach * 0.92 + 4.6 * s - Math.sin(phase * 1.1) * 1.4 * s)
   ctx.stroke()
   ctx.beginPath()
-  ctx.arc(3.4 * s, headY, 3.2 * s, 0, Math.PI * 2)
+  ctx.arc(lean + ax * 3.4 * s, headY + ay * 2.4 * s, 3.2 * s, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
 }
@@ -799,7 +814,11 @@ function stepHorde(walkers: Walker[], c: Corners, dt: number, threatened: number
     // courtyard to get there. Clamping the position — not just the destination
     // — is what actually keeps them out, and it turns a straight line through
     // the compound into a shamble along the outside of the boards.
-    const p = clampOutside(wk.x, wk.y, c)
+    //
+    // The margin clears the BOARDING, not the centreline. Now that a wall is
+    // real timber up to ~21px thick, a flat 14 would have parked half the horde
+    // inside the planks.
+    const p = clampOutside(wk.x, wk.y, c, wallBand(depthAt(wk.y, c)) + 6)
     wk.x = p.x
     wk.y = p.y
     wk.phase += dt * 3.4
@@ -825,29 +844,79 @@ function wallPressure(walkers: readonly Walker[], c: Corners): number[] {
   return counts
 }
 
-function drawHorde(ctx: CanvasRenderingContext2D, walkers: readonly Walker[], h: number) {
-  // Depth-sorted: drawn in array order, a walker behind the compound could
-  // paint over one standing in front of it.
-  const order = [...walkers].sort((a, b) => a.y - b.y)
+/**
+ * Draws the walkers whose ground line falls within [yFrom, yTo).
+ *
+ * The range exists for depth: everything outside the NEAR wall is closer to
+ * the camera than that wall is, so it has to be painted after it. Drawn in one
+ * pass, the near boarding covered the walkers standing in front of it, which
+ * with the new thicker walls would have swallowed them completely.
+ */
+function drawHorde(
+  ctx: CanvasRenderingContext2D, walkers: readonly Walker[], c: Corners, h: number,
+  yFrom: number, yTo: number,
+) {
+  const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
+  const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
+  // Depth-sorted: drawn in array order, a walker behind another could paint
+  // over one standing in front of it.
+  const order = walkers.filter(wk => wk.y >= yFrom && wk.y < yTo).sort((a, b) => a.y - b.y)
   for (const wk of order) {
+    const dx = cx - wk.x
+    const dy = cy - wk.y
+    const len = Math.hypot(dx, dy) || 1
     // The SAME scale function the survivors use, so a walker and a person at
     // the same depth are the same height. They ran on their own curve before
     // and came out around half size.
-    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase)
+    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, dx / len, dy / len)
   }
 }
 
 /**
- * The four walls, as actual barricades.
+ * The four walls, as boarded-up plywood.
  *
- * Stacked planks with posts at the ends — a single stroked line read as a
- * diagram box, which is exactly what play-testing said. Plank count and
- * thickness scale with depth so the near wall is heavier than the far one.
+ * 🚨 THEY ARE FILLED TIMBER, NOT STROKED LINES.
+ * The previous version stacked three to five thin strokes along the outward
+ * normal, which totalled about eight pixels of "wall" on the far side. Two
+ * things went wrong with that. It read as a diagram — a boxed region on a
+ * floor plan rather than something built — and everything standing at a corner
+ * (the brazier posts especially) looked like a box balanced on a line, because
+ * there was no structure underneath for it to be mounted on.
  *
- * Three states, all readable at a glance on a phone: intact, straining (under
- * attack — shuddering, red bleeding between the boards) and splintered (a push
- * got through this round). `collapsed` is the endgame, not a state of a wall.
+ * So a wall is now a filled band: four to six boards of real width, in wood
+ * colours, with seams between them, cross battens holding them together and a
+ * squared post at each end. The band is wide enough that the corner posts have
+ * something to stand on, and wide enough that a figure inside it is
+ * unambiguously behind it.
+ *
+ * THE COLOUR LADDER SURVIVES, IT JUST MOVED.
+ * Timber is the material, so state can no longer be carried by the boards'
+ * own colour without turning them plastic. It rides on the inner rim light and
+ * the strain glow instead:
+ *
+ *   olive rim   intact
+ *   amber rim   under pressure — they are on it right now
+ *   ash boards  splintered: a push got through, damaged but still standing
+ *   red         collapsed at parity, the game is over
  */
+
+/** Half-thickness of the boarding at a given depth. Near walls are heavier. */
+function wallBand(d: number): number {
+  return 9 + d * 12
+}
+
+/**
+ * How far inside the wall CENTRELINE a body has to stay.
+ *
+ * One number, used both to place targets and to catch escapes, and it accounts
+ * for the boarding's real thickness. Two different constants (18 for targets, 8
+ * for the guard) were what let a body settle in a spot the guard then disagreed
+ * with, and the disagreement is what produced the sideways drift.
+ */
+function bodyClearance(y: number, c: Corners): number {
+  return wallBand(depthAt(y, c)) + 7
+}
+
 function drawWalls(
   ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: BarricadeView,
   pressure: readonly number[],
@@ -861,9 +930,9 @@ function drawWalls(
 
     const midY = (seg.y1 + seg.y2) / 2
     const d = depthAt(midY, c)
-    const planks = 3 + Math.round(d * 2)          // 3 far … 5 near
-    const gap = 2.6 + d * 2.2
-    const lw = 2.2 + d * 2.4
+    const band = wallBand(d)
+    const boards = 4 + Math.round(d * 2)          // 4 far … 6 near
+    const bh = (band * 2) / boards                // one board's thickness
 
     // Shake is CAUSED by the crowd, not drawn alongside it: it builds as they
     // arrive and eases as they wander off, so the picture explains itself.
@@ -883,13 +952,13 @@ function drawWalls(
       ctx.translate(out.dx * Math.sin(t * 30) * amp, out.dy * Math.sin(t * 30) * amp)
     }
 
-    // Strain bleeding between the boards, scaled by how many are leaning on it.
+    // Strain bleeding out from behind the boards, scaled by how many are
+    // leaning on it. Amber, not red — red is reserved for the walls being DOWN.
     if (crowd > 0.15 && !gone) {
       const pulse = (0.18 + 0.24 * Math.sin(t * 7)) * crowd
       ctx.save()
-      // Amber, not red. Red is reserved for the walls being DOWN.
       ctx.strokeStyle = `rgba(245,197,24,${pulse.toFixed(3)})`
-      ctx.lineWidth = planks * gap + 10
+      ctx.lineWidth = band * 2 + 14
       ctx.globalAlpha = 0.45
       ctx.beginPath()
       ctx.moveTo(seg.x1, seg.y1)
@@ -898,57 +967,94 @@ function drawWalls(
       ctx.restore()
     }
 
-    // ── The colour ladder ──────────────────────────────────────────────────
-    // Red used to mean "a push got through", which read as the wall being GONE
-    // — so a round with two splintered walls looked like the game was already
-    // lost. Red is now reserved for the one state that is actually terminal:
-    // the walls down and the horde inside.
-    //
-    //   green  intact
-    //   amber  under pressure — they are on it right now
-    //   ash    splintered: a push got through, damaged but still standing
-    //   red    collapsed at parity, the game is over
-    ctx.strokeStyle = gone
-      ? 'rgba(230,51,41,0.75)'
-      : straining
-        ? 'rgba(245,197,24,0.95)'
-        : broken
-          ? 'rgba(122,116,92,0.8)'
-          : 'rgba(120,152,60,0.72)'
-    ctx.lineWidth = lw
-    ctx.lineCap = 'butt'
-
-    for (let k = 0; k < planks; k++) {
-      // Planks stack along the wall's own outward normal, so each wall boards
-      // up in its own direction instead of all of them stacking downward.
-      const off = (k - (planks - 1) / 2) * gap
-      const ox = out.dx * off
-      const oy = out.dy * off
-      // A splintered wall keeps its outer boards and loses the middle: a gap
-      // punched through reads at a glance where a colour change does not.
-      const spans: [number, number][] = gone
-        ? [[0, 0.16], [0.34, 0.46], [0.72, 0.86]]
-        : broken && k > 0
-          ? [[0, 0.3], [0.7, 1]]
-          : [[0, 1]]
-      for (const [a, b] of spans) {
-        ctx.beginPath()
-        ctx.moveTo(seg.x1 + (seg.x2 - seg.x1) * a + ox, seg.y1 + (seg.y2 - seg.y1) * a + oy)
-        ctx.lineTo(seg.x1 + (seg.x2 - seg.x1) * b + ox, seg.y1 + (seg.y2 - seg.y1) * b + oy)
-        ctx.stroke()
-      }
+    // A point on the wall: `f` along it (0..1), `o` across it (outward +).
+    const at = (f: number, o: number) => ({
+      x: seg.x1 + (seg.x2 - seg.x1) * f + out.dx * o,
+      y: seg.y1 + (seg.y2 - seg.y1) * f + out.dy * o,
+    })
+    const slab = (f1: number, f2: number, o1: number, o2: number, fill: string) => {
+      const a = at(f1, o1)
+      const b = at(f2, o1)
+      const cc = at(f2, o2)
+      const dd = at(f1, o2)
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.lineTo(cc.x, cc.y)
+      ctx.lineTo(dd.x, dd.y)
+      ctx.closePath()
+      ctx.fillStyle = fill
+      ctx.fill()
     }
 
-    // End posts — they turn a stack of lines into a built thing.
+    // Which stretches of this wall still have boarding on them. A splintered
+    // wall loses its middle: a hole punched through reads at a glance where a
+    // change of colour does not.
+    const spans: [number, number][] = gone
+      ? [[0, 0.15], [0.33, 0.45], [0.71, 0.86]]
+      : broken
+        ? [[0, 0.34], [0.66, 1]]
+        : [[0, 1]]
+
+    // Timber. Ash when splintered, scorched when the walls are down.
+    const tone = gone
+      ? ['#4a241d', '#5d2f24', '#6b382a']
+      : broken
+        ? ['#413d36', '#524d43', '#5f594d']
+        : ['#4a3520', '#5b4227', '#6d4f2e']
+
+    for (const [f1, f2] of spans) {
+      // Ground shadow just outside the boards, so the wall sits ON the earth
+      // rather than floating over it.
+      slab(f1, f2, band, band + 3 + d * 3, 'rgba(0,0,0,0.4)')
+
+      for (let k = 0; k < boards; k++) {
+        const o1 = -band + k * bh
+        // A hairline of gap between boards is what makes it read as boarding
+        // rather than as a solid slab.
+        slab(f1, f2, o1, o1 + bh - 0.9, tone[k % tone.length])
+      }
+
+      // Cross battens — the thing that turns loose boards into a barricade.
+      const len = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1
+      const bw = Math.max(0.018, (5 + d * 4) / len)
+      for (const f of [0.5]) {
+        const m = f1 + (f2 - f1) * f
+        slab(m - bw, m + bw, -band, band, gone ? '#3a1d18' : broken ? '#35322c' : '#3c2a17')
+      }
+
+      // Lit top edge. The braziers are inside, so the inner face catches them.
+      slab(f1, f2, -band, -band + 1.6, gone
+        ? 'rgba(150,60,44,0.55)'
+        : 'rgba(160,124,74,0.55)')
+
+      // ── The state rim ────────────────────────────────────────────────────
+      ctx.strokeStyle = gone
+        ? 'rgba(230,51,41,0.85)'
+        : straining
+          ? 'rgba(245,197,24,0.95)'
+          : broken
+            ? 'rgba(122,116,92,0.75)'
+            : 'rgba(120,152,60,0.6)'
+      ctx.lineWidth = 1.6
+      const r1 = at(f1, -band)
+      const r2 = at(f2, -band)
+      ctx.beginPath()
+      ctx.moveTo(r1.x, r1.y)
+      ctx.lineTo(r2.x, r2.y)
+      ctx.stroke()
+    }
+
+    // End posts — squared timber standing proud of the boarding at each corner.
+    // These are what the braziers are mounted on, and why a light at a corner no
+    // longer reads as a box balanced on a line.
     if (!gone) {
-      ctx.lineWidth = lw + 1.4
-      ctx.strokeStyle = broken ? 'rgba(122,116,92,0.85)' : 'rgba(90,116,48,0.9)'
-      const half = (planks * gap) / 2 + 2
-      for (const [px, py] of [[seg.x1, seg.y1], [seg.x2, seg.y2]] as const) {
-        ctx.beginPath()
-        ctx.moveTo(px - out.dx * half, py - out.dy * half)
-        ctx.lineTo(px + out.dx * half, py + out.dy * half)
-        ctx.stroke()
+      const pw = Math.max(0.02, (band * 0.62) / (Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1))
+      for (const f of [0, 1]) {
+        const f1 = Math.max(0, f - pw)
+        const f2 = Math.min(1, f + pw)
+        slab(f1, f2, -band - 2.5, band + 2.5, broken ? '#3b3831' : '#40301c')
+        slab(f1, f2, -band - 2.5, -band + 1.4, broken ? '#5e594e' : '#6d5230')
       }
     }
     ctx.restore()
@@ -999,11 +1105,14 @@ function drawScene(
     const lamp = bar.collapsed ? 0.12 : 1
     // Pools first: light lies ON the ground, under the boards and the bodies.
     drawLampPools(ctx, c, t, glow, lamp)
-    // Horde next: they are outside, so the boards occlude them.
-    drawHorde(ctx, walkers, h)
+    // Horde behind and beside: the boards occlude them.
+    drawHorde(ctx, walkers, c, h, -Infinity, c.nl.y)
     drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
-    // Posts last of the compound layer, so they stand in front of their wall.
+    // Posts before the front rank, so a brazier reads as mounted on its corner.
     drawLampPosts(ctx, c, t, lamp)
+    // Horde in FRONT of the near wall — nearer the camera than the boarding, so
+    // painted over it.
+    drawHorde(ctx, walkers, c, h, c.nl.y, Infinity)
   }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
@@ -1168,7 +1277,7 @@ export function OutbreakScene({
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
         hordeRef.current = Array.from({ length: HORDE_SIZE }, (_, i) => {
           const t0 = hordeTarget(c, null, noise(i, 61), noise(i, 67))
-          const p0 = clampOutside(t0.x, t0.y, c)
+          const p0 = clampOutside(t0.x, t0.y, c, wallBand(depthAt(t0.y, c)) + 6)
           return { x: p0.x, y: p0.y, tx: p0.x, ty: p0.y, phase: i, retargetIn: noise(i, 71) * 4 }
         })
       }
@@ -1221,7 +1330,7 @@ export function OutbreakScene({
 
         if (!posted) {
           const q = interiorPoint(c, Math.random(), Math.random())
-          const pi = clampInside(q.x, q.y, c, 16)
+          const pi = clampInside(q.x, q.y, c, bodyClearance(q.y, c))
           b.tx = pi.x
           b.ty = pi.y
           return
@@ -1238,10 +1347,11 @@ export function OutbreakScene({
           const ax = (seg.x2 - seg.x1) / len
           const ay = (seg.y2 - seg.y1) / len
           const along = rand(-1, 1) * len * 0.24
+          const qy = anchor.y + ay * along + rand(-5, 5)
           const p = clampInside(
             anchor.x + ax * along + rand(-5, 5),
-            anchor.y + ay * along + rand(-5, 5),
-            c, 18,
+            qy,
+            c, bodyClearance(qy, c),
           )
           b.tx = p.x
           b.ty = p.y
@@ -1484,15 +1594,37 @@ export function OutbreakScene({
       // Belt and braces: whatever moved a body this frame — walking, a cue, a
       // resize — it ends up inside the walls. The picture only works if the
       // survivors are unambiguously behind the barricade.
+      //
+      // 🚨 IT CORRECTS AN ESCAPE. IT DOES NOT DRAG ANYONE.
+      // This ran unconditionally with a tighter margin than the one used to
+      // place targets, so a figure could settle at a wall in a spot the guard
+      // disagreed with by a pixel or two. The guard then nudged it sideways
+      // every single frame — while `moveToward` had already returned early
+      // (it was "there") and so never advanced the walk cycle. A body sliding
+      // across the ground with its legs still: exactly the sideways float that
+      // showed up after someone answered a wall.
+      //
+      // Now both use bodyClearance, so they cannot disagree; and a correction
+      // large enough to matter re-aims the figure so it WALKS somewhere legal
+      // instead of being shoved there.
       const barNow = barricadeRef.current
       if (barNow && !barNow.collapsed) {
         const { w, h } = sizeRef.current
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
         for (const b of bodiesRef.current) {
           if (!b.alive) continue
-          const p = clampInside(b.x, b.y, c, 8)
+          const p = clampInside(b.x, b.y, c, bodyClearance(b.y, c))
+          const shove = Math.hypot(p.x - b.x, p.y - b.y)
+          if (shove < 0.05) continue
           b.x = p.x
           b.y = p.y
+          // Legs keep up with the correction, so even a shove looks like steps.
+          b.walk += shove * 0.35
+          b.gait = Math.min(1, b.gait + shove * 0.2)
+          if (shove > 0.5) {
+            b.pauseUntil = 0
+            retarget(b)
+          }
         }
       }
       for (const b of bodiesRef.current) {
