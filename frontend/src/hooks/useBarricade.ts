@@ -63,8 +63,20 @@ export function useBarricade(
     socket.emit('barricade_action', { roomId, playerAddress: address, action })
   }, [socket, roomId, address])
 
-  const myStation: StationId | null =
+  const assigned: StationId | null =
     state && seatIndex >= 0 ? assignedStation(roomId ?? '', state.round, seatIndex) : null
 
-  return { state, choice, choose, myStation }
+  /**
+   * Where the player is ACTUALLY standing — their choice if they moved, their
+   * assigned post otherwise.
+   *
+   * The cam was previously fed the assigned wall, so tapping a wall changed the
+   * button state and nothing else: your figure stayed where it started and the
+   * control looked broken. Deriving it from the live choice also means the run
+   * starts on the tap rather than waiting for the server to echo the move back.
+   */
+  const myStation: StationId | null =
+    choice.kind === 'move' ? choice.station : assigned
+
+  return { state, choice, choose, myStation, assignedStation: assigned }
 }

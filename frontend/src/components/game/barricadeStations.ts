@@ -114,8 +114,28 @@ export function stationAnchor(station: number, c: Corners): StationAnchor {
   const out = wallOutward(station, c)
   const mx = (s.x1 + s.x2) / 2
   const my = (s.y1 + s.y2) / 2
-  const inset = Math.min(34, (c.nl.y - c.fl.y) * 0.2)
+  // A full body-length back from the boards. The first pass used a small inset
+  // and figures ended up drawn ON the wall, which read as standing on top of
+  // the barricade rather than behind it.
+  const inset = Math.max(26, Math.min(52, (c.nl.y - c.fl.y) * 0.26))
   return { x: mx - out.dx * inset, y: my - out.dy * inset }
+}
+
+/**
+ * The idle area: the middle of the compound, well clear of every wall.
+ *
+ * Figures with nothing to defend belong here rather than drifting into the
+ * boards. Between pushes — and in every phase where the barricade is not
+ * running — the room mills around in the open, and closing on a wall becomes a
+ * visible act rather than the default state.
+ */
+export function interiorPoint(c: Corners, rx: number, ry: number): StationAnchor {
+  const t = 0.34 + ry * 0.32
+  const left = c.fl.x + (c.nl.x - c.fl.x) * t
+  const right = c.fr.x + (c.nr.x - c.fr.x) * t
+  const y = c.fl.y + (c.nl.y - c.fl.y) * t
+  const pad = (right - left) * 0.26
+  return { x: left + pad + rx * (right - left - pad * 2), y }
 }
 
 /**

@@ -29,8 +29,8 @@ import { useEffect, useRef } from 'react'
 import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
 import {
-  assignStations, stationAnchor, compoundShape, wallSegment, wallOutward,
-  clampInside, depthAt, type Corners,
+  assignStations, stationAnchor, interiorPoint, compoundShape, wallSegment,
+  wallOutward, clampInside, depthAt, type Corners,
 } from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
@@ -60,6 +60,16 @@ const FINALE_SECS = 2.6
 const CUE_GAP_SECS = 0.35
 /** How long the room stays scattered after a station breaks. */
 const BREACH_SECS = 2.4
+/**
+ * Answering a wall is a RUN, not a stroll.
+ *
+ * At the idle walk of 16 px/s, crossing the compound to a threatened wall took
+ * well over ten seconds — longer than the eight-second warning, so tapping a
+ * wall produced no visible response before the push landed and the control felt
+ * broken. A sprint makes the choice legible the instant it is made.
+ */
+const SPRINT_SPEED = 92
+const SPRINT_SECS = 2.6
 
 const COLOR_HUMAN = '#93a883'
 const COLOR_HUMAN_ME = '#d6e6a3'
@@ -89,6 +99,8 @@ interface Body {
   /** Seconds of committed flight left — keeps a scared figure running past the trigger radius. */
   fleeT: number
   staggerT: number
+  /** Seconds of sprint left — set when this figure is sent to a new wall. */
+  sprintT: number
   transformT: number
   shieldT: number
 }
@@ -121,6 +133,7 @@ function makeBody(fig: Figure, w: number, h: number): Body {
     dying: false,
     fleeT: 0,
     staggerT: 0,
+    sprintT: 0,
     transformT: 0,
     shieldT: 0,
   }
@@ -347,24 +360,50 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
   ctx.fillStyle = sky
   ctx.fillRect(0, 0, w, horizon)
 
-  // Two ranks: the far one dimmer and thinner, for depth.
+  // Forest on ALL FOUR SIDES. The first pass drew a treeline along the top only,
+  // so the compound sat in a lit void with woods painted behind it — the walls
+  // to the east, south and west were holding back nothing. Trees are scattered
+  // across the whole canvas and then anything that lands INSIDE the compound is
+  // dropped, which fills the margin evenly without hand-placing four bands.
+  const tree = (x: number, baseY: number, th: number, halfW: number, far: boolean) => {
+    ctx.fillStyle = far ? 'rgba(22,38,26,0.85)' : 'rgba(14,26,17,0.95)'
+    ctx.beginPath()
+    ctx.moveTo(x - halfW, baseY)
+    ctx.lineTo(x, baseY - th)
+    ctx.lineTo(x + halfW, baseY)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = 'rgba(10,16,10,0.9)'
+    ctx.fillRect(x - 1.2, baseY - 2, 2.4, 6)
+  }
+
+  // Back ranks, above the compound — kept dense so the horizon reads as woods.
   for (const rank of [0, 1] as const) {
     const baseY = c.fl.y * (rank === 0 ? 0.72 : 0.94)
     const count = rank === 0 ? 22 : 16
     for (let i = 0; i < count; i++) {
       const x = noise(i + rank * 50) * (w + 60) - 30
       const th = c.fl.y * (rank === 0 ? 0.34 : 0.5) * (0.6 + noise(i, 3) * 0.7)
-      const halfW = (rank === 0 ? 5 : 8) * (0.7 + noise(i, 7) * 0.6)
-      ctx.fillStyle = rank === 0 ? 'rgba(22,38,26,0.85)' : 'rgba(14,26,17,0.95)'
-      ctx.beginPath()
-      ctx.moveTo(x - halfW, baseY)
-      ctx.lineTo(x, baseY - th)
-      ctx.lineTo(x + halfW, baseY)
-      ctx.closePath()
-      ctx.fill()
-      ctx.fillStyle = 'rgba(10,16,10,0.9)'
-      ctx.fillRect(x - 1.2, baseY - 2, 2.4, 6)
+      tree(x, baseY, th, (rank === 0 ? 5 : 8) * (0.7 + noise(i, 7) * 0.6), rank === 0)
     }
+  }
+
+  // Flanks and foreground. Sized by depth so trees nearer the camera are bigger,
+  // which is what stops the sides reading as wallpaper.
+  const inside = (x: number, y: number) => {
+    if (y < c.fl.y || y > c.nl.y) return false
+    const k = (y - c.fl.y) / Math.max(1, c.nl.y - c.fl.y)
+    return x > c.fl.x + (c.nl.x - c.fl.x) * k && x < c.fr.x + (c.nr.x - c.fr.x) * k
+  }
+  for (let i = 0; i < 54; i++) {
+    const x = noise(i, 31) * (w + 80) - 40
+    const y = c.fl.y + noise(i, 37) * (h - c.fl.y + 30)
+    // A generous skirt around the walls: trees must not appear to grow out of
+    // the barricade itself.
+    if (inside(x, y) || (inside(x - 26, y) && inside(x + 26, y))) continue
+    if (inside(x - 20, y) || inside(x + 20, y) || inside(x, y - 16) || inside(x, y + 16)) continue
+    const d = 0.45 + ((y - c.fl.y) / Math.max(1, h - c.fl.y)) * 0.9
+    tree(x, y, (26 + noise(i, 41) * 34) * d, (5 + noise(i, 43) * 4) * d, false)
   }
 
   // Lamplight on the compound floor. Static too, so it is baked in here rather
@@ -441,6 +480,18 @@ function drawOutside(
  */
 function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, phase: number) {
   const lurch = Math.sin(phase) * 1.4
+
+  // Contact shadow. Without one these read as floating: a stick figure on a
+  // dark field has nothing to say where the ground is, and the eye reports it
+  // as hovering. The shadow stays on the ground line while the body lurches
+  // above it, which is also what sells the walk.
+  ctx.save()
+  ctx.beginPath()
+  ctx.ellipse(x, y + 4.6 * s, 4.2 * s, 1.5 * s, 0, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'
+  ctx.fill()
+  ctx.restore()
+
   ctx.save()
   ctx.translate(x, y + lurch)
   ctx.strokeStyle = 'rgba(143,191,63,0.62)'
@@ -476,6 +527,9 @@ function drawHorde(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
   const spanX = (c.nr.x - c.nl.x) / 2
   const spanY = (c.nl.y - c.fl.y) / 2
 
+  // Collected then depth-sorted: drawn in index order, a walker behind the
+  // compound could paint over one standing in front of it.
+  const placed: { x: number; y: number; s: number; phase: number }[] = []
   for (let i = 0; i < count; i++) {
     // Two thirds converge on the threatened wall; the rest keep circling, so
     // the pressure is legible without the rest of the picture emptying out.
@@ -492,14 +546,19 @@ function drawHorde(ctx: CanvasRenderingContext2D, c: Corners, t: number, bar: Ba
     } else {
       // A slow patrol around the perimeter, each at its own rate — they are
       // looking for a way in, not orbiting a point.
+      // Patrol the perimeter, but on the GROUND. The orbit is squashed in y and
+      // biased downward so walkers track the floor plane instead of drifting up
+      // into the treeline, where they looked like they were flying.
       const a = noise(i, 17) * Math.PI * 2 + t * (0.05 + noise(i, 19) * 0.06)
-      const r = 1.32 + noise(i, 23) * 0.5
+      const r = 1.22 + noise(i, 23) * 0.42
       x = cx + Math.cos(a) * spanX * r
-      y = cy + Math.sin(a) * spanY * r
+      y = cy + Math.sin(a) * spanY * r * 0.72 + spanY * 0.18
     }
     const d = depthAt(y, c)
-    drawWalker(ctx, x, y, 0.85 + d * 0.7, t * 3.4 + i)
+    placed.push({ x, y, s: 0.85 + d * 0.7, phase: t * 3.4 + i })
   }
+  placed.sort((a, b) => a.y - b.y)
+  for (const p of placed) drawWalker(ctx, p.x, p.y, p.s, p.phase)
 }
 
 /**
@@ -639,9 +698,11 @@ function drawScene(
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
   for (const b of [...bodies].sort((a, c) => a.y - c.y)) {
-    // `uniform` while the compound stands: identical survivors inside, and the
-    // only truthful figure is your own.
-    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar !== null)
+    // `uniform` only while the barricade is RUNNING. That is when placement is
+    // truthful and therefore when a visible tell would combine with chat claims
+    // to narrow the suspect pool. Outside Discussion nobody is posted anywhere,
+    // so the infection and elimination cues can read normally.
+    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar?.active === true)
   }
   if (flashBody) drawBolt(ctx, flashBody, h)
 
@@ -664,6 +725,20 @@ function drawScene(
 
 /** What the cam needs to draw the barricade. Counts and geometry only. */
 export interface BarricadeView {
+  /**
+   * Whether the barricade MECHANIC is running (Discussion only).
+   *
+   * Separate from whether the compound is drawn, which is always. The place
+   * exists for the whole game — a room that becomes a fortified courtyard for
+   * three minutes and an empty chamber the rest of the time reads as two
+   * different games. What changes by phase is what is happening in it.
+   *
+   * It also gates uniform rendering: outside Discussion the infection and
+   * elimination cues need to distinguish figures, and they are safe to show
+   * then because placement is not truthful when nobody is posted at a wall.
+   */
+  readonly active: boolean
+  /** Empty outside Discussion — figures mill about inside instead of posting. */
   readonly occupancy: readonly number[]
   /** Station under attack, or null between pushes. */
   readonly threatened: number | null
@@ -718,6 +793,8 @@ export function OutbreakScene({
   const breachTRef = useRef(0)
   /** Set when placement changes; the sim loop clears pauses and re-forms. */
   const reformRef = useRef(false)
+  /** Figures whose wall changed — they sprint to it on the next frame. */
+  const sprintersRef = useRef<Set<number>>(new Set())
   /** Cached sky + treeline. Rebuilt on resize only — see renderBackdrop. */
   const backdropRef = useRef<HTMLCanvasElement | null>(null)
   /** One fog puff, blitted five times per frame instead of five gradients. */
@@ -796,14 +873,35 @@ export function OutbreakScene({
       // row of pegs. A breach overrides it — nobody holds a broken window.
       const bar = barricadeRef.current
       if (bar && b.alive && breachTRef.current <= 0) {
+        const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
         const station = stationOfBodyRef.current.get(b.id)
-        if (station !== undefined) {
-          const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
+
+        // Nobody posted — mill about in the middle, clear of the boards. This
+        // is every phase except Discussion, and the gaps between pushes.
+        if (station === undefined) {
+          const q = interiorPoint(c, Math.random(), Math.random())
+          const pi = clampInside(q.x, q.y, c, 16)
+          b.tx = pi.x
+          b.ty = pi.y
+          return
+        }
+        {
           const anchor = stationAnchor(station, c)
           // Jitter, then clamp INSIDE the walls. Bodies used to be bounded by
           // the canvas, so they walked straight through a barricade and stood
           // in the forest — which made nonsense of the whole picture.
-          const p = clampInside(anchor.x + rand(-30, 30), anchor.y + rand(-18, 18), c, 12)
+          // Spread along the wall, barely across it: a line of defenders, not a
+          // cloud that drifts into the boards.
+          const seg = wallSegment(station, c)
+          const len = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1
+          const ax = (seg.x2 - seg.x1) / len
+          const ay = (seg.y2 - seg.y1) / len
+          const along = rand(-1, 1) * len * 0.24
+          const p = clampInside(
+            anchor.x + ax * along + rand(-5, 5),
+            anchor.y + ay * along + rand(-5, 5),
+            c, 18,
+          )
           b.tx = p.x
           b.ty = p.y
           return
@@ -1014,7 +1112,12 @@ export function OutbreakScene({
 
       if (reformRef.current) {
         reformRef.current = false
-        for (const b of bodiesRef.current) b.pauseUntil = 0
+        const sprinters = sprintersRef.current
+        for (const b of bodiesRef.current) {
+          b.pauseUntil = 0
+          if (sprinters.has(b.id)) b.sprintT = SPRINT_SECS
+        }
+        sprintersRef.current = new Set()
       }
 
       // Belt and braces: whatever moved a body this frame — walking, a cue, a
@@ -1033,6 +1136,7 @@ export function OutbreakScene({
       }
       for (const b of bodiesRef.current) {
         b.staggerT = Math.max(0, b.staggerT - dt * 2.2)
+        b.sprintT = Math.max(0, b.sprintT - dt)
         b.transformT = Math.max(0, b.transformT - dt / 0.7)
         b.shieldT = Math.max(0, b.shieldT - dt / 0.9)
         b.fleeT = Math.max(0, b.fleeT - dt)
@@ -1046,7 +1150,7 @@ export function OutbreakScene({
         // had survivors bolting from figures that LOOK human — scattering the
         // formation and, with the old canvas-wide bounds, pushing them out
         // through the walls. They are holding a line, not running from it.
-        if (!barricadeRef.current && b.kind === 'human' && fleeStep(b, dt)) {
+        if (!barricadeRef.current?.active && b.kind === 'human' && fleeStep(b, dt)) {
           b.gait = Math.min(1, b.gait + dt * 6)
           continue
         }
@@ -1056,7 +1160,9 @@ export function OutbreakScene({
           continue
         }
         b.gait = Math.min(1, b.gait + dt * 4)
-        const speed = b.kind === 'zombie' ? ZOMBIE_SPEED : HUMAN_SPEED
+        const speed = b.sprintT > 0
+          ? SPRINT_SPEED
+          : b.kind === 'zombie' ? ZOMBIE_SPEED : HUMAN_SPEED
         const dist = moveToward(b, speed, dt)
         if (dist < 3) {
           // Short pauses while holding the line: a long idle looks like nobody
@@ -1121,13 +1227,21 @@ export function OutbreakScene({
     }
     const alive = bodiesRef.current.filter(b => b.alive)
     const me = alive.find(b => b.isMe) ?? null
-    stationOfBodyRef.current = assignStations({
+    const before = stationOfBodyRef.current
+    const next = assignStations({
       ids: alive.map(b => b.id),
       myId: me?.id ?? null,
       myStation: barricade.myStation,
       occupancy: barricade.occupancy,
-      previous: stationOfBodyRef.current,
+      previous: before,
     })
+    // Only figures whose wall actually changed break into a run. Sprinting
+    // everyone on every server frame would read as panic rather than as a
+    // decision, and would hide the one movement that carries information.
+    const moved = new Set<number>()
+    for (const [id, st] of next) if (before.get(id) !== st) moved.add(id)
+    stationOfBodyRef.current = next
+    sprintersRef.current = moved
 
     // Ask the sim loop to break every pause, so the room re-forms on the NEXT
     // frame rather than up to three seconds later. Without this, opening the

@@ -396,18 +396,28 @@ function GamePageInner() { // NOSONAR
   // were posted at a window. The cam IS the barricade now, so there is one
   // fiction, and the rules are legible by watching rather than by reading.
   const lastPush = barricade.state?.outcomes[barricade.state.outcomes.length - 1] ?? null
-  const barricadeView = barricade.state && phase === 'discussion'
+  // The compound is drawn for the WHOLE game, not only while the barricade is
+  // running. A room that becomes a fortified courtyard for three minutes and an
+  // empty chamber the rest of the time reads as two different games; the place
+  // should persist and only what happens in it should change by phase.
+  const barricadeRunning = !!barricade.state && phase === 'discussion'
+  const barricadeView = room?.status === 'active'
     ? {
-        occupancy: barricade.state.occupancy ?? [],
-        threatened: barricade.state.next?.station ?? null,
-        myStation: barricade.myStation,
+        active: barricadeRunning,
+        // Empty outside Discussion, so figures mill about inside rather than
+        // posting at walls nobody is defending.
+        occupancy: barricadeRunning ? barricade.state?.occupancy ?? [] : [],
+        threatened: barricadeRunning ? barricade.state?.next?.station ?? null : null,
         // Keyed on how many pushes have resolved, so two consecutive breaches
         // both fire instead of the second being swallowed as "no change".
-        resultKey: barricade.state.outcomes.length,
+        myStation: barricadeRunning ? barricade.myStation : null,
+        resultKey: barricade.state?.outcomes.length ?? 0,
         held: lastPush?.held ?? null,
         // Every wall a push has already got through this round stays splintered
         // for the rest of it — damage should accumulate visibly, not reset.
-        brokenWalls: barricade.state.outcomes.filter(o => !o.held).map(o => o.station),
+        brokenWalls: barricadeRunning
+          ? (barricade.state?.outcomes.filter(o => !o.held).map(o => o.station) ?? [])
+          : [],
         infectedCount,
         // The endgame the HUD already reports as a line of text. Drawing it is
         // the point: the most dramatic moment in the game was a sentence.
@@ -1712,7 +1722,7 @@ function GamePageInner() { // NOSONAR
                   {phase === 'discussion' && barricade.state && (
                     <BarricadeBoard
                       state={barricade.state}
-                      myStation={localPlayer?.isEliminated ? null : barricade.myStation}
+                      myStation={localPlayer?.isEliminated ? null : barricade.assignedStation}
                       myChoice={barricade.choice}
                       canSabotage={!!localPlayer && !localPlayer.isEliminated && localPlayer.status === 'infected'}
                       disabled={!localPlayer || localPlayer.isEliminated || !barricade.state.next}

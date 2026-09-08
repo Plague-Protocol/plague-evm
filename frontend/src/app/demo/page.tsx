@@ -1215,22 +1215,31 @@ export default function DemoPage() {
                     <span className="font-mono text-xs rounded border px-2 py-0.5" style={{ borderColor: 'rgba(107,142,35,0.3)', color: '#6b8e23' }}>{alivePlayers.length} alive</span>
                   </div>
                   <OutbreakScene
-                    barricade={phase === 'discussion' && barricade ? {
-                      occupancy: barricade.occupancy ?? [],
-                      threatened: barricade.next?.station ?? null,
-                      myStation: (() => {
+                    barricade={phase !== 'gameover' ? (() => {
+                      // The compound stands for the whole game; only the
+                      // barricade MECHANIC is Discussion-only.
+                      const running = phase === 'discussion' && !!barricade
+                      return {
+                      active: running,
+                      occupancy: running ? barricade?.occupancy ?? [] : [],
+                      threatened: running ? barricade?.next?.station ?? null : null,
+                      myStation: !running ? null : (() => {
                         const you = players.find(p => p.isYou)
                         const seat = you ? players.indexOf(you) : -1
-                        return you && !you.eliminated && seat >= 0
-                          ? assignedStation(barricade.roomId, barricade.round, seat)
-                          : null
+                        if (!you || you.eliminated || seat < 0 || !barricade) return null
+                        // The wall they actually chose, not the one they were
+                        // assigned — otherwise tapping a wall moves nothing.
+                        return myBarricadeChoice.kind === 'move'
+                          ? myBarricadeChoice.station
+                          : assignedStation(barricade.roomId, barricade.round, seat)
                       })(),
-                      resultKey: barricade.outcomes.length,
-                      held: barricade.outcomes[barricade.outcomes.length - 1]?.held ?? null,
-                      brokenWalls: barricade.outcomes.filter(o => !o.held).map(o => o.station),
+                      resultKey: barricade?.outcomes.length ?? 0,
+                      held: barricade?.outcomes[barricade.outcomes.length - 1]?.held ?? null,
+                      brokenWalls: running ? barricade?.outcomes.filter(o => !o.held).map(o => o.station) ?? [] : [],
                       infectedCount: infectedAlive,
                       collapsed: infectedAlive > alivePlayers.length - infectedAlive,
-                    } : null}
+                      }
+                    })() : null}
                     className="mb-4"
                     totalPlayers={players.length}
                     aliveCount={alivePlayers.length}
