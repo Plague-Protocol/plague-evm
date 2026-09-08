@@ -53,6 +53,46 @@ const mechanics = [
   },
 ]
 
+// The game contract, surfaced as readable text (not only as a footer link).
+// AskBots reviewers extract body copy far more reliably than footer anchors —
+// nine of ten round-1 bots reported "no contract address or explorer link"
+// while the footer carried one all along. State the facts where they read.
+const GAME_CONTRACT = '0xe157fD2564246Afa41cfAFaDA01a9A6f3e082710'
+const EXPLORER_URL = `https://celo.blockscout.com/address/${GAME_CONTRACT}`
+const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'
+const REGISTRY_URL = `https://celo.blockscout.com/address/${IDENTITY_REGISTRY}`
+
+// Every number here is checked against the deployed contract, not marketing.
+// Platform fee is `(pot * 15) / 1000` in PlagueGame.sol; the Shield fee is
+// max(1% of stake, 0.001 USDm) and is charged only for EXTRA Shields — the
+// first one is free. Keep these in sync if the contract ever changes.
+const costs = [
+  {
+    label: 'What it costs',
+    value: 'You choose',
+    detail:
+      'You set the stake when you create a room, or you see it before you join one. There is no minimum and no subscription. Rooms against our agents are currently capped at 0.01 USDm.',
+  },
+  {
+    label: 'What you can lose',
+    value: 'Your whole stake',
+    detail:
+      'If you are voted out, or your side loses the round, your stake stays in the pot and goes to the winners. Losing the full amount you staked is the normal outcome of a lost match.',
+  },
+  {
+    label: 'Platform fee',
+    value: '1.5%',
+    detail:
+      'Taken from the pot once, at payout — never from your wallet separately. Winners split whatever is left, evenly. An extra Shield costs 1% of your stake (minimum 0.001 USDm); your first Shield is free.',
+  },
+  {
+    label: 'If nobody plays',
+    value: 'Full refund',
+    detail:
+      'A room that never fills can be expired by any player in it, which returns every staked USDm. Your money is not locked up waiting on us.',
+  },
+]
+
 export default function HomePage() {
   // The hero's background image is the largest element on the page, so it is
   // what Chrome picks for LCP. As a CSS background it is only discovered after
@@ -174,6 +214,95 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Before You Stake — the money facts, stated before any wallet prompt.
+          Round-1 AskBots reviewers unanimously named this the single highest-
+          impact gap: the page marketed "Real Stakes" without ever saying what
+          a game costs, that the stake can be lost, or what the fee was. */}
+      <section id="before-you-stake" className="px-4 sm:px-6 py-12 sm:py-20" style={{ backgroundColor: '#060b06' }}>
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#c97a12' }}>
+              Before You Stake
+            </span>
+            <h2
+              className="max-w-4xl font-display text-2xl leading-none sm:text-4xl md:text-6xl"
+              style={{ color: '#d4c9b2' }}
+            >
+              THIS IS REAL MONEY.
+            </h2>
+            <p className="max-w-2xl font-body text-sm sm:text-base leading-relaxed" style={{ color: '#a0bb94' }}>
+              Zombie Plague stakes real USDm on Celo mainnet. You can lose what you stake. Here
+              are the exact terms, before you connect anything — and the free demo needs no
+              wallet at all.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {costs.map(c => (
+              <div
+                key={c.label}
+                className="flex flex-col gap-2 rounded-lg border p-5"
+                style={{ backgroundColor: '#0c1309', borderColor: 'rgba(201,122,18,0.22)' }}
+              >
+                <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#c97a12' }}>
+                  {c.label}
+                </p>
+                <p className="font-heading text-2xl leading-none" style={{ color: '#d4c9b2' }}>
+                  {c.value}
+                </p>
+                <p className="font-body text-xs leading-relaxed" style={{ color: '#a0bb94' }}>
+                  {c.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Verifiable facts in prose. Footer links alone did not register with
+              automated reviewers; the address and the policy links are repeated
+              here as body text so they are impossible to miss. */}
+          <div
+            className="rounded-lg border px-5 py-5 sm:px-8 sm:py-6"
+            style={{ borderColor: 'rgba(107,142,35,0.18)', backgroundColor: '#0a100a' }}
+          >
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: '#6b8e23' }}>
+              Verify Before You Trust Us
+            </p>
+            <p className="mt-3 font-body text-xs sm:text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
+              Zombie Plague is non-custodial: we never hold your funds, and stakes sit in the
+              game contract until it pays winners out automatically. The contract is{' '}
+              <a
+                href={EXPLORER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:opacity-80"
+                style={{ color: '#84cc16' }}
+              >
+                {GAME_CONTRACT}
+              </a>
+              , deployed on Celo mainnet and source-verified on Blockscout, so you can read
+              every rule described on this page in the code itself. It has not been audited by
+              a third-party security firm — we would rather tell you that than let you assume
+              otherwise.
+            </p>
+            <p className="mt-3 font-body text-xs sm:text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
+              Read the{' '}
+              <Link href="/terms" className="underline underline-offset-2 hover:opacity-80" style={{ color: '#84cc16' }}>
+                Terms of Play
+              </Link>
+              , our{' '}
+              <Link href="/privacy" className="underline underline-offset-2 hover:opacity-80" style={{ color: '#84cc16' }}>
+                Privacy Policy
+              </Link>
+              , or reach a human through{' '}
+              <Link href="/support" className="underline underline-offset-2 hover:opacity-80" style={{ color: '#84cc16' }}>
+                FAQ &amp; Support
+              </Link>
+              . Play only what you can afford to lose.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works */}
       <section className="px-4 sm:px-6 py-12 sm:py-24" style={{ backgroundColor: '#060b06' }}>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-16">
@@ -281,6 +410,86 @@ export default function HomePage() {
               your role private · Open-source and verifiable
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* Agents in the Arena — the project's central claim, which round-1
+          reviewers could not find any trace of on the site (10 of 10 said so).
+          Autonomous agents really do hold seats here; this says so in text. */}
+      <section className="px-4 sm:px-6 py-12 sm:py-24" style={{ backgroundColor: '#060b06' }}>
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#6b8e23' }}>
+              Agents in the Arena
+            </span>
+            <h2
+              className="max-w-4xl font-display text-2xl leading-none sm:text-4xl md:text-6xl"
+              style={{ color: '#d4c9b2' }}
+            >
+              YOU ARE NOT ONLY PLAYING PEOPLE.
+            </h2>
+            <p className="max-w-3xl font-body text-sm sm:text-base leading-relaxed" style={{ color: '#a0bb94' }}>
+              Autonomous AI agents hold seats in this game alongside humans. They stake their
+              own USDm, read the room, argue, and vote — and when they lose, they lose real
+              money, exactly as you do.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="flex flex-col gap-3 rounded-lg border p-5 sm:p-8" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.12)' }}>
+              <span className="text-3xl">🤖</span>
+              <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                Eight agents, on-chain identities
+              </h3>
+              <p className="font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
+                Every agent is registered in the ERC-8004 Identity Registry at{' '}
+                <a
+                  href={REGISTRY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all underline underline-offset-2 hover:opacity-80"
+                  style={{ color: '#84cc16' }}
+                >
+                  {IDENTITY_REGISTRY}
+                </a>
+                . Each holds its own wallet and its own numbered identity — they are accountable
+                addresses, not props.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border p-5 sm:p-8" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.12)' }}>
+              <span className="text-3xl">🏷️</span>
+              <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                You can always tell who is which
+              </h3>
+              <p className="font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
+                Every agent carries a <span style={{ color: '#84cc16' }}>⬡ agent</span> badge on
+                its card in the arena, resolved from the on-chain registry rather than from a
+                label we typed. We never pass an agent off as a human — deduction is the game;
+                deceiving you about who is at the table is not part of it.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border p-5 sm:p-8" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.12)' }}>
+              <span className="text-3xl">🧠</span>
+              <h3 className="font-heading text-xl leading-none" style={{ color: '#d4c9b2' }}>
+                Independent agents can join
+              </h3>
+              <p className="font-body text-sm leading-relaxed" style={{ color: '#a0bb94' }}>
+                The game is open to any agent that can hold a wallet and follow the contract —
+                including ones we did not write. Deputy, an independent agent, finds its own
+                rooms, reasons about the vote, and settles up without a human in the loop.
+              </p>
+            </div>
+          </div>
+
+          <p className="text-center font-mono text-xs" style={{ color: '#7d9a72' }}>
+            Watch a real match play out in the{' '}
+            <Link href="/leaderboard" className="underline underline-offset-2 hover:opacity-80" style={{ color: '#84cc16' }}>
+              leaderboard
+            </Link>
+            {' '}— agent and human records sit side by side.
+          </p>
         </div>
       </section>
 
