@@ -8,6 +8,9 @@ import { keccak256, toBytes } from 'viem'
 import { redis } from '../db/redis'
 import { prisma } from '../db/prisma'
 import { isChatSilenced, isAnonymous } from '../lib/roomModifiers.js'
+import * as presence from '../lib/presence.js'
+import * as barricade from '../services/barricadeRunner.js'
+import type { BarricadeAction } from '../lib/barricade.js'
 
 type RawRoom = Awaited<ReturnType<typeof chainAdapter.getRoom>>
 type RawPlayer = Awaited<ReturnType<typeof chainAdapter.getPlayer>>
@@ -287,6 +290,14 @@ async function buildRoomSnapshot(roomId: string) {
     alive++
     if (status === 1) infectedAlive++
   }
+
+  // Refresh the presence eligibility gate off the room we already fetched, so
+  // the typing indicator never needs a chain call of its own. See lib/presence.ts.
+  presence.noteRoomGate(roomId, {
+    status: Number(rawRoom.status),
+    phase: Number(rawRoom.currentPhase),
+    silenced: isChatSilenced(roomId, Number(rawRoom.currentRound)),
+  })
 
   return serializeBigInts({
     roomId,
@@ -576,6 +587,9 @@ async function enrichEventArgs(
       const phase = eventName === 'PhaseChanged'
         ? Number(args.phase)
         : rawRoom.currentPhase
+      // The barricade seeds its board from (roomId, round), so the round has to
+      // ride along with the phase change rather than being re-fetched later.
+      enriched.round = Number(rawRoom.currentRound)
       if (phase === 1) durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
       else if (phase === 2) durationMs = Number(rawRoom.config.votingDurationSecs) * 1000
       else if (phase === 3) durationMs = ELIMINATION_PHASE_DURATION_MS
@@ -664,7 +678,13 @@ export function setupSocketHandlers(io: Server) {
 
     // Keep liveRoomIds in sync without extra RPC calls.
     if (eventName === 'PlayerJoined') liveRoomIds.add(BigInt(roomId))
-    if (eventName === 'GameEnded' || eventName === 'RoomExpired') liveRoomIds.delete(BigInt(roomId))
+    if (eventName === 'GameEnded' || eventName === 'RoomExpired') {
+      liveRoomIds.delete(BigInt(roomId))
+      // Release the room's presence and barricade state with it, so a finished
+      // game leaves no typing map, gate or pending timer behind.
+      presence.clearRoom(roomId)
+      barricade.stopRoom(roomId)
+    }
 
     const timestamp = Date.now()
     const enrichedArgs = await enrichEventArgs(eventName, args, roomId)
@@ -687,6 +707,22 @@ export function setupSocketHandlers(io: Server) {
       for (const ev of mapped) io.to(roomId).emit('game_event', ev)
     } else {
       io.to(roomId).emit('game_event', mapped)
+    }
+
+    // Discussion opening is the barricade's whole window. Any other phase change
+    // closes it — voting must not have a minigame running underneath it.
+    if (eventName === 'PhaseChanged') {
+      const phase = Number(enrichedArgs.phase)
+      if (phase === 1) {
+        barricade.startRound(
+          io,
+          roomId,
+          Number(enrichedArgs.round ?? 0),
+          Number(enrichedArgs.durationMs ?? 0),
+        )
+      } else {
+        barricade.stopRoom(roomId)
+      }
     }
 
     if (eventName === 'GameEnded') {
@@ -715,6 +751,12 @@ export function setupSocketHandlers(io: Server) {
       void tryEarlyResolveAfterAllVotes(io, roomId)
     }
   }, { isActive: () => liveRoomIds.size > 0 })
+
+  // Single sink for coalesced presence frames. Defined here so every call site
+  // shares one closure over `io` rather than each rebuilding an emitter.
+  const emitPresence = (roomId: string, frame: presence.PresenceFrame) => {
+    io.to(roomId).emit('presence', frame)
+  }
 
   io.on('connection', (socket: Socket) => {
     logger.info(`Client connected: ${socket.id}`)
@@ -767,6 +809,12 @@ export function setupSocketHandlers(io: Server) {
 
         // Replay phase state for reconnecting clients so they rebuild currentRound.
         for (const ev of buildActiveSyncEvents(rawRoom, roomId)) socket.emit('game_event', ev)
+
+        // Catch a late arrival up on the barricade in progress, so joining
+        // mid-Discussion shows the pushes already resolved rather than an empty
+        // board that suddenly fills on the next one.
+        const bar = barricade.snapshot(roomId)
+        if (bar) socket.emit('barricade', bar)
 
         // RoomStatus.Ended = 3 — replay outcome so reconnecting clients get the result.
         if (rawRoom.status === 3) {
@@ -1147,7 +1195,43 @@ export function setupSocketHandlers(io: Server) {
       }
     })
 
+    // ── Barricade: the Discussion-phase minigame ────────────────────────────
+    // Pure in-memory: the roster was captured when the round opened, so an
+    // action costs no chain read. A `sabotage` from a clean player is accepted
+    // here and silently downgraded at resolution — refusing it would tell the
+    // sender something about a status they should not be able to probe.
+    socket.on('barricade_action', ({ roomId, playerAddress, action }: {
+      roomId: string
+      playerAddress: string
+      action: BarricadeAction
+    }) => {
+      if (!roomId || !playerAddress || !action?.kind) return
+      barricade.submitAction(roomId, playerAddress, action)
+    })
+
+    // ── Presence: "someone is composing" ────────────────────────────────────
+    // Deliberately NOT validated against the chain here — see the hot-path note
+    // in lib/presence.ts. The room-level gate (phase, Silent Round, ended) is
+    // enforced inside setTyping from cached state; per-player liveness is not
+    // re-checked, because the worst a forged signal can do is show a spurious
+    // "typing" dot, which discloses nothing. Chat itself remains fully guarded.
+    socket.on('presence_typing', ({ roomId, playerAddress, typing: isTyping }: {
+      roomId: string
+      playerAddress: string
+      typing: boolean
+    }) => {
+      if (!roomId || !playerAddress) return
+      presence.setTyping(roomId, playerAddress, Boolean(isTyping), emitPresence)
+    })
+
     socket.on('disconnect', () => {
+      // Drop this socket's player from any typing set so a closed tab does not
+      // leave a dot pulsing next to a name that has gone.
+      for (const [, roomMap] of playerSockets) {
+        for (const [addr, sid] of roomMap) {
+          if (sid === socket.id) presence.clearPlayer(addr, emitPresence)
+        }
+      }
       for (const [, roomMap] of playerSockets) {
         for (const [addr, sid] of roomMap) {
           if (sid === socket.id) roomMap.delete(addr)
@@ -1163,6 +1247,7 @@ export function setupSocketHandlers(io: Server) {
   })
 
   io.engine.on('close', () => {
+    presence.stopAll()
     for (const timer of roomSnapshotTimers.values()) {
       clearTimeout(timer)
     }
