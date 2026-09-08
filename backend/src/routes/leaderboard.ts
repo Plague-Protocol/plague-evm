@@ -6,6 +6,8 @@ import { upsertGameSummary } from '../repositories/rooms'
 import { logger } from '../lib/logger'
 import { getCachedLeaderboard, setCachedLeaderboard, invalidateLeaderboardCache } from '../lib/leaderboardCache'
 import { getKnownBotAddresses } from './bots'
+import { POINTS } from '../lib/points.js'
+import { progressFor } from '../lib/ranks.js'
 
 export const leaderboardRouter = Router()
 
@@ -27,23 +29,10 @@ type LeaderboardRow = {
   bestStreak: number
 }
 
-/**
- * Aggregate points formula. Weighs every way a player engages: winning,
- * fighting to a draw, showing up at all, spending money on shields
- * (innocence proofs), and surviving to the end of a game. Mirrored in the
- * frontend's "How points work" card — keep the two in sync.
- */
-export const POINTS = {
-  win: 7,
-  draw: 5,   // draws (surviving to max rounds) are rarer and harder than
-             // wins in practice — score them as near-wins
-  loss: 2,
-  shield: 3, // per innocence proof submitted — costs real USDm (proof fee)
-             // and is capped at one per round, so it can't be grinded
-  // No separate survival bonus: winners are always alive at game end
-  // (the contract only pays living players), so it double-counted wins
-  // and only ever distinguished surviving losers from eliminated ones.
-} as const
+// The formula itself now lives in lib/points.ts so lib/ranks.ts and its tests
+// can reach it without importing this route's express + prisma dependencies.
+// Re-exported here because this is where callers have always found it.
+export { POINTS } from '../lib/points.js'
 
 type SeasonDef = {
   id: string
@@ -450,6 +439,62 @@ leaderboardRouter.get('/', async (_req, res) => {
  * players, outcome split, and a per-month games/volume trend (last 6).
  * Reads only persisted summaries — no backfill, no chain calls.
  */
+/**
+ * One player's standing — points, rank, the gap to the next rung, and streak.
+ *
+ * Exists to be called at the END of a game, which is the only moment a player is
+ * guaranteed to be looking and the only one where "what would coming back get
+ * me" is a live question. Scoped to a single address rather than reusing the
+ * full board because that endpoint aggregates every game ever played and is far
+ * too heavy to fetch behind a result card.
+ *
+ * Read-only and derived: no schema change, and it backfills for free over games
+ * that were played long before the ladder existed.
+ */
+leaderboardRouter.get('/progress/:address', async (req, res) => {
+  const address = String(req.params.address ?? '').toLowerCase()
+  if (!/^0x[0-9a-f]{40}$/.test(address)) {
+    return res.status(400).json({ error: 'Invalid address' })
+  }
+
+  try {
+    // Only this player's rows, newest-first — the same order aggregateRows
+    // expects, so the leading run of wins is the current streak.
+    const summaries = await prisma.gameSummary.findMany({
+      where: { players: { some: { address: { equals: address, mode: 'insensitive' } } } },
+      orderBy: { endedAt: 'desc' },
+      include: { players: { where: { address: { equals: address, mode: 'insensitive' } } } },
+    })
+
+    if (summaries.length === 0) {
+      const fresh = progressFor(0)
+      return res.json({
+        address, points: 0, gamesPlayed: 0, wins: 0, currentStreak: 0, bestStreak: 0,
+        rank: fresh.rank, next: fresh.next, toNext: fresh.toNext, fraction: fresh.fraction,
+      })
+    }
+
+    const [row] = aggregateRows(summaries, new Map())
+    const progress = progressFor(row?.points ?? 0)
+    return res.json({
+      address,
+      points: row?.points ?? 0,
+      gamesPlayed: row?.gamesPlayed ?? 0,
+      wins: row?.wins ?? 0,
+      currentStreak: row?.currentStreak ?? 0,
+      bestStreak: row?.bestStreak ?? 0,
+      rank: progress.rank,
+      next: progress.next,
+      toNext: progress.toNext,
+      fraction: progress.fraction,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logger.warn(`[leaderboard] progress lookup failed for ${address}: ${message}`)
+    return res.status(500).json({ error: 'Failed to load progress' })
+  }
+})
+
 leaderboardRouter.get('/analytics', async (_req, res) => {
   try {
     const summaries = await prisma.gameSummary.findMany({
