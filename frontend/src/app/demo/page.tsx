@@ -673,7 +673,12 @@ export default function DemoPage() {
       // clearTimers() above cancels any pending botSay, so the composing set has
       // to be dropped with it or a bot types forever into a silent phase.
       typingIds: [],
-      barricade: null,
+      // 🚨 The barricade state SURVIVES into voting. Clearing it here dropped
+      // the round's outcomes, so any wall that had been breached boarded itself
+      // back up the instant Discussion ended. The mechanic is gated on the
+      // phase, not on the state existing; the state is cleared at the next
+      // round instead, which is the survivors patching it between nights.
+      // (Matches app/game/page.tsx, where the server's state persists likewise.)
       feed: [...prev.feed, 'Voting is open. Skipping your vote records a self-vote against you.'].slice(-60),
     }))
     // Bots vote at scattered times.
@@ -986,7 +991,10 @@ export default function DemoPage() {
       myStation,
       resultKey: barricade?.outcomes.length ?? 0,
       held: barricade?.outcomes[barricade.outcomes.length - 1]?.held ?? null,
-      brokenWalls: running ? barricade?.outcomes.filter(o => !o.held).map(o => o.station) ?? [] : [],
+      // Damage outlives the phase — see the note in app/game/page.tsx. Gating
+      // this on the barricade still running had breached walls boarding
+      // themselves back up the instant Discussion ended.
+      brokenWalls: barricade?.outcomes.filter(o => !o.held).map(o => o.station) ?? [],
       infectedCount: infectedAlive,
       collapsed: infectedAlive > alivePlayers.length - infectedAlive,
     }

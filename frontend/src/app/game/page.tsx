@@ -421,11 +421,14 @@ function GamePageInner() { // NOSONAR
         myStation: barricadeRunning ? barricadeMyStation : null,
         resultKey: barricadeState?.outcomes.length ?? 0,
         held: lastPush?.held ?? null,
-        // Every wall a push has already got through this round stays splintered
-        // for the rest of it — damage should accumulate visibly, not reset.
-        brokenWalls: barricadeRunning
-          ? (barricadeState?.outcomes.filter(o => !o.held).map(o => o.station) ?? [])
-          : [],
+        // 🚨 DAMAGE OUTLIVES THE PHASE. A wall that took a breach stays
+        // splintered until the round is over — this was gated on the barricade
+        // still RUNNING, so the moment Discussion ended every broken wall
+        // silently boarded itself back up while the player watched. A wall
+        // repairing itself in front of you reads as a bug, and it was one.
+        // (It re-boards at the next round, under the phase transition, which is
+        // the survivors patching it between nights.)
+        brokenWalls: barricadeState?.outcomes.filter(o => !o.held).map(o => o.station) ?? [],
         infectedCount,
         // The endgame the HUD already reports as a line of text. Drawing it is
         // the point: the most dramatic moment in the game was a sentence.

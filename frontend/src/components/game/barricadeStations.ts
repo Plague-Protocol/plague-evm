@@ -46,7 +46,15 @@ const NEAR_INSET_X = 0.20
 const FAR_INSET_X = 0.36
 /** Where the far and near walls sit in the usable vertical band. */
 const FAR_Y = 0.30
-const NEAR_Y = 0.93
+/**
+ * The near wall stops well short of the bottom edge.
+ *
+ * At 0.93 there were about twenty pixels of ground between the south boarding
+ * and the end of the canvas — not enough for a treeline, so the south side read
+ * as bare, and not enough for the horde to work that wall without standing on
+ * it. The forest needs somewhere to be on all four sides, not three.
+ */
+const NEAR_Y = 0.84
 
 export interface Corners {
   /** Far-left, far-right, near-right, near-left — clockwise from the back. */
@@ -224,6 +232,16 @@ export interface AssignInput {
  */
 export function assignStations(input: AssignInput): Map<number, number> {
   const { ids, myId, myStation, occupancy, previous } = input
+
+  // 🚨 NO OCCUPANCY MEANS NOBODY IS POSTED — NOT "EVERYONE ON THE LAST WALL".
+  // With an empty or all-zero occupancy the fill loop below ran its cursor off
+  // the end and parked every single figure on station 3. That is what produced
+  // the stampede at every phase change: Discussion ends, occupancy empties, and
+  // the entire room breaks for the west wall at a sprint for no reason anyone
+  // watching could name.
+  const posted = occupancy.reduce((a, b) => a + (b > 0 ? b : 0), 0)
+  if (posted <= 0) return new Map()
+
   const stations = occupancy.length || 4
   const remaining = Array.from({ length: stations }, (_, i) => occupancy[i] ?? 0)
   const out = new Map<number, number>()

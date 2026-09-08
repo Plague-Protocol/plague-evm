@@ -87,7 +87,7 @@ const SPRINT_SECS = 2.6
  * stand on it — which is the only moment the placement is carrying information
  * anyway, and now the only moment anyone is standing anywhere.
  */
-const POST_SECS = 7
+const POST_SECS = 5
 
 const COLOR_HUMAN = '#93a883'
 const COLOR_HUMAN_ME = '#d6e6a3'
@@ -121,6 +121,16 @@ interface Body {
   sprintT: number
   /** Seconds of bracing left at a wall before drifting back into the yard. */
   postT: number
+  /**
+   * Outward normal of the wall this figure is holding, or (0,0) for nobody.
+   *
+   * A survivor silhouette is symmetrical, so `facing` — which only drives the
+   * zombie pose and the death topple — said nothing about which way a defender
+   * was turned. You could send your figure to the north wall and watch it stand
+   * there apparently facing the yard. This is what turns it around.
+   */
+  braceX: number
+  braceY: number
   transformT: number
   shieldT: number
 }
@@ -155,6 +165,8 @@ function makeBody(fig: Figure, w: number, h: number): Body {
     staggerT: 0,
     sprintT: 0,
     postT: 0,
+    braceX: 0,
+    braceY: 0,
     transformT: 0,
     shieldT: 0,
   }
@@ -191,6 +203,19 @@ function bodyColor(b: Body, uniform: boolean): string {
   return b.isMe ? COLOR_HUMAN_ME : COLOR_HUMAN
 }
 
+/**
+ * What this figure is holding.
+ *
+ * Derived from the figure id, which is per-viewer fiction assigned by
+ * OutbreakDirector — so it is stable across frames, costs no traffic, and
+ * cannot identify anybody. Everyone carries something: an unarmed crowd behind
+ * a barricade reads as a queue, and a scavenged weapon is the cheapest way to
+ * say these people are surviving rather than waiting.
+ */
+function itemOf(id: number): 0 | 1 | 2 {
+  return (Math.imul(id + 1, 2654435761) >>> 0) % 3 as 0 | 1 | 2
+}
+
 function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean, uniform: boolean) {
   const s = perspectiveScale(b.y, h)
   const zombie = b.kind === 'zombie' && !(uniform && !b.isMe)
@@ -218,6 +243,8 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   ctx.lineWidth = 2 * s
   ctx.lineCap = 'round'
 
+  let handA: { x: number; y: number } | null = null
+  let handB: { x: number; y: number } | null = null
   const legSwing = Math.sin(b.walk) * 4 * s * b.gait
   const armSwing = Math.sin(b.walk + Math.PI) * 3 * s * b.gait
   const hipY = -11 * s
@@ -239,10 +266,67 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
     ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(shoulderX + b.facing * 9 * s, shoulderY + 3 * s + bob)
     ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(shoulderX + b.facing * 8 * s, shoulderY + 6 * s - bob)
   } else {
-    ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(shoulderX + 3 * s + armSwing, -12 * s)
-    ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(shoulderX - 3 * s - armSwing, -12 * s)
+    // Bracing: both hands go out toward the wall this figure is holding, so a
+    // defender is visibly turned to face it. Only once they have stopped —
+    // arms out at a run would read as a charge.
+    const braced = (b.braceX !== 0 || b.braceY !== 0) && b.gait < 0.4 && b.alive
+    if (braced) {
+      const rx = b.braceX
+      const ry = b.braceY * 0.5
+      const reach = 7.5 * s
+      // Perpendicular, so the two hands are apart rather than stacked.
+      const px = -ry
+      const py = rx
+      handA = { x: shoulderX + rx * reach + px * 2.4 * s, y: shoulderY + ry * reach + py * 2.4 * s + 3 * s }
+      handB = { x: shoulderX + rx * reach - px * 2.4 * s, y: shoulderY + ry * reach - py * 2.4 * s + 3 * s }
+    } else {
+      handA = { x: shoulderX + 3 * s + armSwing, y: -12 * s }
+      handB = { x: shoulderX - 3 * s - armSwing, y: -12 * s }
+    }
+    ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handA.x, handA.y)
+    ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handB.x, handB.y)
   }
   ctx.stroke()
+
+  // ── What they are carrying ─────────────────────────────────────────────
+  if (!zombie && b.alive && b.fallT === 0 && handA && handB) {
+    const item = itemOf(b.id)
+    const braced = (b.braceX !== 0 || b.braceY !== 0) && b.gait < 0.4
+    ctx.save()
+    ctx.lineCap = 'round'
+    if (braced) {
+      // Held across both hands, shoved against the boards.
+      ctx.strokeStyle = item === 1 ? '#8d9298' : '#7d5c34'
+      ctx.lineWidth = (item === 0 ? 3.2 : 2) * s
+      ctx.beginPath()
+      const ex = handA.x - handB.x
+      const ey = handA.y - handB.y
+      const el = Math.hypot(ex, ey) || 1
+      const grow = item === 0 ? 3.5 * s : 5 * s
+      ctx.moveTo(handA.x + (ex / el) * grow, handA.y + (ey / el) * grow)
+      ctx.lineTo(handB.x - (ex / el) * grow, handB.y - (ey / el) * grow)
+      ctx.stroke()
+    } else {
+      // Carried down at the side.
+      ctx.strokeStyle = item === 1 ? '#8d9298' : '#7d5c34'
+      ctx.lineWidth = (item === 0 ? 3 : 1.9) * s
+      ctx.beginPath()
+      ctx.moveTo(handA.x, handA.y - 1 * s)
+      ctx.lineTo(handA.x + 1.5 * s, handA.y + (item === 0 ? 7 : 9) * s)
+      ctx.stroke()
+    }
+    if (item === 2) {
+      // A torch — the one thing in the compound that answers the braziers.
+      const tip = braced
+        ? { x: handA.x + (handA.x - handB.x) * 0.9, y: handA.y + (handA.y - handB.y) * 0.9 }
+        : { x: handA.x + 1.5 * s, y: handA.y + 9 * s }
+      ctx.beginPath()
+      ctx.arc(tip.x, tip.y, (1.7 + Math.sin(t * 9 + b.id) * 0.3) * s, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(240,150,60,0.9)'
+      ctx.fill()
+    }
+    ctx.restore()
+  }
 
   // head
   ctx.beginPath()
@@ -489,7 +573,20 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
     // the barricade itself.
     if (!clear(x, y, 22)) continue
     const d = 0.45 + ((y - c.fl.y) / Math.max(1, h - c.fl.y)) * 0.9
-    tree(x, y, (26 + noise(i, 41) * 34) * d, (5 + noise(i, 43) * 4) * d, false)
+    let th = (26 + noise(i, 41) * 34) * d
+    // 🚨 A TREE IS TALLER THAN ITS BASE POINT.
+    // The clearance test only looked at where the trunk meets the ground, so a
+    // tree rooted just south of the near wall passed the check and then threw
+    // sixty pixels of canopy straight over the compound — which is why the
+    // south side looked like the woods were growing inside the barricade.
+    // South of the wall the canopy is capped at the real gap; anything with no
+    // room left is dropped rather than drawn intruding.
+    if (y > c.nl.y) {
+      const room = y - c.nl.y - 14
+      if (room < 12) continue
+      th = Math.min(th, room)
+    }
+    tree(x, y, th, (5 + noise(i, 43) * 4) * d, false)
   }
 
   // Ground clutter, drawn after the trees so it sits at their feet.
@@ -767,10 +864,12 @@ function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: numb
   const spanX = (c.nr.x - c.nl.x) / 2
   const spanY = (c.nl.y - c.fl.y) / 2
   const a = r1 * Math.PI * 2
-  const rad = 1.2 + r2 * 0.45
+  // Tight enough to stay in frame on a narrow canvas — see the clamp in
+  // stepHorde for why wandering off the edge was the real "they disappear".
+  const rad = 1.14 + r2 * 0.24
   return {
     x: cx + Math.cos(a) * spanX * rad,
-    y: cy + Math.sin(a) * spanY * rad * 0.72 + spanY * 0.18,
+    y: cy + Math.sin(a) * spanY * rad * 0.8 + spanY * 0.14,
   }
 }
 
@@ -790,7 +889,10 @@ function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: numb
  * caused by the crowd rather than drawn alongside it, so it builds as they
  * gather and eases as they wander off.
  */
-function stepHorde(walkers: Walker[], c: Corners, dt: number, threatened: number | null) {
+function stepHorde(
+  walkers: Walker[], c: Corners, dt: number, threatened: number | null,
+  w: number, h: number,
+) {
   for (const wk of walkers) {
     wk.retargetIn -= dt
     if (wk.retargetIn <= 0) {
@@ -818,9 +920,15 @@ function stepHorde(walkers: Walker[], c: Corners, dt: number, threatened: number
     // The margin clears the BOARDING, not the centreline. Now that a wall is
     // real timber up to ~21px thick, a flat 14 would have parked half the horde
     // inside the planks.
-    const p = clampOutside(wk.x, wk.y, c, wallBand(depthAt(wk.y, c)) + 6)
-    wk.x = p.x
-    wk.y = p.y
+    const p = clampOutside(wk.x, wk.y, c, wallBand(depthAt(wk.y, c)) + 12)
+    // 🚨 AND THEY STAY ON SCREEN.
+    // The perimeter orbit reached about 1.65 span-widths from the centre, which
+    // is off the side of a narrow canvas. Walkers strolled out of frame and
+    // back, and with a fixed population that reads exactly as zombies popping
+    // in and out of existence — the thing this was supposed to have fixed. The
+    // count never changed; the visible count did.
+    wk.x = Math.min(w - 6, Math.max(6, p.x))
+    wk.y = Math.min(h - 6, Math.max(c.fl.y * 0.55, p.y))
     wk.phase += dt * 3.4
   }
 }
@@ -844,23 +952,14 @@ function wallPressure(walkers: readonly Walker[], c: Corners): number[] {
   return counts
 }
 
-/**
- * Draws the walkers whose ground line falls within [yFrom, yTo).
- *
- * The range exists for depth: everything outside the NEAR wall is closer to
- * the camera than that wall is, so it has to be painted after it. Drawn in one
- * pass, the near boarding covered the walkers standing in front of it, which
- * with the new thicker walls would have swallowed them completely.
- */
 function drawHorde(
   ctx: CanvasRenderingContext2D, walkers: readonly Walker[], c: Corners, h: number,
-  yFrom: number, yTo: number,
 ) {
   const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
   const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
   // Depth-sorted: drawn in array order, a walker behind another could paint
   // over one standing in front of it.
-  const order = walkers.filter(wk => wk.y >= yFrom && wk.y < yTo).sort((a, b) => a.y - b.y)
+  const order = [...walkers].sort((a, b) => a.y - b.y)
   for (const wk of order) {
     const dx = cx - wk.x
     const dy = cy - wk.y
@@ -1105,14 +1204,17 @@ function drawScene(
     const lamp = bar.collapsed ? 0.12 : 1
     // Pools first: light lies ON the ground, under the boards and the bodies.
     drawLampPools(ctx, c, t, glow, lamp)
-    // Horde behind and beside: the boards occlude them.
-    drawHorde(ctx, walkers, c, h, -Infinity, c.nl.y)
+    // 🚨 THE BOARDING ALWAYS OCCLUDES THE HORDE, INCLUDING ON THE SOUTH SIDE.
+    // Splitting the horde by depth and painting the south group OVER the near
+    // wall is technically the correct camera order, and it looked like zombies
+    // standing on top of the barricade — because a wall drawn as a band on the
+    // ground has no visible height for them to be behind. Drawing them under it
+    // instead hides their legs behind the boards, which is exactly the read we
+    // want: something clawing at a wall from the far side of it.
+    drawHorde(ctx, walkers, c, h)
     drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
-    // Posts before the front rank, so a brazier reads as mounted on its corner.
+    // Posts last, so a brazier reads as mounted on its corner.
     drawLampPosts(ctx, c, t, lamp)
-    // Horde in FRONT of the near wall — nearer the camera than the boarding, so
-    // painted over it.
-    drawHorde(ctx, walkers, c, h, c.nl.y, Infinity)
   }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
@@ -1277,7 +1379,7 @@ export function OutbreakScene({
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
         hordeRef.current = Array.from({ length: HORDE_SIZE }, (_, i) => {
           const t0 = hordeTarget(c, null, noise(i, 61), noise(i, 67))
-          const p0 = clampOutside(t0.x, t0.y, c, wallBand(depthAt(t0.y, c)) + 6)
+          const p0 = clampOutside(t0.x, t0.y, c, wallBand(depthAt(t0.y, c)) + 12)
           return { x: p0.x, y: p0.y, tx: p0.x, ty: p0.y, phase: i, retargetIn: noise(i, 71) * 4 }
         })
       }
@@ -1329,6 +1431,8 @@ export function OutbreakScene({
           && (bar.threatened === station || b.postT > 0)
 
         if (!posted) {
+          b.braceX = 0
+          b.braceY = 0
           const q = interiorPoint(c, Math.random(), Math.random())
           const pi = clampInside(q.x, q.y, c, bodyClearance(q.y, c))
           b.tx = pi.x
@@ -1336,6 +1440,10 @@ export function OutbreakScene({
           return
         }
         {
+          // Turned to face the boards they are holding.
+          const facing = wallOutward(station as number, c)
+          b.braceX = facing.dx
+          b.braceY = facing.dy
           const anchor = stationAnchor(station as number, c)
           // Jitter, then clamp INSIDE the walls. Bodies used to be bounded by
           // the canvas, so they walked straight through a barricade and stood
@@ -1358,6 +1466,9 @@ export function OutbreakScene({
           return
         }
       }
+
+      b.braceX = 0
+      b.braceY = 0
 
       if (b.kind === 'zombie' && Math.random() < 0.65) {
         // zombies drift toward the nearest living human — pure ambiance
@@ -1567,7 +1678,7 @@ export function OutbreakScene({
         const { w, h } = sizeRef.current
         const bar = barricadeRef.current
         if (bar) {
-          stepHorde(hordeRef.current, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dt, bar.threatened)
+          stepHorde(hordeRef.current, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dt, bar.threatened, w, h)
         }
       }
 
@@ -1630,7 +1741,10 @@ export function OutbreakScene({
       for (const b of bodiesRef.current) {
         b.staggerT = Math.max(0, b.staggerT - dt * 2.2)
         b.sprintT = Math.max(0, b.sprintT - dt)
-        b.postT = Math.max(0, b.postT - dt)
+        // The hold clock does not start until they have ARRIVED. Running it
+        // during the sprint spent half the post on the journey, so a five
+        // second brace became about two.
+        if (b.sprintT <= 0) b.postT = Math.max(0, b.postT - dt)
         b.transformT = Math.max(0, b.transformT - dt / 0.7)
         b.shieldT = Math.max(0, b.shieldT - dt / 0.9)
         b.fleeT = Math.max(0, b.fleeT - dt)
@@ -1735,16 +1849,25 @@ export function OutbreakScene({
     // Only figures whose wall actually changed break into a run. Sprinting
     // everyone on every server frame would read as panic rather than as a
     // decision, and would hide the one movement that carries information.
+    //
+    // 🚨 AND ONLY WHILE THERE IS SOMEWHERE TO RUN TO. When the barricade stops
+    // running, `next` is empty and every figure "changed" — from a wall to
+    // nowhere. Counting those as movers sprinted the entire room at every phase
+    // boundary, which is the rush that showed up in play-testing. Leaving a
+    // post is a stroll; there is nothing urgent about it.
     const moved = new Set<number>()
-    for (const [id, st] of next) if (before.get(id) !== st) moved.add(id)
-    // A warning going up is the other reason to run: everyone assigned to the
-    // threatened wall breaks for it, and eight seconds is not enough to get
-    // there at a stroll. Keyed on the threat CHANGING so this fires once per
-    // push rather than on every frame the warning is live.
-    if (barricade.threatened !== null && barricade.threatened !== lastThreatRef.current) {
-      for (const [id, st] of next) if (st === barricade.threatened) moved.add(id)
+    if (next.size > 0) {
+      for (const [id, st] of next) if (before.get(id) !== st) moved.add(id)
+      // A warning going up is the other reason to run: everyone assigned to the
+      // threatened wall breaks for it, and eight seconds is not enough to get
+      // there at a stroll. Keyed on the threat CHANGING so this fires once per
+      // push rather than on every frame the warning is live.
+      if (barricade.threatened !== null && barricade.threatened !== lastThreatRef.current) {
+        for (const [id, st] of next) if (st === barricade.threatened) moved.add(id)
+      }
     }
     lastThreatRef.current = barricade.threatened
+    const wasPosted = before.size > 0
     stationOfBodyRef.current = next
     sprintersRef.current = moved
 
@@ -1753,10 +1876,14 @@ export function OutbreakScene({
     // barricade — or the server publishing new occupancy — left figures
     // standing at walls they had already been reassigned away from.
     //
+    // Only when the placement actually changed, though. The view object arrives
+    // on every server frame, and re-aiming a room that has nothing new to do
+    // just resets everyone's stroll mid-step.
+    //
     // Raised as a flag rather than mutating bodies here: the simulation owns
     // body state, and reaching into it from an effect is exactly the kind of
     // cross-ownership write that gets hard to reason about later.
-    reformRef.current = true
+    if (moved.size > 0 || (wasPosted && next.size === 0)) reformRef.current = true
 
     // A breach scatters the room. Fired from a key rather than from `held`
     // changing, so two consecutive breaches both land.
