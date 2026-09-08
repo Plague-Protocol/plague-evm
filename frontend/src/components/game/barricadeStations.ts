@@ -201,55 +201,75 @@ export function isInside(x: number, y: number, c: Corners): boolean {
 }
 
 /**
- * Pushes a point OUT of the compound — the mirror of clampInside, and the
- * reason the inside is a safe zone.
+ * Guarantees a point is at least `margin` OUTSIDE the compound.
  *
- * The horde walked in a straight line toward its target, and a walker on the
- * north side heading for a point on the south side simply strolled through the
- * courtyard. Play-testing read that, correctly, as zombies inside the
- * barricade, which makes nonsense of the barricade.
+ * 🚨 THIS REPLACED clampOutside, WHICH ONLY EVER FIRED ON TRESPASSERS.
+ * The old function tested `isInside` first and returned the point untouched
+ * otherwise. That is the correct shape for catching an escape and completely
+ * wrong for keeping a crowd off the boards, because a walker standing in the
+ * middle of the south planks is NOT inside the compound — the planks straddle
+ * the wall line, and everything past that line is "outside" as far as a
+ * point-in-polygon test is concerned. So every clearance constant tuned over
+ * several passes lived in a branch that never ran for the walkers that needed
+ * it. They were only ever corrected if they had wandered fully into the yard.
  *
- * Applied every frame rather than only at target-selection, because it is the
- * PATH that trespasses, not the destination. The visible consequence is that a
- * walker crossing to the far side slides along the outside of the boards
- * instead of through them — which is what something looking for a way in
- * actually looks like.
+ * The compound is convex, so "outside by at least m" is simply: for some wall,
+ * the signed distance along that wall's outward normal is >= m. If no wall
+ * satisfies it, push along whichever comes closest — that is the shortest way
+ * out, and it never picks a wall on the far side.
  */
-export function clampOutside(
-  x: number, y: number, c: Corners, margin = 14,
+export function pushClear(
+  x: number, y: number, c: Corners, margin: number,
   /**
-   * Extra clearance when the way out is DOWNWARD, i.e. past the south wall.
-   *
-   * The other three sides need only the boarding's own thickness, because a
-   * figure standing beyond them is drawn above or beside the planks and reads
-   * as outside without any help. The south wall is the exception: a body drawn
-   * just below it extends UP across the boards, and everything above the south
-   * wall is the courtyard — so a walker there looks like it is standing inside
-   * the compound, which is exactly what play-testing kept reporting. Pushing it
-   * a full body-height clear is what makes "outside" unambiguous on that side.
+   * Extra clearance where the way out points DOWNWARD, i.e. past the south
+   * wall. Everything above the south boarding is the courtyard, so a walker
+   * there is drawn straight up across the planks and lands in the yard; it has
+   * to stand a whole body-height clear before it reads as outside. The other
+   * three sides need only the timber's own thickness.
    */
   downMargin = 0,
 ): { x: number; y: number } {
-  if (!isInside(x, y, c)) return { x, y }
-  let best = { x, y }
-  let bestD = Infinity
+  let bestI = -1
+  let bestSlack = -Infinity
   for (let i = 0; i < 4; i++) {
-    const s = wallSegment(i, c)
-    const dx = s.x2 - s.x1
-    const dy = s.y2 - s.y1
-    const len2 = dx * dx + dy * dy || 1
-    const t = Math.max(0, Math.min(1, ((x - s.x1) * dx + (y - s.y1) * dy) / len2))
-    const px = s.x1 + dx * t
-    const py = s.y1 + dy * t
-    const d = Math.hypot(x - px, y - py)
-    if (d < bestD) {
-      bestD = d
-      const out = wallOutward(i, c)
-      const m = margin + Math.max(0, out.dy) * downMargin
-      best = { x: px + out.dx * m, y: py + out.dy * m }
+    const seg = wallSegment(i, c)
+    const out = wallOutward(i, c)
+    const mx = (seg.x1 + seg.x2) / 2
+    const my = (seg.y1 + seg.y2) / 2
+    const dist = (x - mx) * out.dx + (y - my) * out.dy
+    const need = margin + Math.max(0, out.dy) * downMargin
+    const slack = dist - need
+    if (slack > bestSlack) {
+      bestSlack = slack
+      bestI = i
     }
   }
-  return best
+  if (bestSlack >= 0 || bestI < 0) return { x, y }
+  const out = wallOutward(bestI, c)
+  return { x: x - out.dx * bestSlack, y: y - out.dy * bestSlack }
+}
+
+/**
+ * A spot pressed against the OUTSIDE of one wall.
+ *
+ * `along` runs 0..1 across the wall's span, `depth` is extra distance beyond
+ * the minimum clearance. This is where the horde lives now: they work a wall
+ * rather than orbiting the compound, so they are never crossing open ground
+ * sideways and never standing on the boards.
+ */
+export function outsideWall(
+  station: number, c: Corners, along: number, depth: number,
+  margin: number, downMargin = 0,
+): { x: number; y: number } {
+  const seg = wallSegment(station, c)
+  const out = wallOutward(station, c)
+  // Kept off the corners: a walker at a corner belongs to two walls and reads
+  // as belonging to neither.
+  const f = 0.08 + along * 0.84
+  const bx = seg.x1 + (seg.x2 - seg.x1) * f
+  const by = seg.y1 + (seg.y2 - seg.y1) * f
+  const need = margin + Math.max(0, out.dy) * downMargin + depth
+  return { x: bx + out.dx * need, y: by + out.dy * need }
 }
 
 export interface AssignInput {

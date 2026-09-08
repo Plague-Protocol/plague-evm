@@ -30,7 +30,8 @@ import type { Socket } from 'socket.io-client'
 import { OutbreakDirector, type Figure, type FigureKind, type FinaleOutcome, type OutbreakCue } from './outbreakDirector'
 import {
   assignStations, stationAnchor, interiorPoint, compoundShape, wallSegment,
-  wallOutward, clampInside, clampOutside, isInside, depthAt, wallBand, type Corners,
+  wallOutward, clampInside, pushClear, outsideWall, isInside, depthAt, wallBand,
+  type Corners,
 } from './barricadeStations'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
@@ -828,13 +829,33 @@ function drawLampPosts(ctx: CanvasRenderingContext2D, c: Corners, t: number, dim
 }
 
 /** A member of the horde. Stateful on purpose — see stepHorde. */
+/**
+ * A member of the horde.
+ *
+ * 🚨 EACH ONE WORKS A WALL. THEY DO NOT ORBIT.
+ * They used to pick points on an ellipse around the compound, which meant they
+ * spent most of their time crossing open ground sideways — reading as a crowd
+ * milling about near a fort rather than a crowd trying to get into one — and
+ * the ellipse's southern extreme landed right on top of the south boarding. A
+ * walker belongs to a wall, presses against the outside of it, and shifts
+ * along it or migrates to a neighbour. Sideways travel across the field is
+ * gone, and so is the class of bug that came with it.
+ */
 interface Walker {
   x: number
   y: number
   tx: number
   ty: number
   phase: number
-  /** Seconds until it picks somewhere new to shamble toward. */
+  /** Which wall this one is working. */
+  wall: number
+  /** Where along that wall, 0..1. */
+  along: number
+  /** Extra distance beyond the minimum clearance — a ragged crowd, not a row. */
+  depth: number
+  /** Stable sideways lean, so a rank of them is not one figure repeated. */
+  jitter: number
+  /** Seconds until it shifts position or changes wall. */
   retargetIn: number
 }
 
@@ -864,36 +885,24 @@ const HORDE_SIZE = 16
  */
 const SOUTH_CLEAR = 34
 
-/** Somewhere outside the walls for a walker to head for. */
-function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: number, collapsed = false) {
-  if (collapsed) {
-    // The walls are down. They go in.
-    const q = interiorPoint(c, r1, r2)
-    return { x: q.x, y: q.y }
-  }
-  // Most of them drift toward whatever is being pushed; the rest keep working
-  // the perimeter, so the picture never empties out on one side.
-  if (threatened !== null && r1 < 0.66) {
-    const seg = wallSegment(threatened, c)
-    const out = wallOutward(threatened, c)
-    const depth = 10 + r2 * 26
-    return {
-      x: seg.x1 + (seg.x2 - seg.x1) * r2 + out.dx * depth,
-      y: seg.y1 + (seg.y2 - seg.y1) * r2 + out.dy * depth,
-    }
-  }
-  const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
-  const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
-  const spanX = (c.nr.x - c.nl.x) / 2
-  const spanY = (c.nl.y - c.fl.y) / 2
-  const a = r1 * Math.PI * 2
-  // Tight enough to stay in frame on a narrow canvas — see the clamp in
-  // stepHorde for why wandering off the edge was the real "they disappear".
-  const rad = 1.14 + r2 * 0.24
-  return {
-    x: cx + Math.cos(a) * spanX * rad,
-    y: cy + Math.sin(a) * spanY * rad * 0.8 + spanY * 0.14,
-  }
+/** The clearance the horde keeps from a wall's centreline, in its own depth. */
+function hordeMargin(y: number, c: Corners): number {
+  return wallBand(depthAt(y, c)) + 12
+}
+
+/** Where on its wall a walker is trying to stand. */
+function walkerSpot(wk: Walker, c: Corners) {
+  const seg = wallSegment(wk.wall, c)
+  const my = (seg.y1 + seg.y2) / 2
+  return outsideWall(wk.wall, c, wk.along, wk.depth, hordeMargin(my, c), SOUTH_CLEAR)
+}
+
+/** Walls sharing a corner with this one — the only migrations that look sane. */
+function neighbourWall(wall: number, r: number): number {
+  // N(0) ↔ E(1) ↔ S(2) ↔ W(3) ↔ N. Opposite walls are never adjacent, so a
+  // walker never crosses the compound to reach its next post.
+  const ring = [[3, 1], [0, 2], [1, 3], [2, 0]]
+  return ring[wall][r < 0.5 ? 0 : 1]
 }
 
 /**
@@ -901,16 +910,11 @@ function hordeTarget(c: Corners, threatened: number | null, r1: number, r2: numb
  *
  * 🚨 THEY MOVE. They do not appear.
  *
- * The first version computed every position from time and index, so the two
- * thirds that converge on a threatened wall TELEPORTED there the instant the
- * warning fired, and teleported back afterwards. Play-testing read that as
- * things blinking in and out, which it was.
- *
- * They are stateful now and steer toward a target at a shamble. The
- * consequence is the point: pressure on a wall is no longer a flag the wall
- * reads, it is however many of them have physically arrived. The shaking is
- * caused by the crowd rather than drawn alongside it, so it builds as they
- * gather and eases as they wander off.
+ * The first version computed every position from time and index, so the ones
+ * converging on a threatened wall TELEPORTED there and back. They are stateful
+ * now and shamble to their spot. The consequence is the point: pressure on a
+ * wall is not a flag the wall reads, it is however many of them have physically
+ * arrived, so the shudder builds as they gather and eases as they drift off.
  */
 function stepHorde(
   walkers: Walker[], c: Corners, dt: number, threatened: number | null,
@@ -919,13 +923,32 @@ function stepHorde(
   for (const wk of walkers) {
     wk.retargetIn -= dt
     if (wk.retargetIn <= 0) {
-      const t = hordeTarget(c, threatened, Math.random(), Math.random(), collapsed)
-      wk.tx = t.x
-      wk.ty = t.y
-      // Short while a wall is being worked, long while merely circling — they
-      // commit to a breach and lose interest slowly.
-      wk.retargetIn = threatened !== null ? 1.2 + Math.random() * 1.6 : 3 + Math.random() * 4
+      if (threatened !== null && wk.wall !== threatened && Math.random() < 0.5) {
+        // Drawn to the wall being pushed — but only via a shared corner, so
+        // they arrive around the outside rather than through the courtyard.
+        wk.wall = wk.wall === (threatened + 2) % 4
+          ? neighbourWall(wk.wall, Math.random())
+          : threatened
+      } else if (Math.random() < 0.16) {
+        wk.wall = neighbourWall(wk.wall, Math.random())
+      }
+      // Shuffle along the boards rather than jumping the length of them.
+      wk.along = Math.min(1, Math.max(0, wk.along + (Math.random() - 0.5) * 0.34))
+      wk.depth = Math.random() * 16
+      wk.retargetIn = threatened !== null ? 1.4 + Math.random() * 1.8 : 2.6 + Math.random() * 3.4
     }
+
+    if (collapsed) {
+      // The walls are down. They go in.
+      const q = interiorPoint(c, (wk.along + 0.13) % 1, (wk.depth / 16 + 0.37) % 1)
+      wk.tx = q.x
+      wk.ty = q.y
+    } else {
+      const spot = walkerSpot(wk, c)
+      wk.tx = spot.x
+      wk.ty = spot.y
+    }
+
     const dx = wk.tx - wk.x
     const dy = wk.ty - wk.y
     const d = Math.hypot(dx, dy)
@@ -934,51 +957,36 @@ function stepHorde(
       wk.x += (dx / d) * step
       wk.y += (dy / d) * step
     }
-    // 🚨 The inside is a SAFE ZONE. Targets were already outside, but a walker
-    // crossing from the north side to the south simply walked through the
-    // courtyard to get there. Clamping the position — not just the destination
-    // — is what actually keeps them out, and it turns a straight line through
-    // the compound into a shamble along the outside of the boards.
-    //
-    // The margin clears the BOARDING, not the centreline. Now that a wall is
-    // real timber up to ~21px thick, a flat 14 would have parked half the horde
-    // inside the planks. On the SOUTH side it also clears a whole body height —
-    // see clampOutside.
-    //
-    // 🚨 UNLESS THE WALLS ARE DOWN. At parity the compound is breached and the
-    // horde is meant to be inside it; keeping them politely outside a wall that
-    // no longer exists was the endgame's whole drama being drawn as a colour
-    // change. This is the ONE state where the safe zone stops being safe.
-    const p = collapsed
-      ? { x: wk.x, y: wk.y }
-      : clampOutside(wk.x, wk.y, c, wallBand(depthAt(wk.y, c)) + 12, SOUTH_CLEAR)
-    // 🚨 AND THEY STAY ON SCREEN.
-    // The perimeter orbit reached about 1.65 span-widths from the centre, which
-    // is off the side of a narrow canvas. Walkers strolled out of frame and
-    // back, and with a fixed population that reads exactly as zombies popping
-    // in and out of existence — the thing this was supposed to have fixed. The
-    // count never changed; the visible count did.
-    wk.x = Math.min(w - 6, Math.max(6, p.x))
-    wk.y = Math.min(h - 6, Math.max(c.fl.y * 0.55, p.y))
+
+    // 🚨 THE INSIDE IS A SAFE ZONE, and the boards are not standing room.
+    // pushClear enforces the clearance whether or not the walker is inside the
+    // polygon — which is what its predecessor got wrong, and why walkers stood
+    // in the south planks for several rounds of fixes. Skipped only when the
+    // walls are down, the one state where being inside is the point.
+    if (!collapsed) {
+      const p = pushClear(wk.x, wk.y, c, hordeMargin(wk.y, c), SOUTH_CLEAR)
+      wk.x = p.x
+      wk.y = p.y
+    }
+    wk.x = Math.min(w - 6, Math.max(6, wk.x))
+    wk.y = Math.min(h - 6, Math.max(c.fl.y * 0.55, wk.y))
     wk.phase += dt * 3.4
   }
 }
 
-/** How many walkers are pressed against each wall — this is what shakes it. */
-function wallPressure(walkers: readonly Walker[], c: Corners): number[] {
+/**
+ * How many walkers have actually arrived at each wall — this is what shakes it.
+ *
+ * Counted by which wall they are WORKING plus whether they have got there,
+ * rather than by proximity to the wall line. Proximity broke the moment the
+ * south side gained its body-height clearance: south walkers legitimately
+ * stand 70-odd pixels out, so a fixed radius counted none of them and that
+ * wall could never shudder no matter how many were on it.
+ */
+function wallPressure(walkers: readonly Walker[], _c: Corners): number[] {
   const counts = [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++) {
-    const seg = wallSegment(i, c)
-    const len = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1
-    for (const wk of walkers) {
-      // Distance from the wall's line segment, clamped to its span so a walker
-      // beyond the corner is not counted against it.
-      const t = Math.max(0, Math.min(1,
-        ((wk.x - seg.x1) * (seg.x2 - seg.x1) + (wk.y - seg.y1) * (seg.y2 - seg.y1)) / (len * len)))
-      const px = seg.x1 + (seg.x2 - seg.x1) * t
-      const py = seg.y1 + (seg.y2 - seg.y1) * t
-      if (Math.hypot(wk.x - px, wk.y - py) < 34) counts[i]++
-    }
+  for (const wk of walkers) {
+    if (Math.hypot(wk.x - wk.tx, wk.y - wk.ty) < 20) counts[wk.wall]++
   }
   return counts
 }
@@ -986,19 +994,28 @@ function wallPressure(walkers: readonly Walker[], c: Corners): number[] {
 function drawHorde(
   ctx: CanvasRenderingContext2D, walkers: readonly Walker[], c: Corners, h: number,
 ) {
-  const cx = (c.fl.x + c.fr.x + c.nr.x + c.nl.x) / 4
-  const cy = (c.fl.y + c.fr.y + c.nr.y + c.nl.y) / 4
   // Depth-sorted: drawn in array order, a walker behind another could paint
   // over one standing in front of it.
   const order = [...walkers].sort((a, b) => a.y - b.y)
   for (const wk of order) {
-    const dx = cx - wk.x
-    const dy = cy - wk.y
-    const len = Math.hypot(dx, dy) || 1
+    // 🚨 EVERY WALKER FACES ITS WALL, on all four sides.
+    // Reaching toward the compound's CENTRE looked right on the east and west
+    // and wrong on the north and south, where the direction is almost purely
+    // vertical: the horizontal component collapsed to nothing and the figure
+    // read as standing side-on to the boards it was supposedly clawing at.
+    // The inward normal of its own wall is unambiguous everywhere, and a
+    // stable per-walker lean keeps a rank of them from being one figure
+    // repeated sixteen times.
+    const out = wallOutward(wk.wall, c)
+    let rx = -out.dx + wk.jitter
+    let ry = -out.dy
+    const len = Math.hypot(rx, ry) || 1
+    rx /= len
+    ry /= len
     // The SAME scale function the survivors use, so a walker and a person at
     // the same depth are the same height. They ran on their own curve before
     // and came out around half size.
-    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, dx / len, dy / len)
+    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, rx, ry)
   }
 }
 
@@ -1431,10 +1448,21 @@ export function OutbreakScene({
       // make them appear from nowhere.
       if (hordeRef.current.length === 0) {
         const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
+        // Spread evenly around the four walls, so no side starts empty.
         hordeRef.current = Array.from({ length: HORDE_SIZE }, (_, i) => {
-          const t0 = hordeTarget(c, null, noise(i, 61), noise(i, 67))
-          const p0 = clampOutside(t0.x, t0.y, c, wallBand(depthAt(t0.y, c)) + 12, SOUTH_CLEAR)
-          return { x: p0.x, y: p0.y, tx: p0.x, ty: p0.y, phase: i, retargetIn: noise(i, 71) * 4 }
+          const wk: Walker = {
+            x: 0, y: 0, tx: 0, ty: 0,
+            phase: i,
+            wall: i % 4,
+            along: noise(i, 61),
+            depth: noise(i, 67) * 16,
+            jitter: (noise(i, 73) - 0.5) * 0.7,
+            retargetIn: noise(i, 71) * 4,
+          }
+          const spot = walkerSpot(wk, c)
+          wk.x = wk.tx = spot.x
+          wk.y = wk.ty = spot.y
+          return wk
         })
       }
       for (const b of bodiesRef.current) {
