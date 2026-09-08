@@ -192,6 +192,12 @@ export function BarricadeBoard({
           You are the figure marked YOU on the cam. A wall needs{' '}
           <b style={{ color: BONE }}>{state.threshold}</b> bodies to hold, and
           four walls cannot all be covered — something is always left open.
+          {/* Said here because this is where someone looks when they wonder
+              what the plank in their figure's hands is for. Gear is assigned to
+              the drawn figure, not to the player, and affects nothing — leaving
+              that unsaid invites a round of reasoning about who was carrying
+              what, with real money riding on the conclusion. */}
+          {' '}Everyone carries something; it is scenery, not a stat.
         </p>
       )}
 

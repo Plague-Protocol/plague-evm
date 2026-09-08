@@ -97,14 +97,28 @@ const STEPS: Step[] = [
   },
   {
     phase: 'discussion',
-    title: 'Talk, accuse, defend',
-    body: 'Players argue about who is infected. If you are clean and being framed, activate your Shield — it proves your innocence without revealing anything else. An infected player cannot produce one.',
+    title: 'Hold a wall while you argue',
+    body: 'The horde comes for one of four walls, with eight seconds of warning. Tap a wall to send yourself there; doing nothing means you held the one you started on. Two defenders keep a wall standing — and there are always more walls than people, so something is left open every single time.',
+    seats: BASE.map(s =>
+      s.id === 'you' ? { ...s, badge: 'clean' as const } : s,
+    ),
+    chat: [
+      { from: 'Marrow', text: 'I have got North. Somebody take East.' },
+      { from: 'Vector', text: 'On it.' },
+      { from: 'You', text: 'Nobody is on South. That is where it lands.' },
+    ],
+    hold: 6400,
+  },
+  {
+    phase: 'discussion',
+    title: 'A wall buckles, and it names people',
+    body: 'A wall that holds reports a headcount and no names. One that buckles names everyone who was standing there — the saboteur and the innocent together. It never eliminates anybody: it hands you an argument, and the vote is where that argument costs money.',
     seats: BASE.map(s =>
       s.id === 'you' ? { ...s, badge: 'clean' as const, state: 'shielded' as const } : s,
     ),
     chat: [
-      { from: 'Marrow', text: 'Vector went quiet the moment we started.' },
-      { from: 'Vector', text: 'I went quiet because you talk constantly.' },
+      { from: 'Marrow', text: 'South buckled. Vector and Husk were on it.' },
+      { from: 'Vector', text: 'Two of us against a push that needed three. Do the maths.' },
       { from: 'You', text: 'Shield up. Read it and move on.' },
     ],
     hold: 6400,

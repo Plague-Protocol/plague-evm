@@ -2177,7 +2177,7 @@ export function OutbreakScene({
         )}
       </div>
       <p className="border-t px-3 py-1.5 font-mono text-[10px]" style={{ borderColor: 'rgba(107,142,35,0.12)', color: '#7d9a72' }}>
-        Identities scrambled per viewer — only your own figure is marked.
+        Identities scrambled per viewer — only your own figure is marked. Gear is scenery.
       </p>
     </div>
   )

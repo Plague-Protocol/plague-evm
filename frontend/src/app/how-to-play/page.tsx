@@ -12,10 +12,84 @@ const quickStart = [
   { icon: '🚪', text: 'Join a room in the Lobby by staking USDm.' },
   { icon: '🔑', text: 'Game starts → set a secret Shield Password.' },
   { icon: '🦠', text: 'Each round someone is secretly infected — starting with a random Patient Zero.' },
+  { icon: '🧱', text: 'While you argue, the horde hits a wall. Tap one to defend it — two bodies hold, and four walls cannot all be covered.' },
   { icon: '🛡️', text: "Being framed? Activate your Shield to prove you're clean. Infected players can't." },
   { icon: '🗳️', text: 'Vote out a suspect every round. No vote = a self-vote against you.' },
   { icon: '💰', text: 'Eliminate all infected to split the pot — get outnumbered and you lose your stake.' },
 ]
+
+/**
+ * The Barricade, as rules rather than as an interface.
+ *
+ * 🚨 THE GEAR CARD IS NOT PADDING. Every survivor on the cam is drawn holding a
+ * plank, a pipe or a torch, and a reasonable player will assume that means
+ * something — look for a way to pick one, wonder whether a torch beats a plank,
+ * and read a wall's outcome as evidence about who was carrying what. It is
+ * assigned to the FIGURE, not to the player, and it changes nothing at all.
+ * Saying so plainly costs one card; leaving it unsaid costs somebody a round of
+ * wrong reasoning with real money on the table.
+ */
+const barricadeRules = [
+  {
+    icon: '🧱',
+    title: 'You start on a wall',
+    desc: 'Every round assigns you one of the four walls. Sending nothing means you held your post — a normal, common play, not a forfeit. Nobody can tell the difference between holding on purpose and never touching the board, which is exactly the point: a slow connection must never look like a tell.',
+  },
+  {
+    icon: '🏃',
+    title: 'Tap a wall to move',
+    desc: 'Your figure runs there, braces against the boards for a few seconds, then drifts back into the yard. You can change your mind at any point in the phase — not just while a warning is up.',
+  },
+  {
+    icon: '⚠️',
+    title: 'A push needs two bodies',
+    desc: 'You get eight seconds of warning before the horde hits a named wall. Two defenders hold it. There are four walls and at most a handful of you, so something is always left open — and which something is the argument.',
+  },
+  {
+    icon: '🤐',
+    title: 'Holding names nobody',
+    desc: 'A wall that holds reports a count and nothing else. A wall that BUCKLES names everyone who was standing there — saboteur and innocent alike. That asymmetry is the whole engine.',
+  },
+  {
+    icon: '☣️',
+    title: 'The infected can sabotage',
+    desc: 'Instead of defending, an infected player can subtract from their wall. It is never announced and never visible. Sabotage that fails to break a wall leaves no trace at all — but if the wall buckles, you are on the list with everyone else who was there.',
+  },
+  {
+    icon: '🛡️',
+    title: 'It cannot kill you',
+    desc: 'No wall ever eliminates a player and no wall ever moves a coin. The barricade produces evidence; the vote is still the only thing that costs money. A buckled wall is damage that held — it does not let anything in.',
+  },
+] as const
+
+/** Reading the quarantine cam. Everything here is about what is TRUE on screen
+ *  and what is decoration, which is the distinction players get wrong. */
+const camRules = [
+  {
+    title: 'Only your own figure is you',
+    desc: 'Which body is which player is invented separately on every screen. Yours is truthful and labelled YOU; everyone else is anonymous, and no two players see the same arrangement.',
+  },
+  {
+    title: 'The headcounts are real',
+    desc: 'The number of figures at each wall matches the number of players actually posted there. The names attached to them do not exist. Count bodies, never faces.',
+  },
+  {
+    title: 'Gear is cosmetic — all of it',
+    desc: 'Every survivor carries a plank, a length of pipe or a torch. It belongs to the figure on screen, not to the player behind it, and it does nothing: no damage, no bonus, no way to choose or change one. It is there so that a figure braced against the boards visibly reads as bracing.',
+  },
+  {
+    title: 'Arms out means holding',
+    desc: 'A figure turned to a wall with both arms against it is defending that wall. One wandering the middle of the compound is not posted anywhere right now.',
+  },
+  {
+    title: 'Zombies are only ever outside',
+    desc: 'Anything hunched over with red eyes is the horde, and the horde is never inside the walls until the game is already lost. Nobody inside the compound is ever drawn as infected — there are no visual tells on players, by design.',
+  },
+  {
+    title: 'What the colours mean',
+    desc: 'Amber along a wall: the horde is on it right now. Gouges torn out of the timber: it took a push and held. Red, with the boarding open: the infected reached parity, the walls are down, and the game is over.',
+  },
+] as const
 
 const phases = [
   {
@@ -31,15 +105,15 @@ const phases = [
     name: 'Discussion',
     icon: '💬',
     color: '#f5c518',
-    duration: '60 s',
-    desc: "Players discuss and debate who might be infected. Clean players can activate a Shield to prove they're not the zombie without revealing anything else. One Shield per player per round, and the window closes the moment voting begins.",
+    duration: '180 s',
+    desc: "Players discuss and debate who might be infected. Clean players can activate a Shield to prove they're not the zombie without revealing anything else. One Shield per player per round, and the window closes the moment voting begins. This is also when the horde comes for the walls — see The Barricade below.",
   },
   {
     number: '03',
     name: 'Voting',
     icon: '🗳️',
     color: '#6b8e23',
-    duration: '60 s',
+    duration: '120 s',
     desc: 'Every alive player casts an on-chain vote for the player they believe is infected. Any player who fails to vote before the timer expires automatically receives a self-vote — their vote is cast against themselves. Silence equals guilt; abstention is never safe.',
   },
   {
@@ -505,8 +579,62 @@ export default function HowToPlayPage() {
           </div>
         </CollapsibleSection>
 
+        {/* ── The Barricade ────────────────────────────────────────────────── */}
+        <CollapsibleSection number="06" title="The Barricade">
+          <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
+            Discussion is three minutes long, and for most of it the horde is working on the walls.
+            You decide where to stand. What comes out of it is an argument, never a casualty.
+          </p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {barricadeRules.map((rule) => (
+              <div
+                key={rule.title}
+                className="rounded-xl border p-5"
+                style={{ borderColor: 'rgba(245,197,24,0.25)', backgroundColor: 'rgba(245,197,24,0.05)' }}
+              >
+                <div className="text-2xl">{rule.icon}</div>
+                <h3 className="mt-3 font-mono text-sm font-bold" style={{ color: '#f5c518' }}>{rule.title}</h3>
+                <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>{rule.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div
+            className="mt-6 rounded-xl border p-5"
+            style={{ borderColor: 'rgba(107,142,35,0.3)', backgroundColor: 'rgba(6,11,6,0.6)' }}
+          >
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.15em]" style={{ color: '#6b8e23' }}>Reading the Quarantine Cam</p>
+            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>
+              The cam is the barricade — the compound you are watching is the room you are in.
+              Some of what it shows is true, some of it is scenery, and the difference matters.
+            </p>
+            <dl className="mt-4 space-y-3">
+              {camRules.map((rule) => (
+                <div key={rule.title}>
+                  <dt className="font-mono text-xs font-bold" style={{ color: '#8fa882' }}>{rule.title}</dt>
+                  <dd className="mt-1 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>{rule.desc}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          <div
+            className="mt-6 rounded-xl border p-5"
+            style={{ borderColor: 'rgba(230,51,41,0.3)', backgroundColor: 'rgba(230,51,41,0.06)' }}
+          >
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.15em]" style={{ color: '#e63329' }}>Why this is worth arguing about</p>
+            <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#7d9a72' }}>
+              A wall needs two defenders. So a wall that buckles with one name on it means either that
+              person sabotaged it — or nobody came to help them and they were always going to fail alone.
+              Both stories fit the same evidence, every time. The barricade is built to hand you that
+              ambiguity rather than a confession: it starts the argument, and the vote is where you pay
+              for getting it wrong.
+            </p>
+          </div>
+        </CollapsibleSection>
+
         {/* ── Endgame & Payouts ────────────────────────────────────────────── */}
-        <CollapsibleSection number="06" title="Endgame & Payouts">
+        <CollapsibleSection number="07" title="Endgame & Payouts">
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Win conditions are checked automatically by the contract after every Reveal phase. Payouts are instant and trustless.
           </p>
@@ -550,7 +678,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Tips ────────────────────────────────────────────────────────── */}
-        <CollapsibleSection number="07" title="Strategy Tips">
+        <CollapsibleSection number="08" title="Strategy Tips">
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {[
               {

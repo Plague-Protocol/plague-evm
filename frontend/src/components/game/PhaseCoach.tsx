@@ -44,8 +44,8 @@ const HINTS: Record<string, Hint> = {
     color: '#e63329',
   },
   discussion: {
-    title: 'Talk now, vote next',
-    body: 'Accuse, defend, bluff. If you are clean and being framed, activate your Shield — it proves innocence and only works during Discussion.',
+    title: 'Hold a wall, talk, then vote',
+    body: 'Tap a wall to send yourself there; doing nothing holds the one you started on. Two bodies keep a wall standing. If you are clean and being framed, activate your Shield — it only works during Discussion.',
     color: '#f5c518',
   },
   voting: {
