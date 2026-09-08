@@ -419,8 +419,11 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
   const gx = (c.fl.x + c.nr.x) / 2
   const gy = (c.fl.y + c.nl.y) / 2
   const glow = ctx.createRadialGradient(gx, gy, 4, gx, gy, Math.max(c.nr.x - c.nl.x, c.nl.y - c.fl.y) * 0.7)
-  glow.addColorStop(0, 'rgba(120,150,60,0.14)')
-  glow.addColorStop(1, 'rgba(20,32,18,0.5)')
+  // Dimmed now that the braziers light the compound. This is the residual
+  // ambience the corner lamps sit on top of; before they existed it had to
+  // carry the whole floor on its own, and the floor was lit by nothing.
+  glow.addColorStop(0, 'rgba(120,150,60,0.07)')
+  glow.addColorStop(1, 'rgba(16,26,15,0.58)')
   ctx.fillStyle = glow
   ctx.fill()
   ctx.restore()
@@ -510,6 +513,121 @@ function drawWalker(ctx: CanvasRenderingContext2D, x: number, y: number, s: numb
   ctx.arc(0, -7 * s, 1.9 * s, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
+}
+
+/**
+ * The glow pool cast by a brazier, rendered once and tinted per frame.
+ *
+ * A radial gradient per lamp per frame would be four allocations at 60 Hz —
+ * precisely the cost that was just removed from the backdrop and the fog. As a
+ * sprite, flicker is a change of alpha and scale on a drawImage.
+ */
+function renderGlowSprite(r: number, dpr: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null
+  const off = document.createElement('canvas')
+  off.width = off.height = Math.max(1, Math.floor(r * 2 * dpr))
+  const ctx = off.getContext('2d')
+  if (!ctx) return null
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const g = ctx.createRadialGradient(r, r, 0, r, r, r)
+  g.addColorStop(0, 'rgba(255,168,72,0.5)')
+  g.addColorStop(0.45, 'rgba(226,122,40,0.16)')
+  g.addColorStop(1, 'rgba(226,122,40,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, r * 2, r * 2)
+  return off
+}
+
+/** Per-lamp flicker. Two detuned sines beat against each other, so the rhythm
+ *  never repeats visibly and no randomness has to be stored. */
+function flicker(t: number, i: number): number {
+  return 0.78 + 0.14 * Math.sin(t * 8.3 + i * 2.1) + 0.08 * Math.sin(t * 13.7 + i)
+}
+
+/** The four corners, near-first so callers can depth-sort trivially. */
+function lampPositions(c: Corners): { x: number; y: number }[] {
+  return [c.fl, c.fr, c.nr, c.nl]
+}
+
+/**
+ * Light pools on the compound floor. Drawn before the walls so the light lies
+ * on the ground rather than over the boards.
+ */
+function drawLampPools(
+  ctx: CanvasRenderingContext2D, c: Corners, t: number, glow: HTMLCanvasElement | null, dim: number,
+) {
+  if (!glow) return
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  lampPositions(c).forEach((p, i) => {
+    const d = depthAt(p.y, c)
+    const r = (46 + d * 40) * flicker(t, i)
+    ctx.globalAlpha = 0.85 * dim * flicker(t, i + 3)
+    ctx.drawImage(glow, p.x - r, p.y - r * 0.6, r * 2, r * 1.2)
+  })
+  ctx.restore()
+}
+
+/**
+ * Brazier posts at the four corners.
+ *
+ * They are the SOURCE of the light the compound already had — the floor was
+ * lit by nothing before, which is a small incoherence the eye notices without
+ * naming. They also plant the corners, which is what makes the trapezoid read
+ * as an enclosure rather than a shape.
+ *
+ * Deliberately deep orange rather than amber: amber is the wall-under-pressure
+ * signal, and four permanent amber lights would dilute the one colour that has
+ * to mean something. The flame is also small and static in place, where the
+ * pressure glow is a pulse spread along a whole wall — different colour,
+ * different shape, no confusion.
+ */
+function drawLampPosts(ctx: CanvasRenderingContext2D, c: Corners, t: number, dim: number) {
+  lampPositions(c).forEach((p, i) => {
+    const d = depthAt(p.y, c)
+    const s = 0.8 + d * 0.55
+    const f = flicker(t, i) * dim
+    const postH = 20 * s
+
+    ctx.save()
+    ctx.translate(p.x, p.y)
+
+    // Post
+    ctx.strokeStyle = 'rgba(58,50,34,0.95)'
+    ctx.lineWidth = 2.4 * s
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.lineTo(0, -postH)
+    ctx.stroke()
+
+    // Bowl
+    ctx.strokeStyle = 'rgba(84,72,50,0.95)'
+    ctx.lineWidth = 1.8 * s
+    ctx.beginPath()
+    ctx.moveTo(-3.4 * s, -postH)
+    ctx.lineTo(3.4 * s, -postH)
+    ctx.stroke()
+
+    // Flame — a teardrop that leans and breathes.
+    if (dim > 0.05) {
+      const lean = Math.sin(t * 3.1 + i) * 1.3 * s
+      const hgt = (7 + f * 4) * s
+      ctx.beginPath()
+      ctx.moveTo(-2.2 * s, -postH)
+      ctx.quadraticCurveTo(-2.6 * s + lean, -postH - hgt * 0.6, lean, -postH - hgt)
+      ctx.quadraticCurveTo(2.6 * s + lean, -postH - hgt * 0.6, 2.2 * s, -postH)
+      ctx.closePath()
+      ctx.fillStyle = `rgba(232,126,40,${(0.85 * f).toFixed(3)})`
+      ctx.fill()
+      // Hot core
+      ctx.beginPath()
+      ctx.ellipse(lean * 0.5, -postH - hgt * 0.32, 1.3 * s, 2.4 * s, 0, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(255,214,138,${(0.8 * f).toFixed(3)})`
+      ctx.fill()
+    }
+    ctx.restore()
+  })
 }
 
 /** A member of the horde. Stateful on purpose — see stepHorde. */
@@ -740,6 +858,7 @@ function drawScene(
   bar: BarricadeView | null,
   backdrop: HTMLCanvasElement | null,
   fog: HTMLCanvasElement | null,
+  glow: HTMLCanvasElement | null,
   walkers: readonly Walker[],
 ) {
   ctx.clearRect(0, 0, w, h)
@@ -768,9 +887,16 @@ function drawScene(
   if (bar) {
     const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
     drawOutside(ctx, w, h, c, t, backdrop, fog)
-    // Horde before the walls: they are outside, so the boards occlude them.
+    // The lamps gutter out when the walls come down — the compound stops being
+    // a place anyone is keeping lit.
+    const lamp = bar.collapsed ? 0.12 : 1
+    // Pools first: light lies ON the ground, under the boards and the bodies.
+    drawLampPools(ctx, c, t, glow, lamp)
+    // Horde next: they are outside, so the boards occlude them.
     drawHorde(ctx, walkers, c)
     drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
+    // Posts last of the compound layer, so they stand in front of their wall.
+    drawLampPosts(ctx, c, t, lamp)
   }
 
   const flashBody = active?.type === 'electrocute' && active.t < ELECTRO_FLICKER_SECS ? active.body : null
@@ -878,6 +1004,8 @@ export function OutbreakScene({
   const fogRef = useRef<HTMLCanvasElement | null>(null)
   /** The horde. Stateful so they walk rather than blink between positions. */
   const hordeRef = useRef<Walker[]>([])
+  /** Brazier light pool, tinted per frame rather than re-created. */
+  const glowRef = useRef<HTMLCanvasElement | null>(null)
   const lastResultKeyRef = useRef(-1)
   const epochRef = useRef(0)
   const bodiesRef = useRef<Body[]>([])
@@ -916,6 +1044,7 @@ export function OutbreakScene({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       backdropRef.current = renderBackdrop(w, h, compoundShape(w, h, PAD_TOP, PAD_BOTTOM), dpr)
       fogRef.current ??= renderFogSprite(130, dpr)
+      glowRef.current ??= renderGlowSprite(96, dpr)
       // Seed the horde where it will already be walking, so a resize does not
       // make them appear from nowhere.
       if (hordeRef.current.length === 0) {
@@ -936,7 +1065,7 @@ export function OutbreakScene({
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, fogRef.current, hordeRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, fogRef.current, glowRef.current, hordeRef.current)
     }
     renderRef.current = render
 
