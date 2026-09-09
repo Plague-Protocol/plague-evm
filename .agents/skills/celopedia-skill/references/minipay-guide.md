@@ -458,13 +458,90 @@ Host: `link.minipay.xyz`. Full table with all current deeplinks is in `minipay-d
 | Deeplink | URL | Purpose |
 |----------|-----|---------|
 | Add Cash | `https://link.minipay.xyz/add_cash` (optionally `?tokens=USDm,USDC,USDT`) | Redirect users with low balance to top up |
-| Open Mini App | `https://link.minipay.xyz/browse?url=xxx` | Deep-link into an approved Mini App |
+| Open Mini App (Browse) | `https://link.minipay.xyz/browse?url=<url-encoded target>` | Open an external link **inside** MiniPay's in-app browser (the target short link is provisioned by MiniPay — request it) |
 | MiniApps tab | `https://link.minipay.xyz/discover` | Jump to the discovery tab |
 | Transaction receipt | `https://link.minipay.xyz/receipt?tx=xxx[&celebrate]` | Show a receipt screen for a tx hash |
 
 > **Canonical list:** https://docs.minipay.xyz/technical-references/deeplinks.html — fetch before shipping; MiniPay publishes new deeplinks periodically.
 >
 > **UI copy:** label this action **Deposit** in buttons/messages — not "Add Cash", "Onramp", or "Buy". See `minipay-requirements.md` §3.
+>
+> **Opening your Mini App from an external link.** Use the **Browse** deeplink
+> `https://link.minipay.xyz/browse?url=<url-encoded target>` to open a URL
+> _inside_ MiniPay. The target is a **MiniPay/Opera short link** for your listed
+> app (e.g. `https://opr.as/xxxx`) — **request it from the MiniPay team**, it's
+> not self-serve.
+>
+> **MiniPay does NOT do referrals, dynamic links, or campaign/attribution
+> params** — it won't carry arbitrary query params through for you. Any referral
+> logic (e.g. `?ref=<wallet>`) is **yours** — bake it into the `url=` target you
+> pass and read it in your app. A plain shared link (not wrapped in Browse) opens
+> in a normal browser, not MiniPay.
+
+---
+
+## Sharing out of a Mini App (Web Share)
+
+MiniPay runs your app in a webview, so `navigator.share()` opens the phone's
+native share sheet — the only way to reach Instagram / Stories (no web-share URL
+exists for those). Gotchas from production:
+
+- **You can't force a target first.** The OS picker owns the order; you can't
+  make X (or any app) the first option. If X-first matters, add an explicit
+  `https://x.com/intent/tweet?text=…&url=…` button instead of relying on the sheet.
+- **Telegram (and some targets) drop the `text`** when a Web Share payload has
+  both `text` and `url` — only the link survives. Fold the link INTO the text and
+  share one string: `navigator.share({ text: \`${msg}\n\n${url}\` })`.
+- **`window.open(intentUrl, '_blank')` works** inside the webview for X /
+  WhatsApp / Telegram, as long as it's inside a user-gesture (click) handler.
+  Use `https://api.whatsapp.com/send?text=…` — `wa.me/?text=…` without a phone
+  number shows an "invalid number" page. Telegram: `https://t.me/share/url?url=…&text=…`.
+- A plain shared link opens in a normal browser; wrap it in the **Browse
+  deeplink** (Deeplinks above) to open inside MiniPay. Either way, keep referral
+  attribution in **your own** URL params — MiniPay doesn't do referrals.
+
+---
+
+## Client-Side State & One-Time Onboarding
+
+The MiniPay WebView supports `localStorage` / `sessionStorage` like any browser.
+For "show this once" UX — an intro walkthrough, a tips banner, a what's-new card
+— gate it on a `localStorage` flag. Learnings from a production Mini App:
+
+- **Use `localStorage`, not `sessionStorage`, for "once ever."** `sessionStorage`
+  is cleared every time the Mini App is reopened, so a walkthrough gated on it
+  reappears on every launch. `localStorage` persists across sessions.
+- **This state is per-device, not per-wallet.** It lives in the WebView, tied to
+  the device — not to the connected address. It does **not** sync across devices,
+  and it's wiped if the user clears MiniPay/app data or the WebView evicts
+  storage. Treat it as a UX hint, never as authoritative or security state.
+- **Don't key onboarding on the wallet address.** The account often isn't
+  connected on first paint, so an address-keyed check causes a flash of the wrong
+  UI while the connection resolves — and you don't need it. A single static key
+  is enough.
+- **Read the flag in a client effect, not during render/SSR.** `localStorage` is
+  `undefined` on the server; touching it during render causes hydration
+  mismatches. Read it inside `useEffect` (or after a mounted check).
+- **Measure completion with an analytics event, not storage.** Storage is
+  invisible to you; you can't count who finished onboarding by inspecting it.
+  Emit an event on completion instead.
+
+```tsx
+// Show a one-time intro on first open; expose a "replay" entry point elsewhere.
+useEffect(() => {
+  if (!localStorage.getItem('intro-seen')) setShowIntro(true)
+}, [])
+
+function dismissIntro() {
+  localStorage.setItem('intro-seen', '1')
+  setShowIntro(false)
+  // analytics.capture('intro_completed')  // count completion via events, not storage
+}
+```
+
+Because "seen" is per-device, always give users a way to **replay** the intro
+(a Help / "how to win" entry point), so anyone on a fresh device or after a data
+clear can find it again.
 
 ---
 
@@ -545,5 +622,5 @@ See `minipay-requirements.md` for the full submission checklist.
 
 - **Celo Builder Fund** (Verda Ventures): $25K investment for MiniPay builders
   - Contact: team@verda.ventures
-- **Proof of Ship**: Monthly rewards for consistent building
+- **Celo Devs newsletter**: hackathons and new builder programs are announced here
   - Subscribe: https://celo-devs.beehiiv.com/subscribe

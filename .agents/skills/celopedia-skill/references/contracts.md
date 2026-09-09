@@ -1,7 +1,7 @@
 # Celo Contract Addresses
 
 > Source: https://docs.celo.org/tooling/contracts/
-> Last updated: 2026-04-15
+> Last updated: 2026-08-06
 
 All addresses verified from official Celo documentation. **Do not guess addresses not listed here.**
 
@@ -70,21 +70,31 @@ All addresses verified from official Celo documentation. **Do not guess addresse
 | Mountain Protocol USD | USDM | `0x59D9356E565Ab3A36dD77763Fc0d87fEaf85508C` |
 | Angle USD | USDA | `0x0000206329b97DB379d5E1Bf586BbDB969C63274` |
 | Angle Euro | EURA | `0xC16B81Af351BA9e64C1a069E3Ab18c244A1E3049` |
-| VNX Euro | VEUR | `0x9346F43c1588B6DF1D52bdD6Bf846064F92d9Cba` |
 | VNX British Pound | VGBP | `0x7aE4265eCFC1F31bc0E112DfCFe3D78E01f4BB7f` |
 | VNX Swiss Franc | VCHF | `0xC5ebEa9984C485EC5D58cA5a2D376620d93aF871` |
 | Glo Dollar | USDGLO | `0x4F604735c1cF31399C6E711D5962b2B3E0225AD3` |
 | BRLA Digital | BRLA | `0xFECB3F7c54E2CAAE9dC6Ac9060A822D47E053760` |
 | Minteo Colombian Peso | COPM | `0xC92E8Fc2947E32F2B574CCA9F2F12097A71d5606` |
 | GoodDollar | G$ | `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` |
+| Ripio Argentine Peso | wARS | `0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D` |
+| Ripio Brazilian Real | wBRL | `0xD76f5Faf6888e24D9F04Bf92a0c8B921FE4390e0` |
+| Ripio Mexican Peso | wMXN | `0x337E7456B420bD3481e7FA61fA9850343d610d34` |
+| Ripio Colombian Peso | wCOP | `0x8a1D45e102e886510e891d2Ec656a708991e2D76` |
+| Ripio Peruvian Sol | wPEN | `0x4F34c8b3b5FB6D98Da888F0feA543d4d9C9F2eBE` |
+| Ripio Chilean Peso | wCLP | `0x61D450a098b6a7f69fC4b98CE68198fe59768651` |
 | Wrapped Ether | WETH | `0xD221812de1BD094f35587EE8E174B07B6167D9Af` |
 | CELO (ERC-20) | CELO | `0x471EcE3750Da237f93B8E339c536989b8978a438` |
+| cNGN (Nigerian Naira, regulated) | cNGN | `0xF6829D7393dAe24509eb1E52eE8e572e2E271a4f` |
 
 > Third-party stablecoins above are sourced from and verified against the official list: https://docs.celo.org/build-on-celo/build-with-local-stablecoin (addresses confirmed on-chain).
 >
 > **Ticker collisions to watch** (match on address, not symbol): Mountain Protocol's **USDM** (yield-bearing, US-Treasury-backed) is **not** Celo's **USDm** (cUSD, the Mento dollar). Minteo's **COPM** (`0xC92E…`) is **not** Mento's **COPm** (`0x8A56…`).
 
 > **USAT** (Tether America USD) launched on Celo in April 2026 — a USD stablecoin backed by short-term T-bills + cash (supervised by Anchorage Digital). **6 decimals** (like USDC/USDT). It is a whitelisted fee currency; its `feeCurrency` adapter is `0x0357EE22278c922e1D36cFe6b899269b161880C4` (18-decimal adapter — use the adapter, not the token, in the `feeCurrency` field). Caveat: upstream price oracles don't yet index the Celo contract address, so Valora-derived wallets may show `priceUsd: NaN` until that's resolved.
+
+**Ripio wFIAT notes** (added Jul 2026):
+- `wBRL` ≠ `BRLm`: `wBRL` is Ripio-issued; `BRLm` (cREAL) is Mento-issued — different issuers, different risk profiles
+- wFIAT tokens are **not** supported in MiniPay (MiniPay wallet only handles USDT, USDC, USDm)
 
 ---
 
@@ -211,8 +221,10 @@ Supported assets: USDC, USDT, EURm, USDm, CELO, WETH
 
 | Token | Symbol | Address |
 |-------|--------|---------|
-| USDm | USDm | `0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80` |
-| EURm | EURm | `0x6B172e333e2978484261D7eCC3DE491E79764BbC` |
+| USDm | USDm | `0xdE9e4C3ce781b4bA68120d6261cbad65ce0aB00b` |
+| EURm | EURm | `0xA99dC247d6b7B2E3ab48a1fEE101b83cD6aCd82a` |
+| Celo Dollar (legacy) | cUSD | `0xEF4d55D6dE8e8d73232827Cd1e9b2F2dBb45bC80` |
+| Celo Euro (legacy) | cEUR | `0x6B172e333e2978484261D7eCC3DE491E79764BbC` |
 | BRLm | BRLm | `0x2294298942fdc79417DE9E0D740A4957E0e7783a` |
 | USDC | USDC | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` |
 | USDT | USDT | `0xd077A400968890Eacc75cdc901F0356c943e4fDb` |
@@ -229,6 +241,15 @@ Supported assets: USDC, USDT, EURm, USDm, CELO, WETH
 | GHSm | GHSm | `0x5e94B8C872bD47BC4255E60ECBF44D5E66e7401C` |
 | CADm | CADm | `0xF151c9a13b78C84f93f50B8b3bC689fedc134F60` |
 | AUDm | AUDm | `0x5873Faeb42F3563dcD77F0fbbdA818E6d6DA3139` |
+
+> **Sepolia is not mainnet here — do not copy the mainnet pattern.** On **mainnet**,
+> USDm/EURm are the *same contracts* cUSD/cEUR were, renamed: `0x765DE816…` returns
+> `name() = "Mento Dollar", symbol() = "USDm"` today. On **Celo Sepolia** they are
+> **two separate deployments** — the legacy `0xEF4d55D6…` / `0x6B172e33…` still return
+> `cUSD` / `cEUR`, and USDm/EURm live at the new addresses above. A testnet integration
+> that reuses the mainnet mental model will point at the wrong token. Verified by
+> `eth_call symbol()` against `forno.celo-sepolia.celo-testnet.org` and
+> `forno.celo.org` on 2026-08-28.
 
 ### Uniswap V3 (Alfajores Testnet)
 

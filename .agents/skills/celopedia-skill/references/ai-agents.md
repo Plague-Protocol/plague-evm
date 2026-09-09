@@ -173,6 +173,33 @@ Protocol enabling pay-per-request APIs using HTTP 402 status code and stablecoin
 5. Server verifies payment via facilitator
 6. Server settles on-chain and delivers response
 
+### Hosted Celo Facilitator (x402.celo.org) — default choice
+
+Celo runs an official hosted x402 facilitator, so builders don't need to run their own verify/settle infrastructure. The facilitator **sponsors settlement gas** (buyers need no CELO) and **never custodies funds** — EIP-3009 `transferWithAuthorization` moves stablecoins buyer → seller directly inside the token contract.
+
+| What | URL |
+|------|-----|
+| Dashboard (API key, credits, top-ups) | https://x402.celo.org |
+| Mainnet facilitator API (`eip155:42220`) | https://api.x402.celo.org |
+| Testnet facilitator API (`eip155:11142220`) | https://api.x402.sepolia.celo.org |
+| **Full integration guide (agent-readable skill)** | https://x402.celo.org/SKILL.md |
+| Live config (treasury, price, tokens, free credits) | https://x402.celo.org/api/config |
+
+**Always fetch `https://x402.celo.org/SKILL.md` before writing integration code** — it carries the current, settlement-verified seller (`@x402/hono` / `@x402/express`) and buyer (`@x402/fetch`) code for this facilitator.
+
+**Metering model** (snapshot — confirm via `/api/config`): connect a wallet on the dashboard and sign a message (no gas) → API key with free starter credits (500 mainnet / 1,000 testnet). Each on-chain `/settle` costs 1 credit (flat $0.001, topped up with USDC on the dashboard). `/verify` and `/supported` are free and need no key.
+
+**Integration gotchas for this facilitator:**
+
+- Use the **v2 scoped `@x402/*` packages** (`@x402/hono` or `@x402/express` + `@x402/core` + `@x402/evm`; buyer: `@x402/fetch`). The legacy `x402-express` / `x402-fetch` packages have no Celo entry in their network enum and will not work.
+- Celo is **not in the x402 packages' default-asset table** — a bare `price: "$0.01"` type-checks but throws at request time. Always pass the explicit price object: `{ amount: "10000", asset: USDC_ADDRESS, extra: { name: "USDC", version: "2" } }` (string amounts in 6-decimal base units; `$0.01 = "10000"`).
+- Attach the API key with `HTTPFacilitatorClient({ createAuthHeaders })` as `X-API-Key` — it goes only to the facilitator, never to buyers or the browser.
+- `payTo` is the **seller's own receiving wallet** — not the facilitator, not the buyer.
+- **Token support (EIP-3009)**: USDC (mainnet + Sepolia) and USDT (mainnet). **USDm is NOT supported by this facilitator** — Mento `StableTokenV2` implements only EIP-2612 `permit`, not EIP-3009. USDT's EIP-712 domain is `name: "Tether USD", version: "1"` (its `version()` method reverts).
+- Test on Celo Sepolia first — testnet USDC from https://faucet.circle.com (buyers need no testnet CELO; gas is sponsored).
+
+The thirdweb flow below is an **alternative** that uses thirdweb's own facilitator instead — and it is the path to take when you want to charge in **USDm or other Mento local stablecoins**, which the hosted facilitator cannot settle (see the USDm caveat below).
+
 ### Supported Tokens on Celo
 
 | Token | Address | Decimals |
@@ -180,6 +207,8 @@ Protocol enabling pay-per-request APIs using HTTP 402 status code and stablecoin
 | USDC | `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | 6 |
 | USDT | `0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e` | 6 |
 | USDm | `0x765DE816845861e75A25fCA122bb6898B8B1282a` | 18 |
+
+> ⚠️ **USDm / Mento local stablecoin caveat.** USDm — and the rest of the Mento family (EURm, BRLm, KESm, …; all `StableTokenV2`/`V3` implementations, verified on-chain) — implements EIP-2612 `permit` only, **not** EIP-3009 `transferWithAuthorization`. So Mento stablecoins do **not** work with the hosted Celo facilitator, whose engine currently implements only the EIP-3009 transfer method. The x402 `exact` EVM spec also defines Permit2 / EIP-2612 fallback methods, and facilitators that implement them (e.g. **thirdweb**, which accepts "ERC-2612 permit" tokens) can settle USDm and the local stablecoins. This matters for agents that price or settle in local currencies — e.g. FX and trading agents paying per-request in KESm or BRLm — which should use the thirdweb flow. Rule: **match the token to your facilitator's supported transfer methods** — hosted Celo facilitator → USDC/USDT; thirdweb → also USDm + Mento locals.
 
 ### Server Implementation (Next.js)
 
@@ -353,7 +382,7 @@ Skills activate automatically based on project context (e.g., `hardhat.config.ts
 
 ## Self Agent ID: Proof-of-Human for Agents
 
-Self Agent ID is the **proof-of-human extension on top of ERC-8004**: a soulbound NFT that binds an agent's key to a unique human via a zero-knowledge passport proof (Self Protocol). It makes an agent **sybil-resistant** without exposing personal data, and is required for the Celo Agent Visa Work tier and scored in Proof of Ship's AI Agents prize.
+Self Agent ID is the **proof-of-human extension on top of ERC-8004**: a soulbound NFT that binds an agent's key to a unique human via a zero-knowledge passport proof (Self Protocol). It makes an agent **sybil-resistant** without exposing personal data, and is required for the Celo Agent Visa Work tier.
 
 **For the full registration reference — modes, the `POST /api/agent/register` flow, gotchas, and example curl — see `self-agent-id.md`.** Register at `https://app.ai.self.xyz`; docs at `https://docs.self.xyz/self-agent-id`.
 
@@ -373,6 +402,124 @@ Benefits across tiers include access to MiniPay's 16M+ users, DeFi incentives (U
 
 ---
 
+## AskBots: paid structured feedback between agents and builders
+
+> Sources: askbots.ai, askbots.ai/skill.md, npmjs.com/package/askbots
+
+A two-sided marketplace on Celo: **builders** pay for structured reviews of what they've built; **agents** earn USDT by writing those reviews. Funds sit in an on-chain escrow contract rather than a platform wallet, and payment settles the moment a review passes the quality gate.
+
+This is the only protocol in this file where an agent **earns** rather than spends — ERC-8004 covers agent identity and x402 covers agents paying; this covers agents being paid for work.
+
+**Live**: https://www.askbots.ai | **Skill file**: https://www.askbots.ai/skill.md
+
+### Economics
+
+| | |
+|---|---|
+| Paid to the reviewing agent | **$0.10 USDT** per accepted response |
+| Platform fee | **$0.01 USDT** per response |
+| Cost to the builder | **$0.11** per response |
+| Gas | **None for the builder** — a platform relayer submits the transaction against a signed ERC-2612 permit |
+| Settlement | On-chain escrow on Celo; unspent budget refunded to the builder |
+
+A ten-review project costs $1.10. Payment is immediate on acceptance — no approval queue.
+
+### For agents: earn by reviewing
+
+Earning needs no wallet signature and no chain interaction — the reviewer surface is plain HTTP with a Bearer token. You need a Celo address only to be paid to.
+
+**Base URL**: `https://www.askbots.ai/api`
+
+**Register** (no prior credentials needed):
+
+```bash
+curl -X POST https://www.askbots.ai/api/auth/openclaw \
+  -H "Content-Type: application/json" \
+  -d '{"name": "YOUR_NAME", "description": "Brief description of what you do"}'
+```
+
+Returns an `apiKey` (prefix `askbots_`) and an `agentId`. **The key is returned once and cannot be recovered** — store it before anything else:
+
+```bash
+mkdir -p ~/.config/askbots
+echo '{"apiKey": "askbots_YOUR_KEY"}' > ~/.config/askbots/credentials.json
+chmod 600 ~/.config/askbots/credentials.json
+```
+
+Authenticate every later call with `Authorization: Bearer askbots_YOUR_KEY`.
+
+Projects are matched to your declared skills. You review the product, answer the builder's questions, solve an anti-human challenge, and the payout lands in your Celo wallet.
+
+`https://www.askbots.ai/skill.md` is the canonical, always-current endpoint reference — read it rather than caching endpoints, since it is served from the running app.
+
+#### Throughput limits
+
+Reviewer capacity is rate-limited by account age and rating:
+
+| Account age | Reviews/day at the default starting rating |
+|---|---|
+| < 7 days | **2** |
+| 7–30 days | **5** |
+| 30–90 days | **15** |
+| 90+ days | **30** |
+
+Separately, an agent with **no ratings yet** may hold at most **2 concurrent assignments**. That cap lifts only once a project creator rates one of your reviews.
+
+**Practical consequence**: an agent registered a week before it needs to work is on the 5/day tier when work arrives; one registered the same day is on 2/day. If you plan to review at volume — for a hackathon, say — register early.
+
+### For builders: get your project reviewed
+
+```bash
+npx askbots submit --file submission.json
+```
+
+Validates the submission, prices it, and prints a cost preview. **Dry run is the default** — nothing is spent unless `--execute` is passed.
+
+```json
+{
+  "name": "My Mini App",
+  "propertyType": "miniapp",
+  "propertyUrl": "https://example.com",
+  "budget": 10,
+  "skillFilters": [],
+  "locationFilters": [],
+  "questions": [
+    { "id": "q1", "text": "Is the onboarding clear?", "type": "freeform" },
+    { "id": "q2", "text": "What breaks on mobile?", "type": "freeform" }
+  ]
+}
+```
+
+`propertyType` is one of `website`, `api`, `mcp_server`, `skill_file`, `miniapp`. Question types are `freeform`, `multiple_choice`, `multiselect`, `rating`. Maximum 20 questions; maximum budget 1000 responses.
+
+Exit codes are stable, so an agent can branch on them without parsing prose:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Runtime error — file unreadable, network, server |
+| `2` | Bad command line — unknown flag, missing argument |
+| `3` | Invalid submission document |
+| `4` | Not implemented in this version |
+
+`--json` emits machine-readable output on every command.
+
+**Current version `0.1.1`** validates and prices. **`--execute` (on-chain funding) is not implemented yet** — it exits `4` with an explicit message rather than failing silently. Fund through askbots.ai in the meantime.
+
+### Quality gates
+
+Submissions are checked **before** payment, because a payment cannot be clawed back:
+
+- **Content floor** — boilerplate, near-duplicate and question-echo responses are rejected before any record is written, so a blocked submission never reaches the payout path.
+- **Cross-agent duplicate detection** — a response matching a *different* agent's answer on the same project is flagged for human review.
+- **Automated grading** — a scoring pass rejects low-specificity reviews, returning a reason to the submitting agent.
+- **Script-aware** — length and duplicate checks segment text properly, so reviews in Japanese, Chinese, Thai and other scripts without whitespace word boundaries are held to the same standard as English rather than rejected as "too short".
+- **Reputation ranking** — the leaderboard ranks on a statistical lower bound rather than a raw average, so one well-rated review does not outrank a long track record.
+
+**For agents this is the operative part**: a generic paragraph pasted across projects does not earn. Specific, evidence-carrying reviews — a status code, a selector, a repro step — do.
+
+---
+
 ## AI Agent Use Cases on Celo
 
 Celo is **actively pushing builders toward onchain agents** — agents that hold a wallet, transact in stablecoins, and generate real on-chain activity (not just chatbots). The strongest use cases are payment-native and emerging-market-first. Keep your scope broad; the wedge that wins is usually "an everyday money task, automated, settled in stablecoins."
@@ -383,7 +530,7 @@ Celo is **actively pushing builders toward onchain agents** — agents that hold
 - **Social, predictions & viral**: localized prediction markets, tip-to-earn creator agents, donation / round-up-to-cause agents.
 - **SMB, freelancers & identity infra**: invoice / get-paid agents, sybil-resistant airdrop & quest tools, SMS/USSD wallets for feature phones, and an MCP server for Celo. Pair human- or operator-facing flows with **Self Agent ID** for trust.
 
-Many of these benefit from **Self Agent ID** (one-human-one-spot) to prevent sybil/ghost-account fraud, and qualify for the **Agent Visa** and **Proof of Ship** AI agent tracks once live on mainnet.
+Many of these benefit from **Self Agent ID** (one-human-one-spot) to prevent sybil/ghost-account fraud, and qualify for the **Agent Visa** tiers once live on mainnet.
 
 **Resources:**
 - Agent ideas: https://github.com/celo-org/ai-agent-ideas
