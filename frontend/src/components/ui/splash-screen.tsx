@@ -282,6 +282,14 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
    * which is why it is a fallback and not the default.
    */
   const playVoLine = useCallback((i: number, volume: number) => {
+    // Exactly one line speaks at a time. The pool's clips live outside
+    // transientAudiosRef, so stopAllTransients does not clamp them the way it
+    // clamped the old per-line elements — silence the rest here instead.
+    for (const [j, clip] of voPoolRef.current.entries()) {
+      if (j === i) continue
+      clip.pause()
+      clip.currentTime = 0
+    }
     const pooled = voPoolRef.current[i]
     if (pooled) {
       pooled.currentTime = 0
@@ -367,15 +375,22 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
       // play() call is what actually confers permission; from then on the
       // element is unlocked for the rest of the session and the story can
       // play it whenever the line arrives.
+      // Each clip is played muted and paused again immediately. Pausing
+      // SYNCHRONOUSLY — rather than in the play() promise's .then() — matters:
+      // those nine promises resolve at unpredictable moments, and a late one
+      // landing after the story had begun would pause a line mid-sentence or
+      // unmute a clip that was still running its unlock playback, so several
+      // voices talked over each other. pause() is synchronous and the
+      // permission is already granted by the play() call itself, so there is
+      // nothing to wait for.
       voPoolRef.current = VO_DURATIONS_MS.map((_, i) => {
         const clip = new Audio(voSrc(i))
         clip.preload = 'auto'
         clip.muted = true
-        clip.play().then(() => {
-          clip.pause()
-          clip.currentTime = 0
-          clip.muted = false
-        }).catch(() => { clip.muted = false })
+        clip.play().catch(() => {})
+        clip.pause()
+        clip.currentTime = 0
+        clip.muted = false
         return clip
       })
     }
