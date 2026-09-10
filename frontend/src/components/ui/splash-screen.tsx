@@ -832,7 +832,13 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
               return (
                 <div key={line.full} style={{
                   opacity:      line.opacity,
-                  maxHeight:    line.collapsed ? '0px' : '4.5rem',
+                  // 4.5rem fits ~2.5 wrapped lines at the 1.1–1.3rem Act III
+                  // sizes, so a line that wraps to three — "One of you is
+                  // Patient Zero." on a narrow viewport — lost its last word to
+                  // `overflow: hidden`. The cap exists only to animate the
+                  // collapse between acts, so it now applies only while
+                  // collapsing; an open line is bounded by its own content.
+                  maxHeight:    line.collapsed ? '0px' : '20rem',
                   overflow:     'hidden',
                   transition:   `opacity ${ACT_FADE_MS}ms ease, max-height ${ACT_FADE_MS + 200}ms ease, margin-bottom ${ACT_FADE_MS + 200}ms ease`,
                   marginBottom,

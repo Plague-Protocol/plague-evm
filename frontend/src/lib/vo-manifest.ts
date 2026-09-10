@@ -12,4 +12,13 @@
  * falls back to its own typing rate. There is no separate flag.
  */
 export const VO_DURATIONS_MS: readonly number[] = [
+  5120,
+  7053,
+  3605,
+  6165,
+  1463,
+  7053,
+  6243,
+  2900,
+  8020
 ]
