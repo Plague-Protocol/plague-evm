@@ -263,11 +263,34 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     return audio
   }, [])
 
+  // Voiceover elements pre-created inside the gate gesture (see beginStory).
+  const voPoolRef = useRef<HTMLAudioElement[]>([])
+
   const stopAllTransients = useCallback(() => {
     const audios = transientAudiosRef.current
     transientAudiosRef.current = []
     for (const audio of audios) audio.pause()
+    for (const clip of voPoolRef.current) clip.pause()
   }, [])
+
+  /**
+   * Play voiceover line `i` from the pool unlocked at the gate.
+   *
+   * Falls back to a fresh element if the pool is empty — desktop browsers do
+   * not need the unlock, and a muted reader who unmutes mid-story never built
+   * one. On mobile that fallback is the silent path the pool exists to avoid,
+   * which is why it is a fallback and not the default.
+   */
+  const playVoLine = useCallback((i: number, volume: number) => {
+    const pooled = voPoolRef.current[i]
+    if (pooled) {
+      pooled.currentTime = 0
+      pooled.volume = volume
+      pooled.play().catch(() => {})
+      return pooled
+    }
+    return playOneShot(voSrc(i), volume)
+  }, [playOneShot])
 
   const { lines, activeLine, done } = useStoryTypewriter(phase === 'story')
 
@@ -329,6 +352,32 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
       audio.volume = 0.28
       ambientRef.current = audio
       audio.play().catch(() => {})
+
+      // Unlock every voiceover clip HERE, inside the gesture.
+      //
+      // Mobile Safari grants playback per element, and only to elements
+      // created while a user gesture is live. `new Audio(src)` at the moment a
+      // line starts typing is seconds too late and is rejected silently by the
+      // `.catch(() => {})` in playOneShot — so on a first visit only line 1
+      // spoke. Each visit then cached one more clip, letting it start fast
+      // enough to squeak through, which is why the story gained a line per
+      // reload rather than failing outright.
+      //
+      // So: build all nine now, start each one muted, and pause it. That
+      // play() call is what actually confers permission; from then on the
+      // element is unlocked for the rest of the session and the story can
+      // play it whenever the line arrives.
+      voPoolRef.current = VO_DURATIONS_MS.map((_, i) => {
+        const clip = new Audio(voSrc(i))
+        clip.preload = 'auto'
+        clip.muted = true
+        clip.play().then(() => {
+          clip.pause()
+          clip.currentTime = 0
+          clip.muted = false
+        }).catch(() => { clip.muted = false })
+        return clip
+      })
     }
     setPhase('story')
   }, [phase, splashMuted])
@@ -340,6 +389,9 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
     if (ambientRef.current) ambientRef.current.currentTime = 0
     ambientRef.current = null
     stopAllTransients()
+    // Drop the unlocked pool too: the next gate click builds a fresh one
+    // inside its own gesture, which is the only way it gets permission again.
+    voPoolRef.current = []
   }, [visible, stopAllTransients])
 
   // ── Respond to mute toggle on existing ambient + one-shot audio ──────────────
@@ -370,11 +422,11 @@ export function SplashScreen({ onResolved }: { onResolved?: () => void } = {}) {
   // the first time a line ran long and would keep talking over a skip.
   useEffect(() => {
     if (!VO_AVAILABLE || !visible || splashMuted || phase !== 'story') return
-    const vo = playOneShot(voSrc(activeLine), 0.55)
+    const vo = playVoLine(activeLine, 0.55)
     // Stop this line's voice if the reader skips or mutes mid-sentence;
     // stopAllTransients covers the global cases, this covers line changes.
     return () => { vo.pause() }
-  }, [activeLine, visible, splashMuted, phase, playOneShot])
+  }, [activeLine, visible, splashMuted, phase, playVoLine])
 
   // ── Scream — fires at Act I climax (line 2 "Day 7…"), echoes out over 4 s ────
   useEffect(() => {
