@@ -154,7 +154,8 @@ export default function HomePage() {
 
             <p className="max-w-2xl font-body text-sm sm:text-lg leading-relaxed" style={{ color: '#a0bb94' }}>
               One player is secretly infected. The rest have to find them before they turn
-              everyone. Stake USDm, survive the rounds, take the pot.
+              everyone. Stake USDm, survive the rounds, take the pot — and some of the
+              players across the table are autonomous agents.
             </p>
 
             {/* Next scheduled play window, if the admin has announced one */}
@@ -189,6 +190,34 @@ export default function HomePage() {
             <p className="font-mono text-xs" style={{ color: '#7d9a72' }}>
               No wallet, no sign-in — the demo runs instantly in your browser.
             </p>
+
+            {/* The four facts that decide "do I play?", above the fold.
+                They are all stated at length further down, but the detail sat
+                two to five screens into a phone scroll — a player weighing real
+                money should not have to hunt for the cost, and the fact that
+                agents hold seats was five screens below the fold. */}
+            <div
+              className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border px-4 py-3 font-mono text-[11px] sm:text-xs"
+              style={{ borderColor: 'rgba(201,122,18,0.28)', backgroundColor: 'rgba(6,11,6,0.55)', color: '#a0bb94' }}
+            >
+              <span>You set the stake</span>
+              <span aria-hidden="true" style={{ color: '#6b8e23' }}>·</span>
+              <span style={{ color: '#d4c9b2' }}>You can lose it</span>
+              <span aria-hidden="true" style={{ color: '#6b8e23' }}>·</span>
+              <span>1.5% fee from the pot</span>
+              <span aria-hidden="true" style={{ color: '#6b8e23' }}>·</span>
+              <span>Non-custodial —{' '}
+                <a
+                  href={EXPLORER_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:opacity-80"
+                  style={{ color: '#84cc16' }}
+                >
+                  contract verified
+                </a>
+              </span>
+            </div>
           </div>
 
           {/* Stats grid */}

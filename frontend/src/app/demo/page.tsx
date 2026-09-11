@@ -24,7 +24,14 @@ import { toast } from 'sonner'
 // ── Demo limits ──────────────────────────────────────────────────────────────
 
 const DEMO_STORAGE_KEY = 'plague_demo_count'
-const DEMO_LIMIT = 2
+
+// The demo is uncapped. It was limited to 2 plays per device, which read as a
+// conversion lever and worked as the opposite: the third visit replaced the
+// game with a wall, so testers we had asked to try it simply bounced — and the
+// only workaround was knowing to open a private window, which nobody does
+// unprompted. It also contradicted the homepage's own "no wallet, no sign-in"
+// promise. The count is still kept: it seeds the replay variation below, so
+// consecutive demos are not the same game twice.
 
 function getDemoCount(): number {
   if (typeof window === 'undefined') return 0
@@ -824,7 +831,6 @@ export default function DemoPage() {
   // ── User actions ───────────────────────────────────────────────────────────
 
   const startDemo = useCallback(() => {
-    if (getDemoCount() >= DEMO_LIMIT) return
     incrementDemoCount()
     setDemoCount(getDemoCount())
     setGameOverSeen(false)
@@ -1031,42 +1037,7 @@ export default function DemoPage() {
 
   // ── Welcome / limit screens ────────────────────────────────────────────────
 
-  if (demoCount >= DEMO_LIMIT && phase === 'welcome') {
-    return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-8" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-lobby.webp)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
-        <div className="fixed inset-0" style={{ backgroundColor: 'rgba(6,11,6,0.9)' }} />
-        <div className="relative flex flex-col items-center gap-6 text-center max-w-md">
-          <span className="font-mono text-xs uppercase tracking-[0.3em]" style={{ color: '#e63329' }}>Demo Limit Reached</span>
-          <h1 className="font-display text-4xl sm:text-6xl leading-none" style={{ color: '#d4c9b2' }}>ENOUGH PRACTICE</h1>
-          <p className="font-mono text-sm leading-relaxed" style={{ color: '#8fa882' }}>
-            You&apos;ve used your {DEMO_LIMIT} free demos. Sign in to play for real — stake USDm, use ZK proofs, and compete against other players.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 w-full">
-            <Link
-              href="/lobby"
-              className="flex-1 rounded-lg py-3 text-center font-mono text-sm font-bold uppercase tracking-wider transition-all hover:opacity-90"
-              style={{ backgroundColor: '#cc1414', color: '#ffffff', boxShadow: '4px 4px 0 #6b8e23' }}
-            >
-              Sign In & Play →
-            </Link>
-            <Link
-              href="/"
-              className="flex-1 rounded-lg border py-3 text-center font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80"
-              style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#6b8e23' }}
-            >
-              Back to Home
-            </Link>
-          </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>
-            Demo limit is per device · stored in browser
-          </p>
-        </div>
-      </main>
-    )
-  }
-
   if (phase === 'welcome') {
-    const remaining = DEMO_LIMIT - demoCount
     return (
       <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-8" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-lobby.webp)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
         <div className="fixed inset-0" style={{ backgroundColor: 'rgba(6,11,6,0.88)' }} />
@@ -1110,7 +1081,7 @@ export default function DemoPage() {
           </button>
 
           <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#7d9a72' }}>
-            {remaining} free demo{remaining === 1 ? '' : 's'} remaining · no sign-in needed
+            Free to play, as many times as you like · no sign-in needed
           </p>
 
           <Link href="/lobby" className="font-mono text-xs underline transition-opacity hover:opacity-70" style={{ color: '#6b8e23' }}>
@@ -1407,7 +1378,6 @@ export default function DemoPage() {
                     winners={winners}
                     potPerWinner={potPerWinner}
                     youWon={outcome !== null && winners.includes('You')}
-                    demoRunsLeft={DEMO_LIMIT - demoCount}
                     onReset={resetDemo}
                   />
                 )}
@@ -1722,7 +1692,6 @@ function GameOverPanel({
   winners,
   potPerWinner,
   youWon,
-  demoRunsLeft,
   onReset,
 }: {
   outcome: GameOutcome | null
@@ -1730,7 +1699,6 @@ function GameOverPanel({
   winners: string[]
   potPerWinner: number
   youWon: boolean
-  demoRunsLeft: number
   onReset: () => void
 }) {
   const won = outcome === 'clean_win'
@@ -1775,15 +1743,13 @@ function GameOverPanel({
         >
           Play for Real →
         </Link>
-        {demoRunsLeft > 0 && (
-          <button
-            onClick={onReset}
-            className="flex-1 rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80"
-            style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#f5c518' }}
-          >
-            Run Demo Again ({demoRunsLeft} left)
-          </button>
-        )}
+        <button
+          onClick={onReset}
+          className="flex-1 rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80"
+          style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#f5c518' }}
+        >
+          Run Demo Again
+        </button>
         <Link
           href="/how-to-play"
           className="flex-1 rounded-lg border py-4 text-center font-mono text-sm uppercase tracking-wider transition-all hover:opacity-80"
