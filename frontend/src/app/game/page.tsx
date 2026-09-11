@@ -409,7 +409,12 @@ function GamePageInner() { // NOSONAR
   // figure. A fresh literal on every render meant that happened dozens of times
   // a second, so the room twitched between destinations and never actually
   // walked anywhere.
-  const barricadeView = useMemo(() => roomStatus === 'active' || roomStatus === 'ended'
+  // 'starting' is included deliberately. The compound stands for the whole
+  // game, and gating it on 'active' meant the shield-password screen — the
+  // first thing a player ever sees of the room, and the one they sit on
+  // longest waiting for everyone else — drew figures milling in an empty void
+  // while the demo showed the walls from the outset. Two different games.
+  const barricadeView = useMemo(() => roomStatus === 'starting' || roomStatus === 'active' || roomStatus === 'ended'
     ? {
         active: barricadeRunning,
         // Empty outside Discussion, so figures mill about inside rather than
