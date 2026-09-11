@@ -1675,6 +1675,34 @@ function GamePageInner() { // NOSONAR
                     myShieldActive={hasProofThisRound && !localPlayer?.isEliminated}
                     othersShieldCount={othersShieldCount}
                   />
+
+                  {/* The board sits directly under the cam, because the cam is
+                      the picture it is a control for: you read which wall is
+                      threatened off the scene, then tap a wall here. Splitting
+                      the two into separate columns meant looking at one while
+                      acting on the other.
+
+                      `disabled` no longer gates on state.next — an armed push.
+                      A warning is only live for eight seconds, so the board was
+                      inert for most of Discussion: you tapped a wall, nothing
+                      moved, and the honest read was that the control was
+                      broken. Choosing where to stand is legal all round. */}
+                  {phase === 'discussion' && barricade.state && (
+                    <div className="mt-6">
+                      <BarricadeBoard
+                        state={barricade.state}
+                        myStation={localPlayer?.isEliminated ? null : barricade.assignedStation}
+                        myChoice={barricade.choice}
+                        canSabotage={!!localPlayer && !localPlayer.isEliminated && localPlayer.status === 'infected'}
+                        disabled={!localPlayer || localPlayer.isEliminated}
+                        nameOf={addr => room?.players?.find(
+                          p => p.walletAddress.toLowerCase() === addr.toLowerCase(),
+                        )?.displayName ?? `${addr.slice(0, 6)}…`}
+                        onChoose={barricade.choose}
+                      />
+                    </div>
+                  )}
+
                   <div className="mt-6 rounded-lg border p-5" style={{ backgroundColor: '#0c1309', borderColor: 'rgba(107,142,35,0.15)' }}>
                     {playersPanelBody}
                   </div>
@@ -1722,9 +1750,18 @@ function GamePageInner() { // NOSONAR
                     order-1  phase card + timer
                     order-2  action panels (Shield)  ← this block
                     order-3  vote panel (phone only; desktop uses the sidebar)
-                    order-4  containment board (the cam)
+                    order-4  containment board (the cam + the barricade)
                     order-5  live feed
                     order-6  back to lobby
+
+                  The barricade board moved into order-4, under the cam. It used
+                  to sit here at order-2, above Shield, on the argument that it
+                  is the only thing in Discussion carrying a deadline. But it is
+                  a control for the picture: you read which wall is threatened
+                  off the scene and then tap a wall, and having the two in
+                  different blocks meant looking at one while acting on the
+                  other. Shield is now the first action a player meets, which is
+                  the right order anyway — it is the one that costs money.
 
                   Anything unnumbered keeps order 0 and therefore sorts ABOVE all
                   of these, so a new block in this column needs a number unless
@@ -1740,29 +1777,6 @@ function GamePageInner() { // NOSONAR
                   above the thing you watch, at every width. */}
               {showOnTab('play') && (
                 <div className="order-2 flex flex-col gap-6">
-                  {/* The barricade sits ABOVE Shield on purpose. It is the only
-                      thing in Discussion with a deadline attached, and an 8 s
-                      warning that has scrolled off screen is not a warning.
-
-                      `disabled` no longer gates on state.next — an armed push.
-                      A warning is only live for eight seconds, so the board was
-                      inert for most of Discussion: you tapped a wall, nothing
-                      moved, and the honest read was that the control was
-                      broken. Choosing where to stand is legal all round. */}
-                  {phase === 'discussion' && barricade.state && (
-                    <BarricadeBoard
-                      state={barricade.state}
-                      myStation={localPlayer?.isEliminated ? null : barricade.assignedStation}
-                      myChoice={barricade.choice}
-                      canSabotage={!!localPlayer && !localPlayer.isEliminated && localPlayer.status === 'infected'}
-                      disabled={!localPlayer || localPlayer.isEliminated}
-                      nameOf={addr => room?.players?.find(
-                        p => p.walletAddress.toLowerCase() === addr.toLowerCase(),
-                      )?.displayName ?? `${addr.slice(0, 6)}…`}
-                      onChoose={barricade.choose}
-                    />
-                  )}
-
                   {phase === 'discussion' && !!localPlayer && !localPlayer.isEliminated && localPlayer.status !== 'infected' && !hasProofThisRound && (
                     <div className="rise-in rounded-lg border p-5" style={{ borderColor: 'rgba(107,142,35,0.35)', backgroundColor: 'rgba(107,142,35,0.08)' }}>
                       <p className="font-mono text-xs uppercase tracking-[0.2em]" style={{ color: '#6b8e23' }}>Activate Shield</p>

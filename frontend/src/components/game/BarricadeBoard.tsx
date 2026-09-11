@@ -57,7 +57,12 @@ const MOSS  = '#7d9a72'
 /** Where the player will actually be standing, given their choice. */
 function standingAt(myStation: StationId | null, choice: BarricadeAction): StationId | null {
   if (myStation === null) return null
-  return choice.kind === 'move' ? choice.station : myStation
+  if (choice.kind === 'move') return choice.station
+  // Sabotage happens AT a wall, and that wall is wherever the player walked to.
+  // Without this a player who moved and then chose to sabotage was shown back
+  // at their assigned post — and resolved there too.
+  if (choice.kind === 'sabotage' && choice.station) return choice.station
+  return myStation
 }
 
 export function BarricadeBoard({
@@ -171,7 +176,13 @@ export function BarricadeBoard({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => onChoose(myChoice.kind === 'sabotage' ? { kind: 'hold' } : { kind: 'sabotage' })}
+          onClick={() => onChoose(
+            myChoice.kind === 'sabotage'
+              // Cancelling sabotage must not also cancel the walk: fall back to
+              // a move when the player is somewhere other than their own post.
+              ? (here && here !== myStation ? { kind: 'move', station: here } : { kind: 'hold' })
+              : (here ? { kind: 'sabotage', station: here } : { kind: 'sabotage' }),
+          )}
           className="mt-2 w-full rounded border px-2 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-opacity disabled:opacity-40"
           style={{
             borderColor: myChoice.kind === 'sabotage' ? ALARM : 'rgba(230,51,41,0.35)',

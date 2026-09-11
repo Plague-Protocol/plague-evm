@@ -149,7 +149,10 @@ export const WARN_LEAD_MS = 8_000
 export type BarricadeAction =
   | { kind: 'hold' }
   | { kind: 'move'; station: StationId }
-  | { kind: 'sabotage' }
+  // `station` is optional so an older client that sends a bare sabotage still
+  // parses; it then resolves at the player's assigned wall, which is the
+  // pre-existing behaviour rather than a new failure mode.
+  | { kind: 'sabotage'; station?: StationId }
 
 /** FNV-1a, 32-bit — the same hash the room modifiers and the containment sweep
  *  use, so all three derive from one well-understood primitive. */
@@ -281,7 +284,15 @@ export function resolvePush(input: ResolveInput): PushOutcome {
 
   for (const p of players) {
     const action = actions.get(p.address.toLowerCase()) ?? { kind: 'hold' as const }
-    const at = action.kind === 'move' ? action.station : assignedStation(roomId, round, p.seatIndex)
+    // Where this player actually stands. Sabotage carries its own station
+    // because sabotaging is something you do AT a wall — a player who walked to
+    // the east wall and then chose to sabotage was being silently teleported
+    // back to their assigned post, undoing the move they had just made.
+    const at = action.kind === 'move'
+      ? action.station
+      : action.kind === 'sabotage' && action.station
+        ? action.station
+        : assignedStation(roomId, round, p.seatIndex)
     if (at !== station) continue
 
     present++

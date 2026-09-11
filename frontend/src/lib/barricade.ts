@@ -22,7 +22,10 @@ export type StationId = 0 | 1 | 2 | 3
 export type BarricadeAction =
   | { kind: 'hold' }
   | { kind: 'move'; station: StationId }
-  | { kind: 'sabotage' }
+  // `station` is optional so an older client that sends a bare sabotage still
+  // parses; it then resolves at the player's assigned wall, which is the
+  // pre-existing behaviour rather than a new failure mode.
+  | { kind: 'sabotage'; station?: StationId }
 
 export interface PushOutcome {
   push: number
