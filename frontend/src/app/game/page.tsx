@@ -409,12 +409,19 @@ function GamePageInner() { // NOSONAR
   // figure. A fresh literal on every render meant that happened dozens of times
   // a second, so the room twitched between destinations and never actually
   // walked anywhere.
-  // 'starting' is included deliberately. The compound stands for the whole
-  // game, and gating it on 'active' meant the shield-password screen — the
-  // first thing a player ever sees of the room, and the one they sit on
-  // longest waiting for everyone else — drew figures milling in an empty void
-  // while the demo showed the walls from the outset. Two different games.
-  const barricadeView = useMemo(() => roomStatus === 'starting' || roomStatus === 'active' || roomStatus === 'ended'
+  // 🚨 EVERY STATUS DRAWS THE COMPOUND. There is no room without walls.
+  //
+  // This was gated first on 'active', then on 'active' | 'starting', and each
+  // time the remaining status was the one a player actually sits and stares at:
+  // figures milling in an empty void while the lobby fills, then walls
+  // appearing out of nowhere when the game began. The demo has never had a gate
+  // and shows the compound from its first frame, which is why the two read as
+  // different games.
+  //
+  // `active` below still gates the MECHANIC to Discussion, so the walls stand
+  // empty until there is something to defend — what changes here is only
+  // whether there is a compound to draw at all, and the answer is always yes.
+  const barricadeView = useMemo(() => roomStatus
     ? {
         active: barricadeRunning,
         // Empty outside Discussion, so figures mill about inside rather than
