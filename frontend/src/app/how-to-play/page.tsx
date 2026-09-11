@@ -260,6 +260,11 @@ const patientZeroSuccession = [
 ]
 
 export default function HowToPlayPage() {
+  // Which rule section is expanded on mobile — one at a time, so working down
+  // the page does not leave a trail of open sections behind you. Desktop
+  // ignores this entirely and shows every section.
+  const [openSection, setOpenSection] = useState<string | null>(null)
+
   return (
     <main className="min-h-screen" style={{ backgroundColor: '#060b06', color: '#d4c9b2', backgroundImage: 'url(/images/bg-horror.webp)', backgroundSize: 'cover', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }}>
       <div className="fixed inset-0 pointer-events-none" style={{ backgroundColor: 'rgba(6,11,6,0.88)', zIndex: 0 }} />
@@ -343,7 +348,7 @@ export default function HowToPlayPage() {
         </section>
 
         {/* ── Overview ────────────────────────────────────────────────────── */}
-        <CollapsibleSection number="00" title="The Objective">
+        <CollapsibleSection number="00" title="The Objective" openSection={openSection} setOpenSection={setOpenSection}>
           <div className="mt-6 sm:mt-8 grid gap-4 md:grid-cols-3">
             {roles.map((role) => (
               <div
@@ -371,7 +376,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Room Lifecycle ───────────────────────────────────────────────── */}
-        <CollapsibleSection number="01" title="Room Lifecycle">
+        <CollapsibleSection number="01" title="Room Lifecycle" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Every game goes through four distinct statuses before it ends.
           </p>
@@ -439,7 +444,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Round Structure ──────────────────────────────────────────────── */}
-        <CollapsibleSection number="02" title="Round Structure">
+        <CollapsibleSection number="02" title="Round Structure" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Each round cycles through four phases. Understanding phase timing is critical to using proofs strategically.
           </p>
@@ -470,7 +475,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Patient Zero Succession ──────────────────────────────────────── */}
-        <CollapsibleSection number="03" title="Patient Zero Succession">
+        <CollapsibleSection number="03" title="Patient Zero Succession" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             The infection has a chain of command. Eliminating Patient Zero doesn&apos;t stop the plague — it just promotes the next infected player.
           </p>
@@ -504,7 +509,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Voting & Resolution ──────────────────────────────────────────── */}
-        <CollapsibleSection number="04" title="Vote Resolution Rules">
+        <CollapsibleSection number="04" title="Vote Resolution Rules" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             The smart contract applies deterministic rules to resolve every vote. There is no ambiguity or moderator discretion.
           </p>
@@ -548,7 +553,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Innocence Proofs ─────────────────────────────────────────────── */}
-        <CollapsibleSection number="05" title="Shields">
+        <CollapsibleSection number="05" title="Shields" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Shields are your insurance policy. Use them wisely — they are limited.
           </p>
@@ -580,7 +585,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── The Barricade ────────────────────────────────────────────────── */}
-        <CollapsibleSection number="06" title="The Barricade">
+        <CollapsibleSection number="06" title="The Barricade" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Discussion is three minutes long, and for most of it the horde is working on the walls.
             You decide where to stand. What comes out of it is an argument, never a casualty.
@@ -634,7 +639,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Endgame & Payouts ────────────────────────────────────────────── */}
-        <CollapsibleSection number="07" title="Endgame & Payouts">
+        <CollapsibleSection number="07" title="Endgame & Payouts" openSection={openSection} setOpenSection={setOpenSection}>
           <p className="mt-3 font-mono text-sm leading-relaxed" style={{ color: '#7d9a72' }}>
             Win conditions are checked automatically by the contract after every Reveal phase. Payouts are instant and trustless.
           </p>
@@ -678,7 +683,7 @@ export default function HowToPlayPage() {
         </CollapsibleSection>
 
         {/* ── Tips ────────────────────────────────────────────────────────── */}
-        <CollapsibleSection number="08" title="Strategy Tips">
+        <CollapsibleSection number="08" title="Strategy Tips" openSection={openSection} setOpenSection={setOpenSection}>
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {[
               {
@@ -772,13 +777,31 @@ export default function HowToPlayPage() {
  * Detail section that stays fully expanded on desktop but collapses to a
  * tap-to-open header on mobile, so phone users aren't forced to scroll
  * through every rule before they can play.
+ *
+ * 🚨 ONE OPEN AT A TIME, and the state lives in the PARENT.
+ * Nine sections each holding their own `open` meant a reader working down the
+ * page left a trail of expanded rules behind them, and the scroll this exists
+ * to prevent came back by the third tap. `openSection` is lifted to the page so
+ * opening one closes the last — same behaviour as the homepage cards.
+ *
+ * Desktop is unaffected: `sm:block` keeps every section expanded and the header
+ * non-interactive there, so this only governs the mobile accordion.
  */
 function CollapsibleSection({
   number,
   title,
+  openSection,
+  setOpenSection,
   children,
-}: Readonly<{ number: string; title: string; children: React.ReactNode }>) {
-  const [open, setOpen] = useState(false)
+}: Readonly<{
+  number: string
+  title: string
+  openSection: string | null
+  setOpenSection: (n: string | null) => void
+  children: React.ReactNode
+}>) {
+  const open = openSection === number
+  const setOpen = (next: boolean) => setOpenSection(next ? number : null)
   return (
     <section
       className="rounded-xl border px-4 py-4 sm:rounded-none sm:border-0 sm:p-0"
@@ -786,7 +809,7 @@ function CollapsibleSection({
     >
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen(!open)}
         aria-expanded={open}
         className="flex w-full items-center justify-between gap-4 text-left sm:pointer-events-none sm:cursor-default"
       >
