@@ -713,6 +713,13 @@ export function setupSocketHandlers(io: Server) {
     // closes it — voting must not have a minigame running underneath it.
     if (eventName === 'PhaseChanged') {
       const phase = Number(enrichedArgs.phase)
+      // The barricade is invisible when it fails: the board renders only once
+      // the client receives an event, so "no board" covers both "never started"
+      // and "never asked to start". Log the hand-off so the two are separable
+      // from the logs alone.
+      logger.info(
+        `[barricade] room ${roomId}: PhaseChanged -> phase=${phase} round=${String(enrichedArgs.round)} durationMs=${String(enrichedArgs.durationMs)}`,
+      )
       if (phase === 1) {
         barricade.startRound(
           io,

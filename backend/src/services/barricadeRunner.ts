@@ -177,8 +177,17 @@ export function startRound(io: Server, roomId: string, round: number, discussion
 
   if (!Number.isFinite(discussionMs) || discussionMs < 20_000) {
     // Too short to fit a push and still leave room to argue about it.
+    //
+    // This used to return in silence, which made a barricade that never
+    // appeared indistinguishable from one that was never asked for: the board
+    // is client-side and renders only once a `barricade` event arrives, so a
+    // bail here looks exactly like a frontend bug from the outside. Say so.
+    logger.warn(
+      `[barricade] room ${roomId} round ${round}: not starting, discussionMs=${discussionMs} (need >= 20000)`,
+    )
     return
   }
+  logger.info(`[barricade] room ${roomId} round ${round}: starting, ${discussionMs}ms`)
 
   const run: RoomRun = {
     round,
