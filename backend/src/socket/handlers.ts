@@ -1624,12 +1624,31 @@ async function handleInfectionPhase(io: Server, id: bigint, rawRoom: RawRoom): P
 async function handleDiscussionPhase(io: Server, id: bigint, rawRoom: RawRoom, now: number): Promise<void> {
   const phaseStartedAt = Number(rawRoom.phaseStartedAt) * 1000
   const durationMs = Number(rawRoom.config.discussionDurationSecs) * 1000
+
+  // 🚨 THE BARRICADE STARTS HERE, NOT ON THE CHAIN EVENT.
+  //
+  // It was hooked solely to the `PhaseChanged` handler in the chain-event
+  // watcher — which that watcher's own comment describes as "a mirror /
+  // resilience layer, not the hot path". Phases are actually driven by this
+  // 2 s monitor, which calls the contract and pushes a snapshot directly, so
+  // the barricade was waiting on an event that arrives late or not at all. In
+  // a live game the board never appeared once; in the demo, which generates
+  // its own state client-side, it always did.
+  //
+  // startRound is idempotent per (room, round) — it returns immediately if
+  // that round is already running — so calling it on every tick of Discussion
+  // is safe and also self-healing if the first tick is missed.
+  barricade.startRound(io, id.toString(), Number(rawRoom.currentRound), durationMs)
+
   if (now < phaseStartedAt + durationMs) return
   if (roomPhaseInProgress.has(id)) return
   roomPhaseInProgress.add(id)
   try {
     await chainAdapter.openVoting(id)
     logger.info(`[phase-advance-monitor] openVoting succeeded for room ${id}`)
+    // Voting must never have a minigame running underneath it — same rule the
+    // chain-event path enforced, applied on the path that actually fires.
+    barricade.stopRoom(id.toString())
     // Push snapshot immediately so all clients see Discussion→Voting without
     // waiting for the chain watcher's HTTP poll (~4s).
     queueRoomSnapshot(io, id.toString())
