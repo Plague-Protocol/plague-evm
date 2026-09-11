@@ -19,6 +19,7 @@ import {
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import { checkChatMessage } from '@/lib/chatFilter'
+import { PasswordInput } from '@/components/ui/password-input'
 import { toast } from 'sonner'
 
 // ── Demo limits ──────────────────────────────────────────────────────────────
@@ -1507,14 +1508,13 @@ function StartingPanel({ shieldSet, onCommit }: { shieldSet: boolean; onCommit: 
           the exact same one later to activate your Shield. It proves your innocence without
           the contract ever seeing the password itself.
         </p>
-        <input
-          type="password"
+        <PasswordInput
           placeholder="My Shield Password…"
           value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && input.trim() && onCommit(input)}
-          className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-          style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#d4c9b2' }}
+          onChange={setInput}
+          onKeyDown={e => { if (e.key === 'Enter' && input.trim()) onCommit(input) }}
+          borderColor="rgba(245,197,24,0.5)"
+          className="mt-3"
         />
         <button
           onClick={() => input.trim() && onCommit(input)}

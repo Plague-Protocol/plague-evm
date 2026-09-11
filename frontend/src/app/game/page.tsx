@@ -29,6 +29,7 @@ import { usePresence } from '@/hooks/usePresence'
 import { useBarricade } from '@/hooks/useBarricade'
 import { usePlayerProgress } from '@/hooks/usePlayerProgress'
 import { BarricadeBoard } from '@/components/game/BarricadeBoard'
+import { PasswordInput } from '@/components/ui/password-input'
 import { OutbreakScene } from '@/components/game/OutbreakScene'
 import { GameOverOverlay, type GameOutcome } from '@/components/game/GameOverOverlay'
 import { BotControls } from '@/components/lobby/bot-controls'
@@ -1207,13 +1208,12 @@ function GamePageInner() { // NOSONAR
             <p className="mt-2 font-mono text-xs leading-relaxed" style={{ color: '#8fa882' }}>
               Enter your Shield Password before the timer runs out. Keep it secret — you&apos;ll need it to activate your Shield later.
             </p>
-            <input
-              type="password"
+            <PasswordInput
               placeholder="My Shield Password…"
               value={secretPhrase}
-              onChange={e => setSecretPhrase(e.target.value)}
-              className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-              style={{ borderColor: 'rgba(245,197,24,0.5)', color: '#d4c9b2' }}
+              onChange={setSecretPhrase}
+              borderColor="rgba(245,197,24,0.5)"
+              className="mt-3"
             />
             {commitError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{commitError}</p>}
             <button
@@ -1770,13 +1770,11 @@ function GamePageInner() { // NOSONAR
                         Proves you are clean, before voting opens.
                         {localPlayer?.freeProofUsed ? ' Your free one is used — this costs the Shield fee.' : ' Your first one is free.'}
                       </p>
-                      <input
-                        type="password"
+                      <PasswordInput
                         placeholder="Your Shield Password…"
                         value={secretPhrase}
-                        onChange={e => setSecretPhrase(e.target.value)}
-                        className="mt-3 w-full rounded border bg-transparent px-3 py-2 font-mono text-sm focus:outline-none"
-                        style={{ borderColor: 'rgba(107,142,35,0.4)', color: '#d4c9b2' }}
+                        onChange={setSecretPhrase}
+                        className="mt-3"
                       />
                       {proofError && <p className="mt-2 font-mono text-xs" style={{ color: '#e63329' }}>{proofError}</p>}
                       <button
