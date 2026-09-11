@@ -222,6 +222,46 @@ function itemOf(id: number): 0 | 1 | 2 {
   return (Math.imul(id + 1, 2654435761) >>> 0) % 3 as 0 | 1 | 2
 }
 
+/**
+ * How this survivor is built: height, shoulders, headgear, hair.
+ *
+ * 🚨 SEEDED FROM THE FIGURE ID, FOR THE SAME REASON GEAR IS.
+ * The id is per-viewer fiction from OutbreakDirector, so two players looking at
+ * the same wall see a different set of silhouettes. Nothing here may ever be
+ * derived from seat index, address, role or any other server value — that is
+ * the whole anonymity guarantee, and a "nicer" sprite keyed on anything real
+ * would quietly break it while looking like an art change.
+ *
+ * What the variety buys, beyond looking less like a queue of identical sticks,
+ * is something to lie about: "the tall one with the cap at the east wall was
+ * me" is now a sentence a player can say. It cannot be checked — your cam and
+ * mine disagree about which body is whom — so it is a claim the room can only
+ * resolve the way it resolves everything else, by voting.
+ */
+interface FigureBuild {
+  /** Multiplier on overall height. */
+  height: number
+  /** Multiplier on shoulder width. */
+  shoulder: number
+  /** 0 none · 1 cap · 2 hood */
+  hat: 0 | 1 | 2
+  /** Hair tuft length; 0 for none. */
+  hair: number
+}
+
+function buildOf(id: number): FigureBuild {
+  const h = Math.imul(id + 1, 2654435761) >>> 0
+  return {
+    // Kept deliberately narrow. A big spread reads as different species rather
+    // than different people, and a very short figure behind a wall stops
+    // reading as a person at all.
+    height: 0.92 + ((h >>> 3) % 17) / 100,
+    shoulder: 0.88 + ((h >>> 9) % 25) / 100,
+    hat: ((h >>> 15) % 4 === 0 ? 1 : (h >>> 15) % 7 === 0 ? 2 : 0) as 0 | 1 | 2,
+    hair: (h >>> 21) % 3 === 0 ? 1.6 : 0,
+  }
+}
+
 function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean, uniform: boolean) {
   const s = perspectiveScale(b.y, h)
   const zombie = b.kind === 'zombie' && !(uniform && !b.isMe)
@@ -251,13 +291,18 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
 
   let handA: { x: number; y: number } | null = null
   let handB: { x: number; y: number } | null = null
+  // Per-figure build. Zombies are deliberately excluded: the horde should read
+  // as a mass, and giving the infected recognisable silhouettes would make a
+  // turned figure trackable across frames.
+  const build = zombie ? { height: 1, shoulder: 1, hat: 0 as const, hair: 0 } : buildOf(b.id)
+  const bs = s * build.height
   const legSwing = Math.sin(b.walk) * 4 * s * b.gait
   const armSwing = Math.sin(b.walk + Math.PI) * 3 * s * b.gait
-  const hipY = -11 * s
+  const hipY = -11 * bs
   const shoulderX = zombie ? b.facing * 4.5 * s : 0
-  const shoulderY = zombie ? -19 * s : -21 * s
+  const shoulderY = zombie ? -19 * s : -21 * bs
   const headX = zombie ? shoulderX + b.facing * 3 * s : 0
-  const headY = zombie ? -22.5 * s : -26 * s
+  const headY = zombie ? -22.5 * s : -26 * bs
   const headR = 3.6 * s
 
   ctx.beginPath()
@@ -286,8 +331,8 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
       handA = { x: shoulderX + rx * reach + px * 2.4 * s, y: shoulderY + ry * reach + py * 2.4 * s + 3 * s }
       handB = { x: shoulderX + rx * reach - px * 2.4 * s, y: shoulderY + ry * reach - py * 2.4 * s + 3 * s }
     } else {
-      handA = { x: shoulderX + 3 * s + armSwing, y: -12 * s }
-      handB = { x: shoulderX - 3 * s - armSwing, y: -12 * s }
+      handA = { x: shoulderX + 3 * s * build.shoulder + armSwing, y: -12 * bs }
+      handB = { x: shoulderX - 3 * s * build.shoulder - armSwing, y: -12 * bs }
     }
     ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handA.x, handA.y)
     ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handB.x, handB.y)
@@ -338,6 +383,33 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   ctx.beginPath()
   ctx.arc(headX, headY, headR, 0, Math.PI * 2)
   ctx.fill()
+
+  // Headgear and hair, in the same stroke colour as the body — silhouette
+  // only, so a figure still reads as a shape rather than becoming a portrait.
+  if (!zombie && b.fallT === 0) {
+    if (build.hat === 1) {
+      // Cap: crown plus a peak on the facing side.
+      ctx.beginPath()
+      ctx.arc(headX, headY - 0.4 * s, headR * 1.05, Math.PI, 0)
+      ctx.lineTo(headX + b.facing * headR * 2.1, headY - 0.4 * s)
+      ctx.lineTo(headX + b.facing * headR * 0.9, headY - 1.1 * s)
+      ctx.closePath()
+      ctx.fill()
+    } else if (build.hat === 2) {
+      // Hood: a taller dome that overhangs the back of the skull.
+      ctx.beginPath()
+      ctx.arc(headX, headY - 0.8 * s, headR * 1.35, Math.PI * 0.9, Math.PI * 2.1)
+      ctx.fill()
+    } else if (build.hair > 0) {
+      ctx.beginPath()
+      ctx.moveTo(headX - headR * 0.8, headY - headR * 0.6)
+      ctx.lineTo(headX - headR * 0.4, headY - headR - build.hair * s)
+      ctx.lineTo(headX + headR * 0.5, headY - headR - build.hair * 0.7 * s)
+      ctx.lineTo(headX + headR * 0.8, headY - headR * 0.5)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
 
   // zombie eyes — two red pinpricks on the leading side of the skull
   if (zombie && (b.alive || b.fallT < 1)) {
@@ -653,8 +725,42 @@ function renderBackdrop(w: number, h: number, c: Corners, dpr: number): HTMLCanv
 function drawOutside(
   ctx: CanvasRenderingContext2D, w: number, h: number,
   backdrop: HTMLCanvasElement | null,
+  t: number,
+  reduced: boolean,
 ) {
-  if (backdrop) ctx.drawImage(backdrop, 0, 0, w, h)
+  if (!backdrop) return
+
+  // 🚨 THE TREELINE SWAYS AS ONE IMAGE, NOT TREE BY TREE.
+  // The backdrop is rendered once and blitted every frame — that cache is why
+  // a canvas full of firs costs nothing per frame. Animating individual trees
+  // would mean re-rendering it 60 times a second, which is exactly the cost
+  // the cache exists to remove. Drifting the whole blit by a couple of pixels
+  // buys the same "the woods are alive" read for one extra translate.
+  //
+  // Amplitude is deliberately below the threshold where a viewer can track a
+  // specific tree: it should register as movement, not as a moving object.
+  if (reduced) {
+    ctx.drawImage(backdrop, 0, 0, w, h)
+    return
+  }
+  const dx = Math.sin(t * 0.21) * 1.6 + Math.sin(t * 0.37) * 0.7
+  const dy = Math.sin(t * 0.17) * 0.5
+  ctx.save()
+  ctx.translate(dx, dy)
+  // Drawn a touch oversized so the drift never exposes an edge.
+  ctx.drawImage(backdrop, -2, -2, w + 4, h + 4)
+  ctx.restore()
+
+  // Depth haze: a soft lift toward the horizon so the far treeline recedes
+  // instead of sitting at the same visual distance as the near trunks. Cheap
+  // — one gradient fill — and it is what makes the compound read as being IN
+  // a forest rather than in front of a picture of one.
+  const haze = ctx.createLinearGradient(0, 0, 0, h * 0.62)
+  haze.addColorStop(0, 'rgba(120,150,130,0.10)')
+  haze.addColorStop(0.55, 'rgba(90,120,105,0.045)')
+  haze.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = haze
+  ctx.fillRect(0, 0, w, h * 0.62)
 }
 
 /**
@@ -1324,6 +1430,9 @@ function drawScene(
   backdrop: HTMLCanvasElement | null,
   glow: HTMLCanvasElement | null,
   walkers: readonly Walker[],
+  reduced: boolean,
+  /** Seconds left on the breach cue, for the debris burst. 0 = no breach. */
+  breach: number,
 ) {
   ctx.clearRect(0, 0, w, h)
 
@@ -1350,7 +1459,7 @@ function drawScene(
   // walls exist to keep out — without it, a barricade is a fence.
   if (bar) {
     const c = compoundShape(w, h, PAD_TOP, PAD_BOTTOM)
-    drawOutside(ctx, w, h, backdrop)
+    drawOutside(ctx, w, h, backdrop, t, reduced)
     // The lamps gutter out when the walls come down — the compound stops being
     // a place anyone is keeping lit.
     const lamp = bar.collapsed ? 0.12 : 1
@@ -1365,6 +1474,30 @@ function drawScene(
     // want: something clawing at a wall from the far side of it.
     drawHorde(ctx, walkers, c, h)
     drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
+    // Splinters thrown off the wall that just buckled. Deterministic from the
+    // particle index — no allocation, no per-frame state, and identical on
+    // every client, so it cannot become a channel that says anything.
+    if (breach > 0 && !reduced && bar.brokenWalls.length > 0) {
+      const station = bar.brokenWalls[bar.brokenWalls.length - 1]
+      const a = stationAnchor(station, c)
+      const out = wallOutward(station, c)
+      const age = 1 - breach / BREACH_SECS
+      ctx.save()
+      ctx.globalAlpha = Math.max(0, 1 - age * 1.2)
+      ctx.fillStyle = '#6b5436'
+      for (let i = 0; i < 14; i++) {
+        const n = noise(i, 131)
+        const spread = (n - 0.5) * 2.2
+        // Outward and up, then gravity takes over — a burst, not a fountain.
+        const speed = 26 + noise(i, 57) * 34
+        const px = a.x + (out.dx + -out.dy * spread) * speed * age
+        const py = a.y + (out.dy + out.dx * spread) * speed * age * 0.5
+          - 34 * age + 58 * age * age
+        const sz = 1.1 + noise(i, 83) * 1.6
+        ctx.fillRect(px, py, sz, sz * (1 + noise(i, 19)))
+      }
+      ctx.restore()
+    }
     // Posts last, so a brazier reads as mounted on its corner.
     drawLampPosts(ctx, c, t, lamp)
   }
@@ -1557,7 +1690,39 @@ export function OutbreakScene({
 
     const render = () => {
       const { w, h } = sizeRef.current
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, glowRef.current, hordeRef.current)
+
+      // ── Camera ────────────────────────────────────────────────────────────
+      // A push resolving is the most consequential thing that happens in
+      // Discussion, and it used to land as a change in wall colour. The camera
+      // now leans toward it: a short push-in on any resolution, plus a shake
+      // when the wall actually buckles.
+      //
+      // Both are driven by breachTRef, which already counts down from a
+      // breach, so no new state and nothing to keep in sync. Both are
+      // suppressed under prefers-reduced-motion — a shaking viewport is the
+      // textbook case that setting exists for, and the scene already honours
+      // it everywhere else.
+      const breach = breachTRef.current
+      const shaking = breach > 0 && !reducedRef.current
+      if (shaking) {
+        // Decays with the timer, so it hits hard and settles rather than
+        // rattling for the full 2.4 s.
+        const decay = breach / BREACH_SECS
+        const amp = 5 * decay * decay
+        const zoom = 1 + 0.03 * decay
+        ctx.save()
+        ctx.translate(w / 2, h / 2)
+        ctx.scale(zoom, zoom)
+        ctx.translate(-w / 2, -h / 2)
+        ctx.translate(
+          Math.sin(tRef.current * 47) * amp,
+          Math.cos(tRef.current * 39) * amp * 0.6,
+        )
+      }
+
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, glowRef.current, hordeRef.current, reducedRef.current, breachTRef.current)
+
+      if (shaking) ctx.restore()
     }
     renderRef.current = render
 
