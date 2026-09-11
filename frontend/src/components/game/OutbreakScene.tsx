@@ -255,8 +255,8 @@ function buildOf(id: number): FigureBuild {
     // Kept deliberately narrow. A big spread reads as different species rather
     // than different people, and a very short figure behind a wall stops
     // reading as a person at all.
-    height: 0.92 + ((h >>> 3) % 17) / 100,
-    shoulder: 0.88 + ((h >>> 9) % 25) / 100,
+    height: 0.95 + ((h >>> 3) % 11) / 100,
+    shoulder: 0.92 + ((h >>> 9) % 17) / 100,
     hat: ((h >>> 15) % 4 === 0 ? 1 : (h >>> 15) % 7 === 0 ? 2 : 0) as 0 | 1 | 2,
     hair: (h >>> 21) % 3 === 0 ? 1.6 : 0,
   }
@@ -303,7 +303,7 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   const shoulderY = zombie ? -19 * s : -21 * bs
   const headX = zombie ? shoulderX + b.facing * 3 * s : 0
   const headY = zombie ? -22.5 * s : -26 * bs
-  const headR = 3.6 * s
+  const headR = 3.6 * bs
 
   ctx.beginPath()
   // legs
@@ -384,28 +384,39 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   ctx.arc(headX, headY, headR, 0, Math.PI * 2)
   ctx.fill()
 
-  // Headgear and hair, in the same stroke colour as the body — silhouette
-  // only, so a figure still reads as a shape rather than becoming a portrait.
+  // Headgear and hair.
+  //
+  // 🚨 THESE SIT ON TOP OF THE SKULL, THEY DO NOT REPLACE IT.
+  // The first cut drew a cap as an arc of radius 1.05x the head plus a peak,
+  // and a hood as a 1.35x dome — at ~30 px tall, both simply engulfed the head
+  // circle, and every survivor turned into a featureless blob. A figure this
+  // small has room for one silhouette cue, so the cue has to sit ABOVE the
+  // head's silhouette rather than around it.
   if (!zombie && b.fallT === 0) {
     if (build.hat === 1) {
-      // Cap: crown plus a peak on the facing side.
+      // Cap: a shallow brim across the top of the skull, plus a short peak.
       ctx.beginPath()
-      ctx.arc(headX, headY - 0.4 * s, headR * 1.05, Math.PI, 0)
-      ctx.lineTo(headX + b.facing * headR * 2.1, headY - 0.4 * s)
-      ctx.lineTo(headX + b.facing * headR * 0.9, headY - 1.1 * s)
+      ctx.moveTo(headX - headR, headY - headR * 0.45)
+      ctx.lineTo(headX + headR, headY - headR * 0.45)
+      ctx.lineTo(headX + b.facing * headR * 1.7, headY - headR * 0.1)
+      ctx.lineTo(headX - headR, headY - headR * 0.1)
       ctx.closePath()
       ctx.fill()
     } else if (build.hat === 2) {
-      // Hood: a taller dome that overhangs the back of the skull.
+      // Hood: a peak rising off the back of the skull.
       ctx.beginPath()
-      ctx.arc(headX, headY - 0.8 * s, headR * 1.35, Math.PI * 0.9, Math.PI * 2.1)
+      ctx.moveTo(headX - headR * 0.9, headY - headR * 0.3)
+      ctx.lineTo(headX - b.facing * headR * 0.5, headY - headR * 2.0)
+      ctx.lineTo(headX + headR * 0.9, headY - headR * 0.3)
+      ctx.closePath()
       ctx.fill()
     } else if (build.hair > 0) {
+      // A tuft, off the crown only.
       ctx.beginPath()
-      ctx.moveTo(headX - headR * 0.8, headY - headR * 0.6)
-      ctx.lineTo(headX - headR * 0.4, headY - headR - build.hair * s)
-      ctx.lineTo(headX + headR * 0.5, headY - headR - build.hair * 0.7 * s)
-      ctx.lineTo(headX + headR * 0.8, headY - headR * 0.5)
+      ctx.moveTo(headX - headR * 0.6, headY - headR * 0.7)
+      ctx.lineTo(headX - headR * 0.2, headY - headR * 1.55)
+      ctx.lineTo(headX + headR * 0.45, headY - headR * 1.2)
+      ctx.lineTo(headX + headR * 0.6, headY - headR * 0.6)
       ctx.closePath()
       ctx.fill()
     }
