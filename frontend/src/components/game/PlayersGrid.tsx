@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useAgentAddresses } from '@/hooks/useAgentIds'
+import { useTopPlayer } from '@/hooks/useTopPlayer'
 import { seatStatesAt, stepMs, sweepDurationMs, type SeatScanState } from '@/lib/containment-sweep'
 
 // ── Presentational card ───────────────────────────────────────────────────────
@@ -44,6 +45,9 @@ export interface PlayerCardProps {
   readonly index?: number
   /** True when this player holds an ERC-8004 on-chain agent identity. */
   readonly isAgent?: boolean
+  /** True for whoever currently tops the global leaderboard. Cosmetic — it
+   *  confers nothing, and is meant to make the seat harder to hold. */
+  readonly isTopPlayer?: boolean
   /** Containment-sweep state for this SEAT. Carries no player information —
    *  see the safety note at the top of this file. */
   readonly scanState?: SeatScanState
@@ -53,7 +57,7 @@ export interface PlayerCardProps {
 export function PlayerCard({
   name, style, isMe = false, selected = false, eliminated = false,
   justEliminated = false, votedByMe = false, clickable = false, onClick, title, index = 0,
-  isAgent = false, scanState = 'idle', children,
+  isAgent = false, isTopPlayer = false, scanState = 'idle', children,
 }: PlayerCardProps) {
   const reduced = useReducedMotion()
 
@@ -87,7 +91,18 @@ export function PlayerCard({
         filter: eliminated ? 'saturate(0.4)' : undefined,
       }}
     >
-      <span className="block truncate font-heading text-base">{name}</span>
+      <span className="block truncate font-heading text-base">
+        {isTopPlayer && (
+          <span
+            className="mr-1"
+            title="Tops the leaderboard — and everyone can see it"
+            aria-label="Leaderboard leader"
+          >
+            👑
+          </span>
+        )}
+        {name}
+      </span>
       {/* Registered on-chain agent. A span rather than a link because this card
           is already a button and nesting interactive elements is invalid — the
           id is shown in full so it can be looked up on 8004scan directly. */}
@@ -312,6 +327,9 @@ export function PlayersGrid({
   // can check on 8004scan rather than one this app is asserting.
   const agentAddrs = useAgentAddresses(players.map(p => p.walletAddress))
 
+  // The crown. Cosmetic on purpose — see the header of useTopPlayer.
+  const topPlayer = useTopPlayer()
+
   // Seat-index-keyed, status-blind. See the safety note at the top of the file.
   const scanStates = useContainmentSweep(players.length, sweepSeed, sweepAnchor)
 
@@ -334,6 +352,7 @@ export function PlayersGrid({
             votedByMe={(myVotedTarget ?? '').toLowerCase() === addrLower}
             clickable={canVote && !p.isEliminated}
             isAgent={agentAddrs.has(addrLower)}
+            isTopPlayer={topPlayer !== null && topPlayer === addrLower}
             scanState={scanStates[i] ?? 'idle'}
             onClick={() => canVote && onToggleVote(p.walletAddress)}
           />
