@@ -35,7 +35,7 @@ import {
 } from './barricadeStations'
 import {
   renderSurvivorAtlas, tintAtlas, buildIndexOf, buildForIndex, armGeometry,
-  WALK_FRAMES, PROP, type SurvivorAtlas,
+  WALK_FRAMES, BRACED_FRAME, PROP, type SurvivorAtlas,
 } from './survivorSprites'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
@@ -315,6 +315,7 @@ function drawSurvivorSprite(
   s: number,
   color: string,
   dpr: number,
+  braced: boolean,
 ): {
   shoulderY: number
   shoulderHalf: number
@@ -333,9 +334,11 @@ function drawSurvivorSprite(
   // Walk frame. `b.walk` is the same phase the stroked legs used, so a figure
   // that was mid-stride keeps its rhythm. A stopped figure holds frame 0, the
   // passing position — a standing body with its legs together.
-  const frame = b.gait > 0.05
-    ? Math.floor((b.walk / (Math.PI * 2)) * WALK_FRAMES) % WALK_FRAMES
-    : 0
+  const frame = braced
+    ? BRACED_FRAME
+    : b.gait > 0.05
+      ? Math.floor((b.walk / (Math.PI * 2)) * WALK_FRAMES) % WALK_FRAMES
+      : 0
   const f = frame < 0 ? frame + WALK_FRAMES : frame
 
   // On-screen size.
@@ -366,8 +369,8 @@ function drawSurvivorSprite(
   // this frame — see armGeometry. Mirrored to match the ctx.scale above, so a
   // carried item stays in the hand when the figure turns around.
   const figH = drawH * 0.82
-  const cyc = (f / WALK_FRAMES) * Math.PI * 2
-  const bob = Math.abs(Math.cos(cyc)) * figH * 0.012
+  const cyc = braced ? 0 : (f / WALK_FRAMES) * Math.PI * 2
+  const bob = braced ? 0 : Math.abs(Math.cos(cyc)) * figH * 0.012
   const hipY = PROP.hipY * figH - bob
   const shoulderHalf = figH * PROP.shoulderHalf * build.shoulder
   // drawSurvivorCell draws the far arm at phase PI and the near arm at 0, with
@@ -441,7 +444,14 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   // that is a continuous angle, not a frame. Survivors inside the compound only
   // ever walk or stand, which is exactly what an atlas is good at. See
   // survivorSprites.ts for why the art is generated rather than shipped.
-  const sprite = zombie ? null : drawSurvivorSprite(ctx, b, s, color, dpr)
+  // 🚨 ONE braced test, computed BEFORE the blit and reused everywhere.
+  // It used to be recomputed in two places with different conditions (one
+  // included `b.alive`, the other did not), and the sprite knew nothing about
+  // it at all — so a posted defender got the walk sprite, arms hanging down,
+  // with a second outstretched pair drawn over the top. Four arms, and a weapon
+  // apparently floating in front of a figure whose arms were at its sides.
+  const braced = (b.braceX !== 0 || b.braceY !== 0) && b.gait < 0.4 && b.alive
+  const sprite = zombie ? null : drawSurvivorSprite(ctx, b, s, color, dpr, braced)
   if (sprite) {
     shoulderY = sprite.shoulderY
     shoulderHalf = sprite.shoulderHalf
@@ -468,7 +478,6 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
     // 🚨 Bracing arms are drawn OVER the sprite, never baked into it. The atlas
     // would otherwise need a frame per wall direction per build, and the pose
     // has to point at a real angle for the scene to say which boards are held.
-    const braced = (b.braceX !== 0 || b.braceY !== 0) && b.gait < 0.4 && b.alive
     if (braced) {
       const rx = b.braceX
       const ry = b.braceY * 0.5
@@ -505,7 +514,6 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   // ── What they are carrying ─────────────────────────────────────────────
   if (!zombie && b.alive && b.fallT === 0 && handA && handB) {
     const item = itemOf(b.id)
-    const braced = (b.braceX !== 0 || b.braceY !== 0) && b.gait < 0.4
     ctx.save()
     ctx.lineCap = 'round'
     if (braced) {
@@ -1197,14 +1205,19 @@ const HORDE_SPEED = 13
  * wallpaper. The lesson recorded then — "sixteen legible figures beat forty
  * specks" — was half right. The legibility mattered; the number was a proxy.
  *
- * Thirty-six is deliberately back near the count that failed, because a siege
- * should look like a siege, with the threshold now scaled off the headcount
- * (see PRESSURE_FULL) so a gathering still reads as a gathering. What keeps
- * them legible at this density is that they are spread across four walls and a
- * depth band, not stacked: nine to a wall at rest, with the ground between them
- * still visible.
+ * Twenty-four is a siege that still reads as individuals, with the threshold
+ * now scaled off the headcount (see PRESSURE_FULL) so a gathering still reads
+ * as a gathering. What keeps them legible at this density is that they are
+ * spread across four walls and a depth band, not stacked: six to a wall at
+ * rest, with the ground between them still visible.
+ *
+ * Deliberately short of the 36 this briefly shipped at. The cam has never run
+ * that many on a mid-range Android under MiniPay, which is the audience that
+ * matters and the device this cannot be profiled on from a desktop. 24 is half
+ * again the old count — visibly more horde — while staying inside a budget that
+ * has actually been observed to hold.
  */
-const HORDE_SIZE = 36
+const HORDE_SIZE = 24
 
 /**
  * Walkers on the threatened wall for the strain to read as maxed out.

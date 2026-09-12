@@ -42,6 +42,24 @@
 export const WALK_FRAMES = 4
 
 /**
+ * The braced pose: a fifth column, past the walk cycle.
+ *
+ * 🚨 THE ARMS HAVE TO BE IN THE ATLAS, NOT DRAWN OVER IT.
+ * A posted defender's arms go out toward the boards they are holding, and the
+ * scene draws that live because the angle is continuous — it points at a real
+ * wall. But the walk frames have arms hanging DOWN, baked in. Drawing the
+ * outstretched pair on top of one of those gave every defender four arms: two
+ * drooping from the sprite, two reaching for the wall, with whatever they were
+ * carrying apparently floating in front of a body whose arms were at its sides.
+ *
+ * This frame is the same figure with NO arms drawn at all, feet planted and no
+ * stride. The scene supplies the arms.
+ */
+export const BRACED_FRAME = 4
+/** Columns in the atlas: the walk cycle plus the braced pose. */
+export const ATLAS_COLUMNS = WALK_FRAMES + 1
+
+/**
  * Distinct builds in the atlas.
  *
  * 12 = 3 headgear options x 2 heights x 2 shoulder widths. Big enough that a
@@ -156,11 +174,15 @@ export function armGeometry(
 
 function drawSurvivorCell(ctx: CanvasRenderingContext2D, build: SpriteBuild, frame: number) {
   const H = FIG_H * build.height
+  // The braced pose is a stance, not a step: feet planted, no bob, and — see
+  // BRACED_FRAME — no arms, because the scene draws those at the angle of the
+  // wall this defender is holding.
+  const bracing = frame === BRACED_FRAME
   // Walk cycle. Frame 0 and 2 are the passing positions (legs together), 1 and
   // 3 the contact positions (legs apart) — a plod, not a sprint.
-  const cyc = (frame / WALK_FRAMES) * Math.PI * 2
+  const cyc = bracing ? 0 : (frame / WALK_FRAMES) * Math.PI * 2
   const swing = Math.sin(cyc)
-  const bob = Math.abs(Math.cos(cyc)) * H * 0.012
+  const bob = bracing ? 0 : Math.abs(Math.cos(cyc)) * H * 0.012
 
   const hipY = -H * 0.44 - bob
   const shoulderY = -H * 0.80 - bob
@@ -182,7 +204,10 @@ function drawSurvivorCell(ctx: CanvasRenderingContext2D, build: SpriteBuild, fra
     // wide apart. A leg drops from its own hip socket, near-vertical, and the
     // stride opens and closes with the step.
     const hipX = dir * H * 0.040
-    const stride = Math.sin(cyc + phase) * H * 0.085
+    // Braced: feet set apart and planted, taking the shove. Not a stride.
+    const stride = bracing
+      ? dir * H * 0.055
+      : Math.sin(cyc + phase) * H * 0.085
     const footX = hipX + stride
     // The knee leads the foot on the forward leg and trails it on the back one.
     const kneeX = hipX + stride * 0.45
@@ -262,7 +287,7 @@ function drawSurvivorCell(ctx: CanvasRenderingContext2D, build: SpriteBuild, fra
     ctx.closePath()
     ctx.fill()
   }
-  arm(swing >= 0 ? 1 : -1, Math.PI, true)
+  if (!bracing) arm(swing >= 0 ? 1 : -1, Math.PI, true)
 
   // ── Head ────────────────────────────────────────────────────────────────
   // Neck first, so the head does not float.
@@ -317,7 +342,7 @@ function drawSurvivorCell(ctx: CanvasRenderingContext2D, build: SpriteBuild, fra
 
   // ── Near leg and near arm, over the torso ───────────────────────────────
   leg(1, 0, swing >= 0)
-  arm(swing >= 0 ? -1 : 1, 0, false)
+  if (!bracing) arm(swing >= 0 ? -1 : 1, 0, false)
 }
 
 /**
@@ -330,7 +355,7 @@ function drawSurvivorCell(ctx: CanvasRenderingContext2D, build: SpriteBuild, fra
 export function renderSurvivorAtlas(dpr: number): SurvivorAtlas | null {
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.floor(CELL_W * WALK_FRAMES * dpr))
+  canvas.width = Math.max(1, Math.floor(CELL_W * ATLAS_COLUMNS * dpr))
   canvas.height = Math.max(1, Math.floor(CELL_H * BUILD_COUNT * dpr))
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
@@ -338,7 +363,7 @@ export function renderSurvivorAtlas(dpr: number): SurvivorAtlas | null {
 
   for (let b = 0; b < BUILD_COUNT; b++) {
     const build = buildForIndex(b)
-    for (let f = 0; f < WALK_FRAMES; f++) {
+    for (let f = 0; f < ATLAS_COLUMNS; f++) {
       ctx.save()
       ctx.translate(f * CELL_W + CELL_W / 2, b * CELL_H + CELL_H * FOOT_Y)
       drawSurvivorCell(ctx, build, f)
