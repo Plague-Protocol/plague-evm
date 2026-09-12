@@ -37,6 +37,10 @@ import {
   renderSurvivorAtlas, tintAtlas, buildIndexOf, buildForIndex, armGeometry,
   WALK_FRAMES, BRACED_FRAME, PROP, type SurvivorAtlas,
 } from './survivorSprites'
+import {
+  renderWalkerAtlas, tintWalkerAtlas, walkerHeadOffset, WALKER_FRAMES,
+  POSE_PROFILE, POSE_BACK, POSE_FRONT, type WalkerAtlas,
+} from './walkerSprites'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
 
@@ -264,6 +268,37 @@ function buildOf(id: number): FigureBuild {
     hat: ((h >>> 15) % 4 === 0 ? 1 : (h >>> 15) % 7 === 0 ? 2 : 0) as 0 | 1 | 2,
     hair: (h >>> 21) % 3 === 0 ? 1.6 : 0,
   }
+}
+
+/**
+ * The horde's sprite atlas, tinted once.
+ *
+ * Module scope for the same reason the survivor atlas is: it depends only on
+ * device pixel ratio, and every remount would otherwise rebuild it. The horde
+ * has exactly ONE colour — they are never highlighted, never named, never the
+ * local player — so there is a single tinted copy rather than a cache.
+ */
+let walkerAtlasCache: WalkerAtlas | null = null
+let walkerSheetCache: HTMLCanvasElement | null = null
+let walkerAtlasDpr = 0
+
+/** The horde's sickly green, matching the stroked version it replaces. */
+const COLOR_HORDE = 'rgba(150,196,74,0.78)'
+
+function walkerAtlas(dpr: number): WalkerAtlas | null {
+  if (!walkerAtlasCache || walkerAtlasDpr !== dpr) {
+    walkerAtlasCache = renderWalkerAtlas(dpr)
+    walkerAtlasDpr = dpr
+    walkerSheetCache = walkerAtlasCache
+      ? tintWalkerAtlas(walkerAtlasCache, COLOR_HORDE)
+      : null
+  }
+  return walkerAtlasCache
+}
+
+function walkerSheet(dpr: number): HTMLCanvasElement | null {
+  walkerAtlas(dpr)
+  return walkerSheetCache
 }
 
 /**
@@ -974,6 +1009,7 @@ function drawWalker(
   rx: number, ry: number,
   /** Eye positions are pushed here as (x, y, r) triples for one batched pass. */
   eyes: number[],
+  dpr: number,
 ) {
   // Contact shadow, on the ground line and staying there.
   ctx.save()
@@ -983,66 +1019,111 @@ function drawWalker(
   ctx.fill()
   ctx.restore()
 
-  const stride = Math.sin(phase) * 3.4 * s
-  const bob = Math.abs(Math.sin(phase)) * 1.1 * s      // hips rise on the step
-  const hipY = -11 * s + bob
-  // Dropped shoulders. A zombie is not standing to attention.
-  const shoulderY = hipY - 7.2 * s
-  // The reach, projected. `ry` is squashed because the camera looks down the
-  // scene — a walker on the far side leans toward us a little rather than
-  // vanishing into a vertical line. 0.6 rather than 0.45: on the north and
-  // south walls the facing direction is almost purely vertical, so too much
-  // squash flattened the reach back toward horizontal and the figure read as
-  // standing side-on to the boards it is clawing at.
+  const sheet = walkerSheet(dpr)
+  const atlas = walkerAtlas(dpr)
+
+  // Only the horizontal component survives as a transform now: it decides which
+  // way a PROFILE walker is mirrored. The old vertical projection is gone with
+  // the shear that used it — the near and far walls are their own poses rather
+  // than a leaning profile. See the pose comment at the blit.
   const ax = rx
-  const ay = ry * 0.6
-  // Pitched forward over its own feet. This is the hunch.
-  const lean = ax * 4.6 * s
-  const leanY = ay * 2.4 * s
-  const headX = lean + ax * 3.4 * s
-  const headY = shoulderY + leanY - 2.6 * s + ay * 2.2 * s
-  const headR = 3.3 * s
 
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.strokeStyle = 'rgba(150,196,74,0.78)'
-  ctx.fillStyle = 'rgba(150,196,74,0.78)'
-  ctx.lineWidth = 1.9 * s
-  ctx.lineCap = 'round'
-  ctx.beginPath()
-  ctx.moveTo(0, hipY); ctx.lineTo(stride, 0)           // legs land ON the ground
-  ctx.moveTo(0, hipY); ctx.lineTo(-stride, 0)
-  // Curved spine — the control point sits BEHIND the lean, so the back bows
-  // outward the way a stooped one does. A straight line from hip to shoulder
-  // reads as a person bending over; a curve reads as a person who cannot
-  // stand up.
-  ctx.moveTo(0, hipY)
-  ctx.quadraticCurveTo(-ax * 1.6 * s, hipY - 4.6 * s, lean, shoulderY + leanY)
-  // Arms reaching TOWARD the wall it is working — never away from it.
-  const reach = 8.2 * s
-  ctx.moveTo(lean, shoulderY + leanY)
-  ctx.lineTo(lean + ax * reach, shoulderY + leanY + ay * reach + 2 * s + Math.sin(phase * 1.3) * 1.4 * s)
-  ctx.moveTo(lean, shoulderY + leanY)
-  ctx.lineTo(lean + ax * reach * 0.92, shoulderY + leanY + ay * reach * 0.92 + 4.6 * s - Math.sin(phase * 1.1) * 1.4 * s)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(headX, headY, headR, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.restore()
+  // Which frame of the shamble. `phase` is the same accumulator the stroked
+  // version used, so a walker mid-step keeps its rhythm across this change.
+  const f = ((Math.floor((phase / (Math.PI * 2)) * WALKER_FRAMES) % WALKER_FRAMES) + WALKER_FRAMES) % WALKER_FRAMES
 
-  // Eyes are NOT drawn here. Two shadowed arcs per walker is thirty-two
+  // Which of the three views this walker presents. Whichever component of the
+  // toward-wall vector dominates decides it: mostly-vertical means we see its
+  // back (reaching away, at the far boards) or its front (reaching toward us,
+  // at the near boards); mostly-horizontal is a profile.
+  const pose = Math.abs(ry) > Math.abs(rx)
+    ? (ry > 0 ? POSE_BACK : POSE_FRONT)
+    : POSE_PROFILE
+
+  // Same nominal height as a survivor at the same depth, which is the rule the
+  // stroked version established and is worth keeping: a walker and a person
+  // standing side by side are the same size, so the horde reads as people who
+  // were.
+  const drawH = 26 * s * (atlas ? atlas.cellH / (atlas.cellH * 0.62) : 1)
+  const drawW = drawH * (atlas ? atlas.cellW / atlas.cellH : 1)
+  const footOff = drawH * (atlas ? atlas.footY / atlas.cellH : 1)
+
+  if (sheet && atlas) {
+    ctx.save()
+    ctx.translate(x, y)
+    // 🚨 A POSE PER AXIS — NEVER A ROTATION, AND NOT A SHEAR EITHER.
+    //
+    // Rotating the cell to atan2(ay, ax) was the first attempt. It looks fine
+    // on the east and west walls, whose normals are horizontal, and lays every
+    // walker on the north and south walls FLAT ON ITS SIDE, because theirs are
+    // vertical. A figure standing on the ground has an up vector and the camera
+    // does not roll.
+    //
+    // Mirror-plus-shear was the second. It keeps them upright, but the mirror
+    // is driven by the horizontal component of the toward-wall vector — which
+    // is ZERO on the north and south walls. So both of those ranks drew the
+    // profile cell reaching east, side-on to the boards they were attacking,
+    // distinguished only by a 10° lean.
+    //
+    // The camera looks down the scene, so the four walls are not four angles:
+    // they are three views. Far wall = reaching away, we see its back. Near
+    // wall = reaching toward us, we see its front. East and west = profile, one
+    // mirrored. The atlas holds all three and the jitter is dropped, since it
+    // only ever made sense as an angle.
+    if (pose === POSE_PROFILE && ax < 0) ctx.scale(-1, 1)
+    ctx.drawImage(
+      sheet,
+      f * atlas.cellW * atlas.dpr, pose * atlas.cellH * atlas.dpr,
+      atlas.cellW * atlas.dpr, atlas.cellH * atlas.dpr,
+      -drawW * 0.34, -footOff, drawW, drawH,
+    )
+    ctx.restore()
+  }
+
+  // Eyes are NOT drawn here. Two shadowed arcs per walker is forty-eight
   // shadowed fills a frame, and canvas shadowBlur is the most expensive thing
   // on this loop by a wide margin. The positions go into a buffer and the whole
   // horde's eyes are drawn as one path with the shadow set once — see drawHorde.
-  const fx = x + headX + ax * 1.5 * s
-  const fy = y + headY + ay * 1.5 * s - 0.4 * s
-  // Perpendicular to the gaze, so the pair straddles the face whichever way
-  // the thing is turned.
-  const px = -ay
-  const py = ax
+  //
+  // The head offset comes from the atlas module, so the glow tracks the skull
+  // the sprite actually drew rather than a second guess at where it went.
+  // 🚨 THE EYES FOLLOW THE SPRITE'S TRANSFORM EXACTLY — MIRROR THEN SHEAR.
+  // They used to carry over the math from when this figure was ROTATED to face
+  // its wall: a forward nudge along (ax, ay) and a perpendicular offset of
+  // (-ay, ax). Once the blit became a mirror plus a shear, that stopped
+  // describing where the head was. On the east and west walls ay is 0 and it
+  // still happened to work; on the north and south walls ax is 0, so the
+  // "forward" nudge moved the pair vertically and the glow trailed BEHIND the
+  // skull. The transform is the source of truth; the eyes apply the same one.
+  // 🚨 A WALKER WITH ITS BACK TO US HAS NO VISIBLE EYES.
+  // The far wall's rank is reaching away from the camera. Two red pinpricks on
+  // the back of its skull would be the same mistake as drawing a face there.
+  if (pose === POSE_BACK) return
+
+  // The eyes follow the sprite's transform exactly. They used to carry over the
+  // math from when this figure was rotated to face its wall — a forward nudge
+  // along (ax, ay) plus a perpendicular offset — which stopped describing where
+  // the head was the moment the blit stopped being a rotation.
+  const scale = atlas ? drawH / atlas.cellH : 1
+  const ho = walkerHeadOffset(f, pose)
+  const mirror = pose === POSE_PROFILE && ax < 0 ? -1 : 1
+  // In profile the head leans along +x, so the eyes sit forward of its centre.
+  // Face-on they are level, straddling the skull.
+  const cellX = (ho.x + (pose === POSE_PROFILE ? ho.r * 0.45 : 0)) * scale
+  const cellY = (ho.y - ho.r * 0.10) * scale
+  const fx = x + cellX * mirror
+  const fy = y + cellY
+  // Wider apart face-on than in profile, where the far eye is mostly hidden by
+  // the bridge of the skull.
+  const spread = ho.r * (pose === POSE_PROFILE ? 0.42 : 0.52) * scale
   const r = 0.74 * s
-  eyes.push(fx + px * 1.05 * s, fy + py * 1.05 * s, r)
-  eyes.push(fx - px * 1.05 * s, fy - py * 1.05 * s, r)
+  if (pose === POSE_PROFILE) {
+    eyes.push(fx + spread * mirror, fy, r)
+    eyes.push(fx - spread * 0.15 * mirror, fy + ho.r * 0.12 * scale, r)
+  } else {
+    eyes.push(fx + spread, fy, r)
+    eyes.push(fx - spread, fy, r)
+  }
 }
 
 /**
@@ -1392,6 +1473,7 @@ function wallPressure(walkers: readonly Walker[], _c: Corners): number[] {
 
 function drawHorde(
   ctx: CanvasRenderingContext2D, walkers: readonly Walker[], c: Corners, h: number,
+  dpr: number,
 ) {
   // Depth-sorted: drawn in array order, a walker behind another could paint
   // over one standing in front of it.
@@ -1416,7 +1498,7 @@ function drawHorde(
     // The SAME scale function the survivors use, so a walker and a person at
     // the same depth are the same height. They ran on their own curve before
     // and came out around half size.
-    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, rx, ry, eyes)
+    drawWalker(ctx, wk.x, wk.y, perspectiveScale(wk.y, h), wk.phase, rx, ry, eyes, dpr)
   }
 
   // ── Every eye in the horde, in one shadowed fill ────────────────────────
@@ -1709,7 +1791,7 @@ function drawScene(
     // ground has no visible height for them to be behind. Drawing them under it
     // instead hides their legs behind the boards, which is exactly the read we
     // want: something clawing at a wall from the far side of it.
-    drawHorde(ctx, walkers, c, h)
+    drawHorde(ctx, walkers, c, h, dpr)
     drawWalls(ctx, c, t, bar, wallPressure(walkers, c))
     // Splinters thrown off the wall that just buckled. Deterministic from the
     // particle index — no allocation, no per-frame state, and identical on
