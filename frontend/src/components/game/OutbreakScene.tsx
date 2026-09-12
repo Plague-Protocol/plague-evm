@@ -33,6 +33,10 @@ import {
   wallOutward, clampInside, pushClear, outsideWall, depthAt, wallBand,
   type Corners,
 } from './barricadeStations'
+import {
+  renderSurvivorAtlas, tintAtlas, buildIndexOf, buildForIndex, armGeometry,
+  WALK_FRAMES, PROP, type SurvivorAtlas,
+} from './survivorSprites'
 
 // ── Layout / timing constants ─────────────────────────────────────────────────
 
@@ -262,7 +266,129 @@ function buildOf(id: number): FigureBuild {
   }
 }
 
-function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean, uniform: boolean) {
+/**
+ * The survivor sprite atlas, plus one tinted copy per live colour.
+ *
+ * Module scope rather than a ref: the atlas depends only on device pixel ratio,
+ * so every scene on the page (and every remount) shares one texture instead of
+ * rebuilding 48 cells each time the arena re-renders. There are at most five
+ * live colours — survivor, YOU, infected, dead, and the white/amber
+ * electrocution flash — so the tint cache never grows.
+ */
+let atlasCache: SurvivorAtlas | null = null
+let atlasDpr = 0
+const tintCache = new Map<string, HTMLCanvasElement>()
+
+function survivorAtlas(dpr: number): SurvivorAtlas | null {
+  if (!atlasCache || atlasDpr !== dpr) {
+    atlasCache = renderSurvivorAtlas(dpr)
+    atlasDpr = dpr
+    tintCache.clear()
+  }
+  return atlasCache
+}
+
+function tintedAtlas(atlas: SurvivorAtlas, color: string): HTMLCanvasElement | null {
+  let hit = tintCache.get(color)
+  if (!hit) {
+    const made = tintAtlas(atlas, color)
+    if (!made) return null
+    tintCache.set(color, made)
+    hit = made
+  }
+  return hit
+}
+
+/**
+ * Blit one survivor, feet at the current origin.
+ *
+ * Returns the shoulder point and half-width in scene units so the caller can
+ * hang procedural arms off the sprite. The arms stay procedural on purpose:
+ * bracing has to turn a defender toward the specific wall they are holding,
+ * and a carried item has to sit in a hand that moves. Baking those into the
+ * atlas would mean a frame per wall per item per build, which is where sprite
+ * sheets stop being cheaper than drawing.
+ */
+function drawSurvivorSprite(
+  ctx: CanvasRenderingContext2D,
+  b: Body,
+  s: number,
+  color: string,
+  dpr: number,
+): {
+  shoulderY: number
+  shoulderHalf: number
+  figH: number
+  /** Hand positions in scene units, matching the arms baked into this frame. */
+  handNear: { x: number; y: number }
+  handFar: { x: number; y: number }
+} | null {
+  const atlas = survivorAtlas(dpr)
+  if (!atlas) return null
+  const sheet = tintedAtlas(atlas, color)
+  if (!sheet) return null
+
+  const bi = buildIndexOf(b.id)
+  const build = buildForIndex(bi)
+  // Walk frame. `b.walk` is the same phase the stroked legs used, so a figure
+  // that was mid-stride keeps its rhythm. A stopped figure holds frame 0, the
+  // passing position — a standing body with its legs together.
+  const frame = b.gait > 0.05
+    ? Math.floor((b.walk / (Math.PI * 2)) * WALK_FRAMES) % WALK_FRAMES
+    : 0
+  const f = frame < 0 ? frame + WALK_FRAMES : frame
+
+  // On-screen size.
+  //
+  // The stroked figure it replaces stood 26*s to the crown of its head PLUS a
+  // 3.6*s head radius, so ~29.6*s overall. The first cut sized the sprite to 26
+  // alone and then divided by the 0.82 fill factor, landing at 88% of the old
+  // height — a figure that was both smaller and (before the limb-width fix)
+  // spindlier than what came before, which is why the change read as no change.
+  const drawH = 29.6 * s * build.height * (atlas.cellH / (atlas.cellH * 0.82))
+  const drawW = drawH * (atlas.cellW / atlas.cellH)
+  const footOff = drawH * (atlas.footY / atlas.cellH)
+
+  ctx.save()
+  // Face the way they are walking. Scaling by -1 mirrors the whole cell, which
+  // is why the atlas is drawn in a neutral three-quarter stance rather than a
+  // strict profile — a mirrored profile pops when the facing flips.
+  if (b.facing < 0) ctx.scale(-1, 1)
+  ctx.drawImage(
+    sheet,
+    f * atlas.cellW * atlas.dpr, bi * atlas.cellH * atlas.dpr,
+    atlas.cellW * atlas.dpr, atlas.cellH * atlas.dpr,
+    -drawW / 2, -footOff, drawW, drawH,
+  )
+  ctx.restore()
+
+  // Hand positions, recomputed from the SAME geometry the atlas baked into
+  // this frame — see armGeometry. Mirrored to match the ctx.scale above, so a
+  // carried item stays in the hand when the figure turns around.
+  const figH = drawH * 0.82
+  const cyc = (f / WALK_FRAMES) * Math.PI * 2
+  const bob = Math.abs(Math.cos(cyc)) * figH * 0.012
+  const hipY = PROP.hipY * figH - bob
+  const shoulderHalf = figH * PROP.shoulderHalf * build.shoulder
+  // drawSurvivorCell draws the far arm at phase PI and the near arm at 0, with
+  // the sign of the swing deciding which side each is on.
+  const swing = Math.sin(cyc)
+  const nearDir = swing >= 0 ? -1 : 1
+  const farDir = swing >= 0 ? 1 : -1
+  const near = armGeometry(figH, shoulderHalf, hipY, cyc, nearDir, 0)
+  const far = armGeometry(figH, shoulderHalf, hipY, cyc, farDir, Math.PI)
+  const mirror = b.facing < 0 ? -1 : 1
+
+  return {
+    shoulderY: PROP.shoulderY * figH - bob,
+    shoulderHalf,
+    figH,
+    handNear: { x: near.x * mirror, y: near.y },
+    handFar: { x: far.x * mirror, y: far.y },
+  }
+}
+
+function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number, flash: boolean, shieldAura: boolean, uniform: boolean, dpr: number) {
   const s = perspectiveScale(b.y, h)
   const zombie = b.kind === 'zombie' && !(uniform && !b.isMe)
 
@@ -300,17 +426,35 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   const armSwing = Math.sin(b.walk + Math.PI) * 3 * s * b.gait
   const hipY = -11 * bs
   const shoulderX = zombie ? b.facing * 4.5 * s : 0
-  const shoulderY = zombie ? -19 * s : -21 * bs
+  let shoulderY = zombie ? -19 * s : -21 * bs
   const headX = zombie ? shoulderX + b.facing * 3 * s : 0
   const headY = zombie ? -22.5 * s : -26 * bs
   const headR = 3.6 * bs
+  let shoulderHalf = 3 * s * build.shoulder
+
+  // ── The body ────────────────────────────────────────────────────────────
+  //
+  // Survivors are a pre-rendered sprite; the horde is still stroked.
+  //
+  // The split is deliberate. A sprite is a fixed pose, and the walkers outside
+  // need their reach aimed at whichever board they happen to be clawing —
+  // that is a continuous angle, not a frame. Survivors inside the compound only
+  // ever walk or stand, which is exactly what an atlas is good at. See
+  // survivorSprites.ts for why the art is generated rather than shipped.
+  const sprite = zombie ? null : drawSurvivorSprite(ctx, b, s, color, dpr)
+  if (sprite) {
+    shoulderY = sprite.shoulderY
+    shoulderHalf = sprite.shoulderHalf
+  }
 
   ctx.beginPath()
-  // legs
-  ctx.moveTo(0, hipY); ctx.lineTo(2 * s + legSwing, 0)
-  ctx.moveTo(0, hipY); ctx.lineTo(-2 * s - legSwing, 0)
-  // spine
-  ctx.moveTo(0, hipY); ctx.lineTo(shoulderX, shoulderY)
+  if (!sprite) {
+    // legs
+    ctx.moveTo(0, hipY); ctx.lineTo(2 * s + legSwing, 0)
+    ctx.moveTo(0, hipY); ctx.lineTo(-2 * s - legSwing, 0)
+    // spine
+    ctx.moveTo(0, hipY); ctx.lineTo(shoulderX, shoulderY)
+  }
   // arms
   if (zombie) {
     const bob = Math.sin(t * 2.2 + b.id) * 1.3 * s
@@ -320,6 +464,10 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
     // Bracing: both hands go out toward the wall this figure is holding, so a
     // defender is visibly turned to face it. Only once they have stopped —
     // arms out at a run would read as a charge.
+    //
+    // 🚨 Bracing arms are drawn OVER the sprite, never baked into it. The atlas
+    // would otherwise need a frame per wall direction per build, and the pose
+    // has to point at a real angle for the scene to say which boards are held.
     const braced = (b.braceX !== 0 || b.braceY !== 0) && b.gait < 0.4 && b.alive
     if (braced) {
       const rx = b.braceX
@@ -330,12 +478,27 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
       const py = rx
       handA = { x: shoulderX + rx * reach + px * 2.4 * s, y: shoulderY + ry * reach + py * 2.4 * s + 3 * s }
       handB = { x: shoulderX + rx * reach - px * 2.4 * s, y: shoulderY + ry * reach - py * 2.4 * s + 3 * s }
+      ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handA.x, handA.y)
+      ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handB.x, handB.y)
     } else {
-      handA = { x: shoulderX + 3 * s * build.shoulder + armSwing, y: -12 * bs }
-      handB = { x: shoulderX - 3 * s * build.shoulder - armSwing, y: -12 * bs }
+      // The sprite already carries its own swinging arms, so an idle survivor
+      // needs no stroked pair — only the hand POSITIONS, for whatever they are
+      // holding. Drawing both would give every figure four arms.
+      //
+      // 🚨 These come FROM the sprite, they are not guessed. The first cut fed
+      // the item code the old stroked arm swing, which is a different phase and
+      // amplitude from the one baked into the atlas — so weapons drifted off
+      // the hand and dangled in front of the body.
+      if (sprite) {
+        handA = sprite.handNear
+        handB = sprite.handFar
+      } else {
+        handA = { x: shoulderX + shoulderHalf + armSwing, y: -12 * bs }
+        handB = { x: shoulderX - shoulderHalf - armSwing, y: -12 * bs }
+        ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handA.x, handA.y)
+        ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handB.x, handB.y)
+      }
     }
-    ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handA.x, handA.y)
-    ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handB.x, handB.y)
   }
   ctx.stroke()
 
@@ -358,19 +521,20 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
       ctx.lineTo(handB.x - (ex / el) * grow, handB.y - (ey / el) * grow)
       ctx.stroke()
     } else {
-      // Carried down at the side.
+      // Carried down at the side. The slight outward lean follows the facing,
+      // so a mirrored figure does not tip its weapon across its own body.
       ctx.strokeStyle = item === 1 ? '#8d9298' : '#7d5c34'
       ctx.lineWidth = (item === 0 ? 3 : 1.9) * s
       ctx.beginPath()
       ctx.moveTo(handA.x, handA.y - 1 * s)
-      ctx.lineTo(handA.x + 1.5 * s, handA.y + (item === 0 ? 7 : 9) * s)
+      ctx.lineTo(handA.x + b.facing * 1.5 * s, handA.y + (item === 0 ? 7 : 9) * s)
       ctx.stroke()
     }
     if (item === 2) {
       // A torch — the one thing in the compound that answers the braziers.
       const tip = braced
         ? { x: handA.x + (handA.x - handB.x) * 0.9, y: handA.y + (handA.y - handB.y) * 0.9 }
-        : { x: handA.x + 1.5 * s, y: handA.y + 9 * s }
+        : { x: handA.x + b.facing * 1.5 * s, y: handA.y + 9 * s }
       ctx.beginPath()
       ctx.arc(tip.x, tip.y, (1.7 + Math.sin(t * 9 + b.id) * 0.3) * s, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(240,150,60,0.9)'
@@ -379,10 +543,12 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
     ctx.restore()
   }
 
-  // head
-  ctx.beginPath()
-  ctx.arc(headX, headY, headR, 0, Math.PI * 2)
-  ctx.fill()
+  // head — the sprite atlas already carries one, along with its headgear.
+  if (!sprite) {
+    ctx.beginPath()
+    ctx.arc(headX, headY, headR, 0, Math.PI * 2)
+    ctx.fill()
+  }
 
   // Headgear and hair.
   //
@@ -392,7 +558,7 @@ function drawFigure(ctx: CanvasRenderingContext2D, b: Body, t: number, h: number
   // circle, and every survivor turned into a featureless blob. A figure this
   // small has room for one silhouette cue, so the cue has to sit ABOVE the
   // head's silhouette rather than around it.
-  if (!zombie && b.fallT === 0) {
+  if (!zombie && !sprite && b.fallT === 0) {
     if (build.hat === 1) {
       // Cap: a shallow brim across the top of the skull, plus a short peak.
       ctx.beginPath()
@@ -1021,14 +1187,57 @@ const HORDE_SPEED = 13
 /**
  * How many walkers.
  *
- * Was forty. At forty, drawn at survivor scale, the treeline was a solid mat of
- * bodies and the wall-pressure signal never dropped — every wall had someone
- * leaning on it at all times, so every wall shuddered all game and none of it
- * meant anything. Sixteen legible figures beat forty specks, and it leaves the
- * ground between them visible, which is what makes a group arriving at one wall
- * read as an event.
+ * Was forty, then sixteen, now thirty-six.
+ *
+ * 🚨 THE COUNT AND THE PRESSURE THRESHOLD MOVE TOGETHER. ALWAYS.
+ * Forty failed the first time for a reason that had nothing to do with forty
+ * being too many to look at: PRESSURE_FULL was left at 5, so with ten walkers
+ * idling on every wall the crowd term pinned to its maximum permanently, every
+ * wall shuddered for the whole game, and a signal that never varies is
+ * wallpaper. The lesson recorded then — "sixteen legible figures beat forty
+ * specks" — was half right. The legibility mattered; the number was a proxy.
+ *
+ * Thirty-six is deliberately back near the count that failed, because a siege
+ * should look like a siege, with the threshold now scaled off the headcount
+ * (see PRESSURE_FULL) so a gathering still reads as a gathering. What keeps
+ * them legible at this density is that they are spread across four walls and a
+ * depth band, not stacked: nine to a wall at rest, with the ground between them
+ * still visible.
  */
-const HORDE_SIZE = 16
+const HORDE_SIZE = 36
+
+/**
+ * Walkers on the threatened wall for the strain to read as maxed out.
+ *
+ * 🚨 MEASURED ABOVE THE RESTING SHARE, NOT FROM ZERO.
+ * Only the threatened wall ever strains (see `straining`), but the amount it
+ * strains has to mean something, and raw headcount does not: at rest a wall
+ * already holds HORDE_SIZE/4 walkers, so counting from zero would start the
+ * shudder half-way up and leave it nowhere to build. What the room needs to
+ * see is how many have CONVERGED — the excess over the resting share.
+ *
+ * Both terms derive from the horde size, so changing the count can never
+ * silently pin the strain the way it did at forty with a hard-coded 5.
+ */
+const HORDE_RESTING_PER_WALL = HORDE_SIZE / 4
+/**
+ * How far back from the boards the horde spreads.
+ *
+ * Widened with the headcount. At 16 walkers an 11 px band put four to a wall in
+ * a rough line; at 36 the same band stacks nine of them into a picket fence.
+ * A deeper band reads as a crowd pressing forward — ranks behind ranks — and
+ * keeps the ground visible between them, which is what stops density from
+ * becoming the solid mat the count was cut from forty to avoid.
+ *
+ * ⚠ CAPPED BY THE SOUTH WALL, NOT BY TASTE. South walkers already stand
+ * SOUTH_CLEAR (30 px) further out than the rest so they clear the near boards,
+ * and the scene is only 240 px tall on mobile. At a 22 px band the deepest of
+ * them landed exactly on y=240 — feet clipped by the canvas edge. 14 keeps the
+ * whole horde on screen at both breakpoints with room to spare.
+ */
+const HORDE_DEPTH = 14
+/** Extra walkers, over the resting share, for full strain. */
+const PRESSURE_FULL = HORDE_RESTING_PER_WALL * 1.2
 
 /**
  * Extra room the horde keeps below the SOUTH wall — about one walker's height.
@@ -1111,7 +1320,7 @@ function stepHorde(
       }
       // Shuffle along the boards rather than jumping the length of them.
       wk.along = Math.min(1, Math.max(0, wk.along + (Math.random() - 0.5) * 0.34))
-      wk.depth = Math.random() * 11
+      wk.depth = Math.random() * HORDE_DEPTH
       wk.retargetIn = threatened !== null ? 1.4 + Math.random() * 1.8 : 2.6 + Math.random() * 3.4
     }
 
@@ -1198,9 +1407,10 @@ function drawHorde(
   }
 
   // ── Every eye in the horde, in one shadowed fill ────────────────────────
-  // Thirty-two individually shadowed arcs a frame would be the most expensive
+  // Seventy-two individually shadowed arcs a frame would be the most expensive
   // thing in this loop; canvas shadowBlur is not cheap. Batched, the whole
-  // horde costs one path and one shadow state change.
+  // horde costs one path and one shadow state change — which is why raising
+  // HORDE_SIZE adds path segments but no extra shadow state changes at all.
   if (eyes.length > 0) {
     ctx.save()
     ctx.shadowColor = 'rgba(255,47,47,0.85)'
@@ -1283,7 +1493,8 @@ function drawWalls(
     // wallpaper. A wall shakes when the horde is ON it, in the sense the rules
     // mean: a push is coming here. The crowd count still decides HOW hard, so
     // the shudder builds as they gather rather than snapping on.
-    const crowd = straining ? Math.min(1, (pressure[i] ?? 0) / 5) : 0
+    const converged = Math.max(0, (pressure[i] ?? 0) - HORDE_RESTING_PER_WALL)
+    const crowd = straining ? Math.min(1, converged / PRESSURE_FULL) : 0
 
     ctx.save()
     // The boards strain, not the camera — a shaking viewport reads as a bug.
@@ -1444,6 +1655,8 @@ function drawScene(
   reduced: boolean,
   /** Seconds left on the breach cue, for the debris burst. 0 = no breach. */
   breach: number,
+  /** Device pixel ratio, so the survivor atlas is rendered at display density. */
+  dpr: number,
 ) {
   ctx.clearRect(0, 0, w, h)
 
@@ -1530,7 +1743,7 @@ function drawScene(
     // everyone in it is a survivor. Zombies exist, they are the horde at the
     // boards. The cues still narrate an infection — the bolt still strikes,
     // the flash still lands — they just stop naming a shape for it.
-    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar !== null)
+    drawFigure(ctx, b, t, h, b === flashBody, myShield, bar !== null, dpr)
   }
   if (flashBody) drawBolt(ctx, flashBody, h)
 
@@ -1631,6 +1844,8 @@ export function OutbreakScene({
   const hordeRef = useRef<Walker[]>([])
   /** Brazier light pool, tinted per frame rather than re-created. */
   const glowRef = useRef<HTMLCanvasElement | null>(null)
+  /** Display density, so the survivor atlas is rasterised to match the canvas. */
+  const dprRef = useRef(1)
   const lastResultKeyRef = useRef(-1)
   const epochRef = useRef(0)
   const bodiesRef = useRef<Body[]>([])
@@ -1661,6 +1876,7 @@ export function OutbreakScene({
 
     const resize = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1)
+      dprRef.current = dpr
       const w = wrap.clientWidth
       const h = wrap.clientHeight
       sizeRef.current = { w, h }
@@ -1680,7 +1896,7 @@ export function OutbreakScene({
             phase: i,
             wall: i % 4,
             along: noise(i, 61),
-            depth: noise(i, 67) * 11,
+            depth: noise(i, 67) * HORDE_DEPTH,
             jitter: (noise(i, 73) - 0.5) * 0.44,
             retargetIn: noise(i, 71) * 4,
           }
@@ -1731,7 +1947,7 @@ export function OutbreakScene({
         )
       }
 
-      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, glowRef.current, hordeRef.current, reducedRef.current, breachTRef.current)
+      drawScene(ctx, w, h, bodiesRef.current, tRef.current, activeRef.current, myShieldRef.current, barricadeRef.current, backdropRef.current, glowRef.current, hordeRef.current, reducedRef.current, breachTRef.current, dprRef.current)
 
       if (shaking) ctx.restore()
     }
